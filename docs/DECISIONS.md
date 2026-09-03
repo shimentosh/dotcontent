@@ -120,6 +120,16 @@ Runs are untouched; `runs.topic_id` outlives the topic and a moved topic keeps
 its id. The Series screen marks duplicate rows and offers the merge; which copy
 is the real one is the user's call.
 
+## An upload is streamed to disk and capped, never buffered
+
+`await file.arrayBuffer()` held the whole upload in memory, then `Buffer.from`
+made a second copy — a 400MB recording was 800MB of heap in one route, and the
+Node process was what fell over, not the request. The upload route now hands
+`file.stream()` to the ingest, which pipes it to the source's directory through
+a counter that tears the pipeline down past `MAX_UPLOAD_BYTES` (512MB) and
+removes the partial file. The declared size is checked first, as a courtesy;
+the bytes are checked as they pass, because the header is a claim.
+
 ## A screen's data logic lives in a hook beside it, not in the screen
 
 DocumentView and ContentGroupsView were each eighteen hundred lines: fetching,

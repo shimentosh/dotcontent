@@ -49,13 +49,22 @@ components/views/    one file per screen
 components/overlays/ full-window things: sheets, dialogs, command palette, reading mode
 components/ui/       the kit — read components/ui/README.md before adding to it
 components/topics/   TopicAdmin: the topic controls, mounted inside Content
+components/tools/    pieces of a tool's screen with real interaction (FramePicker)
 lib/*-client.ts      browser-side fetch wrappers for the API
+lib/use-*.ts         a screen's data logic as a hook — what can be reasoned
+                     about without rendering (use-content-list, use-run-document,
+                     use-run-watch)
 lib/store.tsx        client state, navigation (`go`), filters
+lib/slug.ts          the one rule for turning a name into part of a URL
 lib/theme.ts         tokens: t(), w(), font, spring, panel(), layer
 lib/server/          server-only: auth, db, repos, services, prompt building
 lib/server/db/       Postgres pool + the schema as an ordered migration list
 lib/server/repos/    one module per table
+lib/server/services/ the rules between a route and a repo: runs, ingest,
+                     researcher, seed
 lib/packs/           the shipped template(s), as code
+tests/               vitest, pure functions only — `npm run check` runs them
+.github/workflows/   the same checks, on every push
 ```
 
 ## How a change reaches the screen

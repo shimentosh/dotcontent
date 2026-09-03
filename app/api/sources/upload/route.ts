@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/server/auth";
-import { ingestFile } from "@/lib/server/services/ingest";
+import { MAX_UPLOAD_BYTES, ingestFile } from "@/lib/server/services/ingest";
 import { caught, fail, ok, ready } from "@/lib/server/http";
 
 /** Frames and a transcript off an uploaded file. Minutes. */
@@ -20,12 +20,19 @@ export async function POST(request: Request) {
     const file = form?.get("file");
     if (!(file instanceof File)) return fail("Choose a video file");
     if (!file.size) return fail("That file is empty");
+    // The declared size, before a byte is read. The stream re-checks the truth.
+    if (file.size > MAX_UPLOAD_BYTES) {
+      return fail(
+        `That file is over ${Math.round(MAX_UPLOAD_BYTES / 1048576)}MB — trim it or export it smaller.`,
+        413,
+      );
+    }
 
     const workspaceId = form?.get("workspaceId");
     return ok(
       await ingestFile({
         filename: file.name,
-        bytes: Buffer.from(await file.arrayBuffer()),
+        stream: file.stream(),
         workspaceId: typeof workspaceId === "string" ? workspaceId : null,
       }),
       201,
