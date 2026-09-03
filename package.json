@@ -19,6 +19,7 @@
     "api:dev": "npm run dev --prefix api",
     "api:build": "npm run build --prefix api",
     "api:typecheck": "npm run typecheck --prefix api",
+    "api:smoke": "node scripts/api-smoke.mjs",
     "start": "next start",
     "lint": "eslint"
   },

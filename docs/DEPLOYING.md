@@ -49,6 +49,16 @@ the `app` image, not restarting it.
 
 Open `https://APP_HOST`. The first account you make is the owner.
 
+Then, from your laptop, ask the API the six questions that matter:
+
+```bash
+API_URL=https://API_HOST WEB_ORIGIN=https://APP_HOST SESSION=<your cookie value> npm run api:smoke
+```
+
+It says whether the API is up, refuses a missing and a forged cookie, answers
+for yours, and allows the web origin through CORS. The cookie value is in your
+browser's devtools under Application → Cookies → `contentos_session`.
+
 ## Bringing your existing work across
 
 ```bash

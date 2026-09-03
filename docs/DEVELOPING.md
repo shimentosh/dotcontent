@@ -6,6 +6,7 @@
 ./start.sh          # Postgres, the NestJS API on :4000, then Next on :3333
 ./start.sh prod     # production builds of both, then serve both
 npm run api:dev     # just the API (from the root; or `cd api && npm run dev`)
+npm run api:smoke   # six requests at the API: up, locked, answering, CORS
 npm run db:up       # just the database (docker compose, port 5437)
 npm run db:shell    # psql, inside the container
 ```

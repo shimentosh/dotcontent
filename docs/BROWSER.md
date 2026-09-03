@@ -25,13 +25,18 @@ see what a signed-out visitor gets).
 
 ## Signing in
 
-The app is behind `proxy.ts` — Next 16's name for what used to be
-`middleware.ts`: a page load without a session cookie
-redirects to `/login`, and every `/api/*` call answers `401 {"error":"Sign in
-first"}`. `browse.mjs` borrows the newest non-expired row from the `sessions`
-table and sets it as the `contentos_session` cookie, so there is no password to
-type. If it prints "no live session in the database", someone has to sign in
-through the UI once.
+Pages are behind `proxy.ts` — Next 16's name for what used to be
+`middleware.ts`: a page load without a session cookie redirects to `/login`.
+Data comes from the NestJS API on `http://localhost:4000`, whose guard answers
+`401 {"error":"Sign in first"}` to anything without a live session. `browse.mjs`
+borrows the newest non-expired row from the `sessions` table and sets it as the
+`contentos_session` cookie on `localhost`, which the browser sends to both ports,
+so there is no password to type. If it prints "no live session in the database",
+someone has to sign in through the UI once.
+
+`npm run api:smoke` asks the API the same six questions without a browser —
+public probe, refused without a cookie, refused with a forged one, answering
+for a real session, and the CORS preflight. Point it elsewhere with `API_URL`.
 
 ## Asking the database directly
 
