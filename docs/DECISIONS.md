@@ -120,6 +120,21 @@ Runs are untouched; `runs.topic_id` outlives the topic and a moved topic keeps
 its id. The Series screen marks duplicate rows and offers the merge; which copy
 is the real one is the user's call.
 
+## An unreachable API says so, in red, at the top
+
+With the backend on its own port, the console has a failure it never had
+before: the web app is up and the API is not. The store used to swallow that
+— the first fetch rejected, the catch was silent, and every screen rendered
+the design's sample workspaces with "0 templates" and "9 templates" beside a
+name nobody had typed. That reads as "my work is gone". It is not; nothing is
+answering on the port.
+
+`apiDown` on the store is set when the very first request cannot connect
+(not on a 401, not on a 503 from a running API). `ApiDownBanner` says which
+port, that the data is safe in the database, and how to start the service;
+the store asks every five seconds whether it is back and reloads the page
+when it is, so the banner leaves on its own.
+
 ## A model CLI is started in an empty directory, never in the repo
 
 `claude`, `codex` and `gemini` read the project they are started in — CLAUDE.md,

@@ -130,6 +130,15 @@ type Store = {
    * wrong", and it is only reachable in the first second after a load.
    */
   projectsLoaded: boolean;
+  /**
+   * The API could not be reached at all.
+   *
+   * Not a 401 and not a 503 from a running API — a connection refused. The
+   * console used to render the design's sample workspaces and "0 templates"
+   * in that case, which reads as "my work is gone" rather than "the server is
+   * not running". The shell shows which it is, and reloads when it comes back.
+   */
+  apiDown: boolean;
   /** The one the switcher is pointed at. */
   project: Project;
   updateProject: (i: number, patch: Partial<Project>) => void;
@@ -532,6 +541,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [projectIdx, setProjectIdx] = useState(0);
   const [projects, setProjects] = useState<Project[]>(PROJECTS);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const [apiDown, setApiDown] = useState(false);
   const [projectSheet, setProjectSheet] = useState<number | "new" | null>(null);
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [projectOpen, setProjectOpen] = useState(false);
@@ -643,9 +653,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setQuality(prefs.quality);
         }
       })
-      // Silent: a console that cannot reach its own API should still render
-      // rather than throw a blank shell at whoever opened it.
-      .catch(() => {});
+      // A console that cannot reach its own API still renders — but says so,
+      // rather than showing the design's placeholders as if they were data.
+      .catch(() => {
+        if (!cancelled) setApiDown(true);
+      });
 
     return () => {
       cancelled = true;
@@ -668,6 +680,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
         void loadSettings().then(setSettings).catch(() => {});
       });
   }, []);
+
+  /*
+   * While the API is down, ask every few seconds whether it is back, and
+   * reload when it is. A reload rather than a re-run of the load above: the
+   * screens have rendered against placeholders by now, and starting the
+   * document again is the only way to be sure none of that is left standing.
+   */
+  useEffect(() => {
+    if (!apiDown) return;
+    const timer = setInterval(() => {
+      void apiFetch("/api/auth/me", { cache: "no-store" })
+        .then(() => window.location.reload())
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [apiDown]);
 
   const reloadSeries = useCallback(async () => {
     const rows = await apiFetch("/api/workspaces", { cache: "no-store" })
@@ -1646,6 +1674,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       projects: countedProjects,
       projectsLoaded,
+      apiDown,
       // Clamped rather than indexed blindly: the switcher's index and the list
       // are separate pieces of state, and a stale index must not blank the
       // header while every screen reads `project.name` off it.
@@ -1831,6 +1860,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       savePack,
       projectIdx,
       projectsLoaded,
+      apiDown,
       projectOpen,
       addProject,
       confirm,
