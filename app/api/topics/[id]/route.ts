@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import { deleteTopic, updateTopic } from "@/lib/server/repos/series";
 import { caught, fail, ok, ready } from "@/lib/server/http";
 
@@ -7,6 +8,7 @@ export async function PATCH(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id } = await params;
     const t = await updateTopic(id, await request.json().catch(() => ({})));
     return t ? ok(t) : fail("No such topic", 404);
@@ -21,6 +23,7 @@ export async function DELETE(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id } = await params;
     return ok({ ok: await deleteTopic(id) });
   } catch (e) {

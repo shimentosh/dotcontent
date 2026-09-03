@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import {
   DuplicateName,
   addTopics,
@@ -13,6 +14,7 @@ export async function GET(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id } = await params;
     const s = await getSeries(id);
     return s ? ok(s) : fail("No such series", 404);
@@ -27,6 +29,7 @@ export async function PATCH(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id } = await params;
     const s = await updateSeries(id, await request.json().catch(() => ({})));
     return s ? ok(s) : fail("No such series", 404);
@@ -55,6 +58,7 @@ export async function DELETE(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id } = await params;
     const keepTopics =
       new URL(request.url).searchParams.get("keepTopics") === "1";
@@ -77,6 +81,7 @@ export async function POST(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id } = await params;
     const body = (await request.json().catch(() => ({}))) as {
       topics?: { name: string; context?: string; status?: string }[];

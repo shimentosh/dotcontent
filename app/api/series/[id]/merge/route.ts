@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import { mergeSeries } from "@/lib/server/repos/series";
 import { caught, fail, ok, ready } from "@/lib/server/http";
 
@@ -14,6 +15,7 @@ export async function POST(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id } = await params;
     const body = (await request.json().catch(() => ({}))) as { into?: string };
     if (!body.into) return fail("Which series should it merge into?");

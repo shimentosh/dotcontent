@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import { listTools, toolsFor } from "@/lib/server/repos/tools";
 import { caught, ok, ready } from "@/lib/server/http";
 
@@ -11,6 +12,7 @@ import { caught, ok, ready } from "@/lib/server/http";
 export async function GET(request: Request) {
   try {
     await ready();
+    await requireUser();
     const workspace = new URL(request.url).searchParams.get("workspace");
     return ok(workspace ? await toolsFor(workspace) : await listTools());
   } catch (e) {

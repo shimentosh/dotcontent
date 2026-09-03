@@ -120,6 +120,73 @@ Runs are untouched; `runs.topic_id` outlives the topic and a moved topic keeps
 its id. The Series screen marks duplicate rows and offers the merge; which copy
 is the real one is the user's call.
 
+## A screen's data logic lives in a hook beside it, not in the screen
+
+DocumentView and ContentGroupsView were each eighteen hundred lines: fetching,
+derived state, and layout in one file, so the subtlest rule on the page — which
+copy of a run to render, how facet counts are taken — sat between a tooltip and
+a border radius. Two hooks now hold what can be reasoned about without a
+screen:
+
+- `lib/use-run-document.ts` — the run, template, topic, document and reel a
+  document page is about, resolved from either address (`/runs/<id>` or
+  `/content/<topic>`), with the polled copy winning over the store's list.
+  `lib/use-run-watch.ts` underneath it is the poll.
+- `lib/use-content-list.ts` — every row on Content, the filters, the facet
+  counts taken with their own dimension left open, the sort, the writing strip.
+
+The views keep what only a view has: which menu is open, which row is being
+edited, rails made of glyphs. `components/tools/FramePicker.tsx` is the same
+cut on the researcher: the one part of that screen with real interaction, and
+it holds no state of its own so a new video cannot leave a stale selection.
+
+The line is "could a test exercise it without rendering". If yes, it belongs
+in the hook, and `tests/` is where its rules go.
+
+## Nothing writes against a workspace the server has not confirmed
+
+`projects` opens on the design's sample workspaces, whose ids are empty, so
+that every screen has a name to draw before the first request answers. A run
+or an upload in that second went out with `workspaceId: ""` and came back as a
+foreign-key error dressed as "something went wrong". `projectsLoaded` on the
+store says whether the list is the server's yet; the run sheet, the researcher
+and the tools manager refuse to write until it is, and say so.
+
+## Every route that touches data calls `requireUser`
+
+`proxy.ts` checks only that a session cookie is PRESENT — it cannot do more,
+because it runs before the database is reachable. Validity is the route's job,
+and for fifteen routes it was nobody's: `contentos_session=anything` listed
+every run, every template, every workspace, and could start runs that spend
+model credit. The comment in `proxy.ts` asserting the opposite is how it
+survived a year of reading that file.
+
+So: one `await requireUser()` under the `await ready()` in every handler except
+`/api/auth/login|logout|me|signup`, which are what you reach before you have a
+session. Adding a route means adding that line — the proxy will not save you,
+and nothing in a type or a test will notice.
+
+## One slug rule, in lib/slug.ts
+
+The same three lines lived in five files. Copies of a rule are a tidiness
+problem right up until two of them are load-bearing against each other, and two
+of these were: `/content/<slug>` finds its topic by comparing `slug(name)` to
+the address bar. A stray edit to one copy would not fail a build or a test — it
+would 404 one topic, silently, forever.
+
+## Tests cover what a screenshot cannot
+
+`tests/*.test.ts`, run by vitest, and deliberately narrow: no components, no
+database. They cover the pure functions the screens stand on — `statusOf` (the
+logic that had a dead run reading "Writing" for five days), the template
+import/export round trip, `interpolate`, `slug`, and the parse that has to
+survive a model wrapping its JSON in prose. `npm run check` is typecheck, lint
+and these together.
+
+Do not grow this into component tests. The screens are checked by opening them
+(`docs/BROWSER.md`); what these are for is the logic that fails silently, on one
+row, days later.
+
 ## A template travels as a file, and arrives as a draft
 
 Export writes the whole brief — rules, purpose, every section and its prompt,

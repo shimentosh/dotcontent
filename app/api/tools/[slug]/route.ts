@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import { getTool, updateTool } from "@/lib/server/repos/tools";
 import { caught, fail, ok, ready } from "@/lib/server/http";
 
@@ -7,6 +8,7 @@ export async function GET(
 ) {
   try {
     await ready();
+    await requireUser();
     const { slug } = await params;
     const tool = await getTool(slug);
     return tool ? ok(tool) : fail("No such tool", 404);
@@ -22,6 +24,7 @@ export async function PATCH(
 ) {
   try {
     await ready();
+    await requireUser();
     const { slug } = await params;
     const tool = await updateTool(slug, await request.json().catch(() => ({})));
     return tool ? ok(tool) : fail("No such tool", 404);

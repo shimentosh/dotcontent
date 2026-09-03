@@ -18,6 +18,8 @@
  * `queued`, because a queued section is one that has not run yet and a failed
  * one is work waiting to be tried again.
  */
+import { slug } from "./slug";
+
 export type SectionState = "written" | "writing" | "queued" | "failed";
 
 export type OutputKey = "en" | "bn" | "social" | "seo" | "tags";
@@ -299,12 +301,8 @@ export function looseSections(doc: ContentDoc) {
   return doc.sections.filter((s) => s.output === null);
 }
 
-/** The slug a name is reached by. */
-export const slugify = (name: string) =>
-  name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
+/** The slug a name is reached by. The one rule, from lib/slug.ts. */
+export const slugify = slug;
 
 export function docsByPack(docs: ContentDoc[]) {
   const groups: { pack: string; docs: ContentDoc[] }[] = [];

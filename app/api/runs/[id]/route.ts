@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import { deleteRun, getRun, setRunDecision } from "@/lib/server/repos/runs";
 import { caught, fail, ok, ready } from "@/lib/server/http";
 
@@ -7,6 +8,7 @@ export async function GET(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id } = await params;
     const run = await getRun(id);
     return run ? ok(run) : fail("No such run", 404);
@@ -28,6 +30,7 @@ export async function PATCH(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id } = await params;
     const body = (await request.json().catch(() => ({}))) as {
       decision?: string;
@@ -53,6 +56,7 @@ export async function DELETE(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id } = await params;
     return ok({ ok: await deleteRun(id) });
   } catch (e) {

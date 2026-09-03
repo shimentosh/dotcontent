@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import {
   deletePack,
   getPack,
@@ -12,6 +13,7 @@ export async function GET(
 ) {
   try {
     await ready();
+    await requireUser();
     const { slug } = await params;
     const pack = await getPack(slug);
     return pack ? ok(pack) : fail("No such pack", 404);
@@ -35,6 +37,7 @@ export async function PATCH(
 ) {
   try {
     await ready();
+    await requireUser();
     const { slug } = await params;
     const pack = await updatePack(slug, await request.json().catch(() => ({})));
     return pack ? ok(pack) : fail("No such pack", 404);
@@ -50,6 +53,7 @@ export async function POST(
 ) {
   try {
     await ready();
+    await requireUser();
     const { slug } = await params;
     const pack = await restorePack(slug);
     return pack
@@ -66,6 +70,7 @@ export async function DELETE(
 ) {
   try {
     await ready();
+    await requireUser();
     const { slug } = await params;
     return ok({ ok: await deletePack(slug) });
   } catch (e) {

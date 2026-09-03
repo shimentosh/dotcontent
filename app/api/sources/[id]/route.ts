@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/server/auth";
-import { deleteSource, getSource } from "@/lib/server/repos/sources";
+import { getSource } from "@/lib/server/repos/sources";
+import { removeSource } from "@/lib/server/services/ingest";
 import { caught, fail, ok, ready } from "@/lib/server/http";
 
 export async function GET(
@@ -25,7 +26,7 @@ export async function DELETE(
     await ready();
     await requireUser();
     const { id } = await params;
-    return ok({ ok: await deleteSource(id) });
+    return ok({ ok: await removeSource(id) });
   } catch (e) {
     return caught(e);
   }

@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import { createPack, listPacks } from "@/lib/server/repos/packs";
 import { caught, fail, ok, ready } from "@/lib/server/http";
 
@@ -11,6 +12,7 @@ import { caught, fail, ok, ready } from "@/lib/server/http";
 export async function GET() {
   try {
     await ready();
+    await requireUser();
     return ok(await listPacks());
   } catch (e) {
     return caught(e);
@@ -20,6 +22,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     await ready();
+    await requireUser();
     const body = await request.json().catch(() => ({}));
     if (!body?.name?.trim()) return fail("A pack needs a name");
     return ok(await createPack(body), 201);

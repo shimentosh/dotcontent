@@ -34,6 +34,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      # The downloads live here: every fetched video, and the stills cut out of
+      # it. Without this they are inside the container, so a redeploy loses
+      # them and every frame the researcher already read 404s.
+      - sourcedata:/app/.data
     # Migrations first, then the server — a deploy that adds a column must not
     # take traffic against a database that has not got it yet.
     command: >
@@ -66,4 +71,7 @@ services:
 
 volumes:
   pgdata:
+  # Videos and frames. Big, and re-fetchable — worth keeping across a deploy,
+  # not worth putting in the nightly dump beside the database.
+  sourcedata:
   letsencrypt:

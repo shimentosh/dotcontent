@@ -15,14 +15,23 @@ because `start.sh` puts it there. Assume 3333 unless told otherwise.
 ## Check it
 
 ```bash
-npm run typecheck       # tsc --noEmit
-npx eslint components lib app scripts
+npm run check           # typecheck, then eslint, then the tests
+npm run test            # vitest, on its own
+npm run test:watch      # while you are in one of them
 npm run build:check     # a production build that does NOT touch the dev server
 ```
 
-Run typecheck and eslint after any edit. They are fast, and they catch the class
-of mistake that a screenshot never will — a renamed identifier, a filter key
-that no longer matches its type.
+Run `npm run check` after any edit. It is seconds, and it catches the class of
+mistake a screenshot never will — a renamed identifier, a filter key that no
+longer matches its type, a status that stops being derived the way the list
+expects.
+
+The tests are `tests/*.test.ts` and deliberately narrow: no components, no
+database. They cover the pure functions everything stands on — what status a
+row shows, what slug a URL resolves by, what an imported template turns into,
+what the researcher makes of a model's answer. Those are the ones that fail
+silently on one row, days later. Add to them when you touch that kind of
+logic; do not try to test the screens here.
 
 ## Never `next build` while the dev server is up
 

@@ -119,6 +119,16 @@ type Store = {
    * a project whose voice you have to restate in every brief instead.
    */
   projects: Project[];
+  /**
+   * Whether `projects` is the server's list yet.
+   *
+   * It opens on the design's sample workspaces, which carry an empty id, so
+   * that every screen has a name to show before the first request answers.
+   * Anything that WRITES with a workspace id has to wait for this — a run or
+   * an upload against `""` is a foreign-key error dressed as "something went
+   * wrong", and it is only reachable in the first second after a load.
+   */
+  projectsLoaded: boolean;
   /** The one the switcher is pointed at. */
   project: Project;
   updateProject: (i: number, patch: Partial<Project>) => void;
@@ -520,6 +530,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [projectIdx, setProjectIdx] = useState(0);
   const [projects, setProjects] = useState<Project[]>(PROJECTS);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectSheet, setProjectSheet] = useState<number | "new" | null>(null);
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [projectOpen, setProjectOpen] = useState(false);
@@ -619,6 +630,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         if (rows?.length) {
           setProjects(rows.map(toProject));
+          setProjectsLoaded(true);
           // The series shown are the current workspace's. Which one that is
           // comes from `projectIdx`, so this follows it below rather than here.
           setTopicSeries(rows[0].series.map(toSeries));
@@ -1632,6 +1644,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       },
 
       projects: countedProjects,
+      projectsLoaded,
       // Clamped rather than indexed blindly: the switcher's index and the list
       // are separate pieces of state, and a stale index must not blank the
       // header while every screen reads `project.name` off it.
@@ -1816,6 +1829,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       newPack,
       savePack,
       projectIdx,
+      projectsLoaded,
       projectOpen,
       addProject,
       confirm,

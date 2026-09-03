@@ -90,8 +90,15 @@ ${SHAPE}
 
 Give between 4 and 8 ideas, each a DIFFERENT video rather than the same one reworded: a different benefit, a different audience, a different moment of the tool. Never name the site in an idea title — the channel withholds the link deliberately and the name gives away the answer the comment is meant to buy.`;
 
-/** The JSON out of an answer that may be wrapped in prose or a code fence. */
-function parse(text: string) {
+/**
+ * The JSON out of an answer that may be wrapped in prose or a code fence.
+ *
+ * Exported for the tests. Models are asked for bare JSON and hand back a code
+ * fence, a sentence before it, or both — and every one of those failures shows
+ * up as an empty result rather than an error, which is the hardest kind to
+ * notice. It is worth the export.
+ */
+export function parse(text: string) {
   const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text)?.[1];
   const body = (fenced ?? text).trim();
   const start = body.indexOf("{");

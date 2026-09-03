@@ -1,6 +1,7 @@
 "use client";
 
 import type { Pack } from "@/lib/packs";
+import { slug } from "@/lib/slug";
 import { fromDraft } from "@/lib/packs-client";
 
 /**
@@ -79,12 +80,7 @@ export function toFile(pack: Pack): TemplateFile {
 
 /** `ENBN Website Content` → `enbn-website-content.template.json` */
 export const fileNameFor = (name: string) =>
-  `${
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "") || "template"
-  }.template.json`;
+  `${slug(name) || "template"}.template.json`;
 
 export class TransferError extends Error {}
 

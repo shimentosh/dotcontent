@@ -1,5 +1,6 @@
 "use client";
 
+import { slug } from "@/lib/slug";
 import type { ContentDoc, DocSection, OutputKey } from "@/lib/content-docs";
 import type { Pack } from "@/lib/packs";
 import type { Run } from "@/lib/runs-client";
@@ -116,9 +117,11 @@ export function latestRunFor(runs: Run[], topicId: string) {
   );
 }
 
-/** The slug a topic is reached by. Matches how the list builds its rows. */
-export const topicSlug = (name: string) =>
-  name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
+/**
+ * The slug a topic is reached by.
+ *
+ * Re-exported rather than reimplemented: `/content/<slug>` resolves by
+ * comparing this to the address bar, so it and `slugify` have to be the same
+ * function — see lib/slug.ts.
+ */
+export const topicSlug = slug;

@@ -9,8 +9,12 @@ import { SESSION_COOKIE } from "@/lib/session";
  * convention and renamed it. Same runtime, same matcher, same one job.
  *
  * It checks only that a session cookie is PRESENT, not that it is valid —
- * this runs before the database is reachable, and a forged cookie gets
- * no further than the first API call, every one of which calls `requireUser`.
+ * this runs before the database is reachable. A forged cookie therefore gets
+ * no further than the first API call, PROVIDED the route calls `requireUser`.
+ * Fifteen of them did not, and this comment asserting otherwise is how that
+ * survived: anything with a cookie header read and wrote everything. Adding a
+ * route without that call re-opens the hole, so it is the route's job and not
+ * this file's.
  * This exists so someone who is not signed in lands on the sign-in page
  * instead of an empty shell that 401s six times.
  */

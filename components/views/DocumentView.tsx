@@ -20,18 +20,11 @@ import {
   type SectionState,
 } from "@/lib/content-docs";
 import { useStore } from "@/lib/store";
-import { latestRunFor, runToDoc, topicSlug } from "@/lib/run-doc";
-import { getPack, type ApiPack } from "@/lib/packs-client";
+import { latestRunFor, topicSlug } from "@/lib/run-doc";
 import { packForSeries } from "@/lib/packs";
-import {
-  editSection,
-  getRun,
-  isWriting,
-  startWriting,
-  type Run,
-  writeSection,
-} from "@/lib/runs-client";
-import { frameUrl, getSource, type Source } from "@/lib/sources-client";
+import { editSection, startWriting, writeSection } from "@/lib/runs-client";
+import { useRunDocument } from "@/lib/use-run-document";
+import { frameUrl, type Source } from "@/lib/sources-client";
 import { font, panel, primary, rise, t, w } from "@/lib/theme";
 import { Hov } from "@/components/ui/Hov";
 import { Button, Rail, TextArea } from "@/components/ui";
@@ -217,124 +210,26 @@ export function DocumentView({
   slug?: string;
   runId?: string;
 }) {
+  const { go, seriesList, runs, packs, reloadRuns, settings, runTopicNow } =
+    useStore();
+
+  /**
+   * The run, its template, its topic, the document and the reel — resolved
+   * from whichever address this page was opened by. See
+   * lib/use-run-document.ts, which is also where the polled copy is made to
+   * win over the store's list.
+   */
   const {
-    go,
-    seriesList,
-    runs,
-    packs,
-    reloadRuns,
-    settings,
-    runTopicNow,
-  } = useStore();
-
-  /*
-   * The run this page is about.
-   *
-   * Fetched directly when the URL names one, because a run started seconds ago
-   * is not in the store's list yet and waiting for a reload to notice it is
-   * the difference between watching your run and watching an empty page.
-   */
-  const [fetched, setFetched] = useState<Run | null>(null);
-
-  useEffect(() => {
-    if (!runId) return;
-    let cancelled = false;
-    void getRun(runId)
-      .then((r) => {
-        if (!cancelled) setFetched(r);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [runId]);
-
-  const run = useMemo(() => {
-    /*
-     * The polled copy wins here too.
-     *
-     * This read the store's list first, and that list is loaded once and
-     * reloaded on navigation — never on a timer. So /runs/<id> rendered a
-     * snapshot taken when the page was opened, the poll below kept a fresh
-     * copy in `fetched` that nothing looked at, and the only way to see any
-     * progress was to reload the page. Which is exactly what it looked like:
-     * live updates that only arrive on a refresh.
-     */
-    if (runId) {
-      return fetched?.id === runId
-        ? fetched
-        : (runs.find((r) => r.id === runId) ?? fetched);
-    }
-    const topic = seriesList
-      .flatMap((series) => series.topics)
-      .find((t) => topicSlug(t.name) === slug);
-    const latest = topic ? latestRunFor(runs, topic.id) : null;
-    /*
-     * The polled copy wins, when it is the same run.
-     *
-     * /content/<topic> reads the store's list, which is reloaded on navigation
-     * and not on a timer — so a run started from this page wrote twelve
-     * sections while the page it was started from showed twelve queued ones.
-     * The poll below keeps `fetched` current for whichever run is on screen;
-     * this is where that gets used.
-     */
-    return latest && fetched?.id === latest.id ? fetched : latest;
-  }, [runId, fetched, runs, seriesList, slug]);
-
-  /*
-   * The template as the engine runs it.
-   *
-   * The store's copy is the builder's shape and carries no dependency arrows,
-   * and those are what decide which section may go next. Fetched by slug so a
-   * template written in the builder works here too.
-   */
-  const [runtime, setRuntime] = useState<ApiPack | null>(null);
-
-  useEffect(() => {
-    const packSlug = run?.packSlug;
-    if (!packSlug) return;
-    let cancelled = false;
-    void getPack(packSlug)
-      .then((p) => {
-        if (!cancelled) setRuntime(p);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [run?.packSlug]);
-
-  /** The topic behind it, for the rail and for the empty states. */
-  const topic = useMemo(
-    () =>
-      seriesList
-        .flatMap((series) => series.topics.map((t) => ({ ...t, series })))
-        .find((t) => (runId ? t.id === run?.topicId : topicSlug(t.name) === slug)),
-    [seriesList, slug, runId, run],
-  );
-
-  const doc = useMemo(
-    () =>
-      run ? runToDoc(run, packs.find((p) => p.id === run.packSlug)) : null,
-    [run, packs],
-  );
-
-  /** The reel this run was given, when it was given one. */
-  const [source, setSource] = useState<Source | null>(null);
-
-  useEffect(() => {
-    const sid = run?.sourceId;
-    if (!sid) return;
-    let cancelled = false;
-    void getSource(sid)
-      .then((x) => {
-        if (!cancelled) setSource(x);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [run?.sourceId]);
+    run,
+    topic,
+    doc,
+    source,
+    pending,
+    unwritten,
+    setFetched,
+    serverWriting,
+    setServerWriting,
+  } = useRunDocument({ slug, runId });
 
   const [openSections, setOpenSections] = useState<Set<string>>(
     new Set(["03"]),
@@ -367,36 +262,6 @@ export function DocumentView({
 
   const groups = useMemo(() => (doc ? buildGroups(doc) : []), [doc]);
   const [reading, setReading] = useState(false);
-
-  /*
-   * Sections that have not been written yet, in the template's own order.
-   *
-   * A dependency is satisfied when the section it names is done, so this is
-   * recomputed from the run every time rather than held as a queue: a section
-   * rewritten by hand changes what is ready next, and a queue built once would
-   * not notice.
-   */
-  const pending = useMemo(() => {
-    if (!run || !runtime) return [];
-    const done = new Set(
-      run.sections.filter((x) => x.state === "done").map((x) => x.id),
-    );
-    return runtime.sections
-      .filter((def) => {
-        const row = run.sections.find((x) => x.id === def.id);
-        return (
-          row && row.state !== "done" && def.dependsOn.every((d) => done.has(d))
-        );
-      })
-      .map((def) => def.id);
-  }, [run, runtime]);
-
-  const unwritten = run
-    ? run.sections.filter((x) => x.state !== "done").length
-    : 0;
-
-  /** Set while the server is writing this run — see the polling effect. */
-  const [serverWriting, setServerWriting] = useState(false);
 
   /**
    * Is it writing, waiting, or stopped?
@@ -513,7 +378,7 @@ export function DocumentView({
       });
     }
     await reloadRuns();
-  }, [run, doc, runId, reloadRuns]);
+  }, [run, doc, runId, reloadRuns, setFetched]);
 
   // The local driver, for "Write next" and for the auto-approve preference.
   // The whole-run case is the server's job now — see `serverWriting` below.
@@ -524,55 +389,6 @@ export function DocumentView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auto, run, pending, busy.size]);
 
-  /**
-   * Whether the server is writing this run, and following it while it does.
-   *
-   * The page used to BE the driver: a loop in the tab asking for one section
-   * at a time. A run therefore stopped when the tab did — on a navigation, a
-   * hot reload, or a closed window — mid-way, with no sign of why. The server
-   * drives now, so this only watches: poll the run while anything is moving,
-   * stop when it settles.
-   *
-   * Whichever way the page was addressed. It watched only /runs/<id>, so a
-   * topic opened by name — which is how the list opens one — sat perfectly
-   * still while its run was being written, and only a refresh showed any of
-   * it. The run is the run either way.
-   */
-  const watchId = runId ?? run?.id ?? null;
-  useEffect(() => {
-    if (!watchId) return;
-    let stop = false;
-
-    const tick = async () => {
-      try {
-        const [state, fresh] = await Promise.all([
-          isWriting(watchId),
-          getRun(watchId),
-        ]);
-        if (stop) return;
-        setServerWriting(state.running);
-        if (fresh) setFetched(fresh);
-        // Slower once nothing is in flight: the answer stops changing, and a
-        // page left open overnight should not be asking twice a second.
-        return state.running ? 1500 : 6000;
-      } catch {
-        return 6000;
-      }
-    };
-
-    let timer: ReturnType<typeof setTimeout>;
-    const loop = async () => {
-      const wait = (await tick()) ?? 6000;
-      if (!stop) timer = setTimeout(() => void loop(), wait);
-    };
-    void loop();
-
-    return () => {
-      stop = true;
-      clearTimeout(timer);
-    };
-  }, [watchId]);
-
   /** Write the lot, on the server, and start watching straight away. */
   const writeEverything = useCallback(async () => {
     if (!run) return;
@@ -582,7 +398,7 @@ export function DocumentView({
     } catch {
       setServerWriting(false);
     }
-  }, [run]);
+  }, [run, setServerWriting]);
 
   /*
    * Two ways to have nothing to show, and they are different problems.

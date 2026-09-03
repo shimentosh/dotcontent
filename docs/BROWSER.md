@@ -25,7 +25,8 @@ see what a signed-out visitor gets).
 
 ## Signing in
 
-The app is behind `middleware.ts`: a page load without a session cookie
+The app is behind `proxy.ts` — Next 16's name for what used to be
+`middleware.ts`: a page load without a session cookie
 redirects to `/login`, and every `/api/*` call answers `401 {"error":"Sign in
 first"}`. `browse.mjs` borrows the newest non-expired row from the `sessions`
 table and sets it as the `contentos_session` cookie, so there is no password to

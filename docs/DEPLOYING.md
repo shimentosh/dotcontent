@@ -75,7 +75,9 @@ read, that is a feature to build, not a setting to find.
 
 ## Keeping it
 
-The whole workspace is the `pgdata` volume.
+The workspace is the `pgdata` volume. Videos and the stills cut from them are
+in `sourcedata` — big, and re-fetchable from the links they came from, which is
+why it is a second volume rather than something in the dump below.
 
 ```bash
 docker compose -f docker-compose.prod.yml exec -T postgres \

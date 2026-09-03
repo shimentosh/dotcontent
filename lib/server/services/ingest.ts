@@ -5,8 +5,10 @@ import { requireTool, run, toolStatus } from "@/lib/server/tools";
 import { getSettings } from "@/lib/server/repos/settings";
 import {
   createSource,
+  deleteSource,
   findByUrl,
   getSource,
+  listSources,
   updateSource,
   type Frame,
   type Source,
@@ -218,6 +220,37 @@ export async function addFrameAt(sourceId: string, at: number): Promise<Source> 
     (a, b) => a.at - b.at,
   );
   return (await updateSource(sourceId, { frames }))!;
+}
+
+/**
+ * Delete a source, and the download that went with it.
+ *
+ * The row and the directory are one thing: `deleteSource` on its own left a
+ * video and eight JPEGs on disk with nothing in the database pointing at them,
+ * so the only way to find them was to go looking. A reel is tens of megabytes
+ * — a few deletes and the disk is carrying a folder nobody can reach.
+ */
+export async function removeSource(sourceId: string) {
+  const gone = await deleteSource(sourceId);
+  // The files go whether or not the row was there: a half-deleted source is
+  // exactly the state this is meant to clean up.
+  await fs.rm(dirFor(sourceId), { recursive: true, force: true }).catch(() => {});
+  return gone;
+}
+
+/**
+ * Directories under .data/sources with no row behind them.
+ *
+ * Left by every delete before `removeSource` existed, and by an ingest that
+ * died between writing the file and writing the row. Reported rather than
+ * removed on sight — this is somebody's downloaded footage, and the caller
+ * decides.
+ */
+export async function orphanSourceDirs() {
+  const dirs = await fs.readdir(DATA).catch(() => [] as string[]);
+  const rows = await listSources();
+  const known = new Set(rows.map((r) => r.id));
+  return dirs.filter((d) => d.startsWith("src_") && !known.has(d));
 }
 
 /** The bytes of one frame, for a model that is going to look at it. */

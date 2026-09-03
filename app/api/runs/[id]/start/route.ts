@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import { driveRun, isDriving } from "@/lib/server/services/runs";
 import { getRun, requeueFailed } from "@/lib/server/repos/runs";
 import { caught, fail, ok, ready } from "@/lib/server/http";
@@ -21,6 +22,7 @@ export async function POST(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id } = await params;
     const run = await getRun(id);
     if (!run) return fail("No such run", 404);
@@ -38,6 +40,7 @@ export async function GET(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id } = await params;
     return ok({ running: isDriving(id) });
   } catch (e) {

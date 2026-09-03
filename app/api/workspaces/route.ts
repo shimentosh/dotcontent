@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import { createWorkspace, listWorkspaces } from "@/lib/server/repos/workspaces";
 import { listSeries } from "@/lib/server/repos/series";
 import { caught, ok, ready } from "@/lib/server/http";
@@ -6,6 +7,7 @@ import { caught, ok, ready } from "@/lib/server/http";
 export async function GET() {
   try {
     await ready();
+    await requireUser();
     const list = await listWorkspaces();
     // Concurrently rather than in sequence: the queries are independent, and
     // four workspaces should cost one round trip of latency, not four.
@@ -22,6 +24,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     await ready();
+    await requireUser();
     const body = await request.json().catch(() => ({}));
     return ok({ ...(await createWorkspace(body)), series: [] }, 201);
   } catch (e) {

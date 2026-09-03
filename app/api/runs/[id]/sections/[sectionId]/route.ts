@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import { editSection, writeSection } from "@/lib/server/services/runs";
 import { caught, fail, ok, ready } from "@/lib/server/http";
 
@@ -10,6 +11,7 @@ export async function POST(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id, sectionId } = await params;
     return ok(await writeSection(id, sectionId));
   } catch (e) {
@@ -30,6 +32,7 @@ export async function PATCH(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id, sectionId } = await params;
     const body = (await request.json().catch(() => ({}))) as {
       content?: unknown;

@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import {
   deleteWorkspace,
   getWorkspace,
@@ -13,6 +14,7 @@ export async function GET(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id } = await params;
     const ws = await getWorkspace(id);
     return ws
@@ -29,6 +31,7 @@ export async function PATCH(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id } = await params;
     const ws = await updateWorkspace(id, await request.json().catch(() => ({})));
     return ws
@@ -45,6 +48,7 @@ export async function DELETE(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id } = await params;
     // The last one cannot go: every screen reads the current workspace's packs,
     // series and voice, and an empty list is a shell with nothing to render.

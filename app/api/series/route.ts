@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import {
   DuplicateName,
   createSeries,
@@ -8,6 +9,7 @@ import { caught, fail, ok, ready } from "@/lib/server/http";
 export async function GET(request: Request) {
   try {
     await ready();
+    await requireUser();
     const workspaceId = new URL(request.url).searchParams.get("workspaceId");
     if (!workspaceId) return fail("workspaceId is required");
     return ok(await listSeries(workspaceId));
@@ -19,6 +21,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     await ready();
+    await requireUser();
     const body = (await request.json().catch(() => ({}))) as {
       workspaceId?: string;
       name?: string;

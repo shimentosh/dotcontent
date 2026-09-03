@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import { getSeries, updateSeries } from "@/lib/server/repos/series";
 import { FetchError, fetchSource } from "@/lib/server/services/webfetch";
 import { caught, fail, ok, ready } from "@/lib/server/http";
@@ -18,6 +19,7 @@ export async function POST(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id } = await params;
     if (!(await getSeries(id))) return fail("No such series", 404);
 
@@ -48,6 +50,7 @@ export async function DELETE(
 ) {
   try {
     await ready();
+    await requireUser();
     const { id } = await params;
     const s = await updateSeries(id, { source: null, briefFrom: "typed" });
     return s ? ok(s) : fail("No such series", 404);

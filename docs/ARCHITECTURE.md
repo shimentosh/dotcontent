@@ -126,9 +126,12 @@ the reader shows an EDITED mark, and regenerating clears both.
 
 ## Auth
 
-`middleware.ts` gates everything except `/login`, `/signup` and `/api/auth/*`.
-It only checks that a session cookie is **present** — validity is checked by
-`requireUser()` in every route handler. Sessions are rows in Postgres; signup
+`proxy.ts` — Next 16 renamed the `middleware` convention — gates everything
+except `/login`, `/signup` and `/api/auth/*`. It only checks that a session
+cookie is **present**, so validity is `requireUser()`'s job, and every route
+handler outside `/api/auth/*` calls it. That was a claim rather than a fact
+until it was checked: fifteen routes did not, and `contentos_session=anything`
+read and wrote the whole workspace. Sessions are rows in Postgres; signup
 is open only while `users` is empty (`signupOpen()`), so a second account can
 only be made by an existing one.
 
