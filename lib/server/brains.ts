@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { run, toolStatuses } from "@/lib/server/tools";
+import { cliHome, run, toolStatuses } from "@/lib/server/tools";
 import { getSecret, getSettings } from "@/lib/server/repos/settings";
 
 /**
@@ -335,7 +335,7 @@ Read nothing else on this machine — these files and nothing beside them.`
       "--append-system-prompt",
       req.system,
     ],
-    { input: user, timeout: req.timeoutMs ?? 600_000 },
+    { input: user, cwd: cliHome(), timeout: req.timeoutMs ?? 600_000 },
   );
   if (code === 0 && out.trim()) return out.trim();
   throw new Error(err.trim() || `claude exited ${code} with no output`);
@@ -384,6 +384,7 @@ THE ${files.length} FRAMES ARE ATTACHED TO THIS MESSAGE, in the order listed abo
       ],
       {
         input: `${req.system}\n\n---\n\n${user}`,
+        cwd: cliHome(),
         timeout: req.timeoutMs ?? 600_000,
       },
     );
@@ -423,7 +424,7 @@ ${frames.map((frame, i) => `${i + 1}. @${frame}`).join("\n")}`
       "-p",
       system,
     ],
-    { input: req.user, timeout: req.timeoutMs ?? 600_000 },
+    { input: req.user, cwd: cliHome(), timeout: req.timeoutMs ?? 600_000 },
   );
   if (code === 0 && out.trim()) return out.trim();
   throw new Error(lastUseful(err) || `gemini exited ${code} with no output`);

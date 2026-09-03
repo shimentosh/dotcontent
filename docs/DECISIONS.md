@@ -120,6 +120,22 @@ Runs are untouched; `runs.topic_id` outlives the topic and a moved topic keeps
 its id. The Series screen marks duplicate rows and offers the merge; which copy
 is the real one is the user's call.
 
+## A model CLI is started in an empty directory, never in the repo
+
+`claude`, `codex` and `gemini` read the project they are started in — CLAUDE.md,
+AGENTS.md, anything in the working directory and its parents — and fold it into
+the conversation. Spawned from the repo root, every script this app ever wrote
+had this codebase's developer notes in the model's context. Spawned from `api/`
+after the move to NestJS, the CLI walked up to the repo's CLAUDE.md, was refused
+the `@AGENTS.md` it includes ("outside the granted working directory"), and put
+a paragraph about the refusal at the top of an English script — which is how
+the older, quieter version of the problem was found.
+
+`cliHome()` in lib/server/tools.ts is an empty directory under the data root,
+and every model CLI is spawned with it as `cwd`. Nothing about this codebase
+reaches a content run. The API path never had the problem; it sends only the
+prompt.
+
 ## The backend is a NestJS service, and the browser calls it directly
 
 The API moved out of Next's route handlers into `api/`, a NestJS 12 service on
