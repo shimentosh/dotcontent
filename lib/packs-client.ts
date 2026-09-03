@@ -1,5 +1,6 @@
 "use client";
 
+import { apiFetch } from "@/lib/api-base";
 import type { PackDraft } from "@/lib/data";
 import type { Pack as UiPack, PackStatus } from "@/lib/packs";
 import { json } from "@/lib/api-json";
@@ -157,14 +158,14 @@ export function fromDraft(draft: PackDraft): PackBody {
 }
 
 export const listPacks = () =>
-  fetch("/api/packs", { cache: "no-store" }).then((r) => json<ApiPack[]>(r));
+  apiFetch("/api/packs", { cache: "no-store" }).then((r) => json<ApiPack[]>(r));
 
 /** One pack in the shape a run executes — sections, tiers, dependency arrows. */
 export const getPack = (slug: string) =>
-  fetch(`/api/packs/${slug}`, { cache: "no-store" }).then((r) => json<ApiPack>(r));
+  apiFetch(`/api/packs/${slug}`, { cache: "no-store" }).then((r) => json<ApiPack>(r));
 
 export const createPack = (body: PackBody) =>
-  fetch("/api/packs", {
+  apiFetch("/api/packs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -172,16 +173,16 @@ export const createPack = (body: PackBody) =>
 
 /** Put a pack back the way it shipped. Only for one that ships. */
 export const restorePack = (slug: string) =>
-  fetch(`/api/packs/${slug}`, { method: "POST" }).then((r) => json<ApiPack>(r));
+  apiFetch(`/api/packs/${slug}`, { method: "POST" }).then((r) => json<ApiPack>(r));
 
 export const patchPack = (slug: string, body: unknown) =>
-  fetch(`/api/packs/${slug}`, {
+  apiFetch(`/api/packs/${slug}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   }).then((r) => json<ApiPack>(r));
 
 export const removePack = (slug: string) =>
-  fetch(`/api/packs/${slug}`, { method: "DELETE" }).then((r) =>
+  apiFetch(`/api/packs/${slug}`, { method: "DELETE" }).then((r) =>
     json<{ ok: boolean }>(r),
   );

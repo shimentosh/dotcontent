@@ -1,5 +1,6 @@
 "use client";
 
+import { apiFetch } from "@/lib/api-base";
 import type { Run, RunSection } from "@/lib/server/repos/runs";
 import { json } from "@/lib/api-json";
 
@@ -22,21 +23,21 @@ export const createRun = (body: {
   inputs: Record<string, string>;
   title?: string;
 }) =>
-  fetch("/api/runs", {
+  apiFetch("/api/runs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   }).then((r) => json<Run>(r));
 
 export const getRun = (id: string) =>
-  fetch(`/api/runs/${id}`, { cache: "no-store" }).then((r) => json<Run>(r));
+  apiFetch(`/api/runs/${id}`, { cache: "no-store" }).then((r) => json<Run>(r));
 
 export const listRuns = (workspaceId?: string) =>
-  fetch(`/api/runs${workspaceId ? `?workspaceId=${workspaceId}` : ""}`, { cache: "no-store" }).then((r) => json<Run[]>(r));
+  apiFetch(`/api/runs${workspaceId ? `?workspaceId=${workspaceId}` : ""}`, { cache: "no-store" }).then((r) => json<Run[]>(r));
 
 /** Mark a run used, ready or ignored. */
 export const setRunDecision = (id: string, decision: Run["decision"]) =>
-  fetch(`/api/runs/${id}`, {
+  apiFetch(`/api/runs/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ decision }),
@@ -44,7 +45,7 @@ export const setRunDecision = (id: string, decision: Run["decision"]) =>
 
 /** Delete a run and everything written into it. The topic stays. */
 export const deleteRun = (id: string) =>
-  fetch(`/api/runs/${id}`, { method: "DELETE" }).then((r) =>
+  apiFetch(`/api/runs/${id}`, { method: "DELETE" }).then((r) =>
     json<{ ok: boolean }>(r),
   );
 
@@ -66,18 +67,18 @@ export const deleteRun = (id: string) =>
  * retry from a plain start.
  */
 export const startWriting = (runId: string) =>
-  fetch(`/api/runs/${runId}/start`, { method: "POST" }).then((r) =>
+  apiFetch(`/api/runs/${runId}/start`, { method: "POST" }).then((r) =>
     json<{ started: boolean; running: boolean; retried: number }>(r),
   );
 
 /** Is this run being written right now, by anyone? */
 export const isWriting = (runId: string) =>
-  fetch(`/api/runs/${runId}/start`, { cache: "no-store" }).then((r) =>
+  apiFetch(`/api/runs/${runId}/start`, { cache: "no-store" }).then((r) =>
     json<{ running: boolean }>(r),
   );
 
 export const writeSection = (runId: string, sectionId: string) =>
-  fetch(`/api/runs/${runId}/sections/${sectionId}`, { method: "POST" }).then(
+  apiFetch(`/api/runs/${runId}/sections/${sectionId}`, { method: "POST" }).then(
     (r) => json<Run>(r),
   );
 
@@ -93,7 +94,7 @@ export const editSection = (
   sectionId: string,
   content: string,
 ) =>
-  fetch(`/api/runs/${runId}/sections/${sectionId}`, {
+  apiFetch(`/api/runs/${runId}/sections/${sectionId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content }),

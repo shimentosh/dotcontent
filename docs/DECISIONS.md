@@ -120,6 +120,36 @@ Runs are untouched; `runs.topic_id` outlives the topic and a moved topic keeps
 its id. The Series screen marks duplicate rows and offers the merge; which copy
 is the real one is the user's call.
 
+## The backend is a NestJS service, and the browser calls it directly
+
+The API moved out of Next's route handlers into `api/`, a NestJS 12 service on
+its own port. It was a deliberate choice against the smaller option — Next's
+handlers were fine — made so the API is a thing of its own: reachable from
+something other than this web app, deployable and scaled on its own, and with
+the run driver in a process that exists to be long-lived.
+
+What did NOT move is the point of the layout: `lib/server` — the repos, the
+services, the prompt builder, the ingest — is shared. A controller is a thin
+translation from HTTP to those functions, ten of them in one module, because
+the "providers" already exist. Only one line of the old backend was tied to
+Next (`cookies()` in auth.ts), and it is gone.
+
+The browser goes cross-origin, on purpose, rather than through a Next
+rewrite: `lib/api-base.ts` names the API (`NEXT_PUBLIC_API_URL`) and every
+client call uses `apiFetch`, which sends credentials. CORS on the API allows
+exactly `WEB_ORIGIN`. The session cookie is set by the API with
+`COOKIE_DOMAIN` so the web origin's proxy can see it too. The cost is a
+second hostname and a cookie domain to get right; the gain is that the API
+is the API for anything, not a private back door of one Next app.
+
+Auth is closed by default: `SessionGuard` is a global guard, and a route is
+open only with `@Public()`. That is the shape the audit asked for — the hole
+it found was fifteen handlers that each had to remember one line.
+
+The two processes share one `.data` root (`CONTENTOS_DATA_DIR`), because the
+API started from `api/` would otherwise keep its own `./.data` that the web
+app has never heard of.
+
 ## An upload is streamed to disk and capped, never buffered
 
 `await file.arrayBuffer()` held the whole upload in memory, then `Buffer.from`

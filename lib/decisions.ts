@@ -1,5 +1,6 @@
 "use client";
 
+import { apiFetch } from "@/lib/api-base";
 import { useSyncExternalStore } from "react";
 
 import {
@@ -78,7 +79,7 @@ export function setDecision(
   if (doc.runId) {
     void setRunDecision(doc.runId, decision).catch(revert);
   } else if (doc.topicId) {
-    void fetch(`/api/topics/${doc.topicId}`, {
+    void apiFetch(`/api/topics/${doc.topicId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ decision }),

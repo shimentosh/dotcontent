@@ -1,5 +1,4 @@
 import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
-import { cookies } from "next/headers";
 
 import { id, iso, one, q } from "@/lib/server/db/client";
 import { SESSION_COOKIE } from "@/lib/session";
@@ -400,17 +399,23 @@ export const sweepSessions = () =>
 
 /* ── The current request ────────────────────────────────────────────────── */
 
-export async function currentSessionId() {
-  return (await cookies()).get(SESSION_COOKIE)?.value ?? "";
+/*
+ * Framework-neutral on purpose.
+ *
+ * These used to read Next's cookie jar themselves, which tied the whole auth
+ * module to one runtime. The NestJS API and the Next route handlers each know
+ * how to get the cookie out of their own request; what they share is what to
+ * do with it, which is this.
+ */
+
+/** The user behind a session id, or null. */
+export async function currentUser(sid: string) {
+  return sessionUser(sid);
 }
 
-export async function currentUser() {
-  return sessionUser(await currentSessionId());
-}
-
-/** The user, or a 401 the route handler turns into a response. */
-export async function requireUser() {
-  const user = await currentUser();
+/** The user, or a 401 the caller turns into a response. */
+export async function requireUser(sid: string) {
+  const user = await currentUser(sid);
   if (!user) throw new AuthError("Sign in first", 401);
   return user;
 }

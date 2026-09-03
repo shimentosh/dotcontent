@@ -1,5 +1,6 @@
 "use client";
 
+import { apiFetch } from "@/lib/api-base";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 
@@ -370,7 +371,7 @@ function Account() {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/auth/me", { cache: "no-store" })
+    void apiFetch("/api/auth/me", { cache: "no-store" })
       .then((r) => r.json())
       .then((body: { user?: { email: string; name: string } | null }) => {
         if (!cancelled) setMe(body.user ?? null);
@@ -455,7 +456,7 @@ function Account() {
           role="menuitem"
           onClick={() => {
             setOpen(false);
-            void fetch("/api/auth/logout", { method: "POST" }).then(() =>
+            void apiFetch("/api/auth/logout", { method: "POST" }).then(() =>
               router.replace("/login"),
             );
           }}

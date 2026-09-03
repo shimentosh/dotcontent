@@ -1,5 +1,6 @@
 "use client";
 
+import { apiFetch } from "@/lib/api-base";
 import { useCallback, useEffect, useState } from "react";
 import { json } from "@/lib/api-json";
 
@@ -61,12 +62,12 @@ export type Wiring = {
 };
 
 export const loadWiring = (recheck = false) =>
-  fetch(`/api/integrations${recheck ? "?recheck=1" : ""}`, {
+  apiFetch(`/api/integrations${recheck ? "?recheck=1" : ""}`, {
     cache: "no-store",
   }).then((r) => json<Wiring>(r));
 
 export const patchWiring = (body: Partial<Settings>) =>
-  fetch("/api/integrations", {
+  apiFetch("/api/integrations", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -84,36 +85,36 @@ export type BrainTest = {
 
 /** Actually send a prompt. The only check that proves a model works. */
 export const testBrain = (id: string) =>
-  fetch("/api/integrations/test", {
+  apiFetch("/api/integrations/test", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id }),
   }).then((r) => json<BrainTest>(r));
 
 export const loadSettings = () =>
-  fetch("/api/settings", { cache: "no-store" }).then((r) => json<Settings>(r));
+  apiFetch("/api/settings", { cache: "no-store" }).then((r) => json<Settings>(r));
 
 export const patchSettings = (body: Partial<Settings>) =>
-  fetch("/api/settings", {
+  apiFetch("/api/settings", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   }).then((r) => json<Settings>(r));
 
 export const loadKeys = () =>
-  fetch("/api/settings/keys", { cache: "no-store" }).then((r) =>
+  apiFetch("/api/settings/keys", { cache: "no-store" }).then((r) =>
     json<Record<string, string>>(r),
   );
 
 export const saveKey = (id: string, value: string) =>
-  fetch("/api/settings/keys", {
+  apiFetch("/api/settings/keys", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id, value }),
   }).then((r) => json<Record<string, string>>(r));
 
 export const removeKey = (id: string) =>
-  fetch(`/api/settings/keys?id=${encodeURIComponent(id)}`, {
+  apiFetch(`/api/settings/keys?id=${encodeURIComponent(id)}`, {
     method: "DELETE",
   }).then((r) => json<Record<string, string>>(r));
 

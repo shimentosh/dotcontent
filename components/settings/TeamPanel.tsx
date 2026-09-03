@@ -1,5 +1,6 @@
 "use client";
 
+import { apiFetch } from "@/lib/api-base";
 import { useCallback, useEffect, useState } from "react";
 
 import { json } from "@/lib/api-json";
@@ -57,13 +58,13 @@ export function TeamPanel() {
   const [copied, setCopied] = useState("");
 
   const load = useCallback(() => {
-    void fetch("/api/invites", { cache: "no-store" })
+    void apiFetch("/api/invites", { cache: "no-store" })
       .then((r) => json<Invite[]>(r))
       .then(setInvites)
       .catch((e: unknown) =>
         setError(e instanceof Error ? e.message : "Could not read the invites"),
       );
-    void fetch("/api/users", { cache: "no-store" })
+    void apiFetch("/api/users", { cache: "no-store" })
       .then((r) => json<Person[]>(r))
       .then(setPeople)
       .catch(() => setPeople([]));
@@ -79,7 +80,7 @@ export function TeamPanel() {
     setBusy(true);
     setError("");
     try {
-      const made = await fetch("/api/invites", {
+      const made = await apiFetch("/api/invites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim(), note: note.trim() }),
@@ -102,13 +103,13 @@ export function TeamPanel() {
 
   const revoke = async (token: string) => {
     setInvites((prev) => (prev ?? []).filter((i) => i.token !== token));
-    await fetch(`/api/invites/${token}`, { method: "DELETE" }).catch(() => {});
+    await apiFetch(`/api/invites/${token}`, { method: "DELETE" }).catch(() => {});
     load();
   };
 
   const removePerson = async (person: Person) => {
     setPeople((prev) => (prev ?? []).filter((p) => p.id !== person.id));
-    await fetch(`/api/users/${person.id}`, { method: "DELETE" }).catch(() => {});
+    await apiFetch(`/api/users/${person.id}`, { method: "DELETE" }).catch(() => {});
     load();
   };
 

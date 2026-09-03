@@ -31,7 +31,17 @@ import {
  * failing the run: metadata alone is still far more than nothing.
  */
 
-const DATA = path.join(process.cwd(), ".data", "sources");
+/**
+ * Where downloads live.
+ *
+ * Off CONTENTOS_DATA_DIR rather than the working directory: the API is its
+ * own process now, started from api/, and "./.data" from there is a second
+ * folder the web app has never heard of. One root, named once, for both.
+ */
+export const DATA_ROOT = path.resolve(
+  process.env.CONTENTOS_DATA_DIR ?? path.join(process.cwd(), ".data"),
+);
+const DATA = path.join(DATA_ROOT, "sources");
 
 /** How many stills to take. Enough to see a flow, few enough to read. */
 const FRAME_COUNT = 8;

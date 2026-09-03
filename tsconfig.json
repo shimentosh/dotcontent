@@ -38,7 +38,5 @@
     ".next-check/types/**/*.ts",
     ".next-check/dev/types/**/*.ts"
   ],
-  "exclude": [
-    "node_modules"
-  ]
+  "exclude": ["node_modules", "api", ".next-check"]
 }

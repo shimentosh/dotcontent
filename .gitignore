@@ -57,3 +57,7 @@ next-env.d.ts
 
 # the real production secrets
 .env.production
+
+# the NestJS API has its own install and build output
+api/node_modules
+api/dist

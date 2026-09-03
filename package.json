@@ -15,7 +15,10 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run typecheck && npm run lint && npm run test",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run api:typecheck",
+    "api:dev": "npm run dev --prefix api",
+    "api:build": "npm run build --prefix api",
+    "api:typecheck": "npm run typecheck --prefix api",
     "start": "next start",
     "lint": "eslint"
   },

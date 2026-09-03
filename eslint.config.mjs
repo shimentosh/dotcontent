@@ -18,6 +18,10 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Vendored copy of the source design canvas — reference only, not built.
     "design/**",
+    // The NestJS API's install and compiled output. api/src is linted; the
+    // CommonJS tsc writes into dist is not ours to style.
+    "api/node_modules/**",
+    "api/dist/**",
   ]),
 ]);
 

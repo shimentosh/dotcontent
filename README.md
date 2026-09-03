@@ -6,9 +6,9 @@ production dashboard where **topics** feed **packs**, packs run to produce
 
 ```bash
 npm run db:up         # Postgres in Docker, on 5437
-./start.sh            # dev server on http://localhost:3333
-./start.sh prod       # production build, then serve it on 3333
-PORT=4000 ./start.sh  # any other port
+./start.sh            # the NestJS API on :4000 and the Next dev server on :3333
+./start.sh prod       # production builds of both, then serve both
+PORT=3400 ./start.sh  # any other web port (API_PORT for the API's)
 ```
 
 `./start.sh` brings the database up itself and says so if it cannot — every
@@ -29,7 +29,10 @@ which default to port 3000.
 
 ## Stack
 
-Next.js 16 (App Router, Turbopack) · React 19 · TypeScript. No CSS framework:
+**Frontend:** Next.js 16 (App Router, Turbopack) · React 19 · TypeScript.
+**Backend:** NestJS 12 in `api/`, its own process on port 4000, sharing
+`lib/server` (the repos, the run driver, the ingest) with the root. The
+browser calls it directly at `NEXT_PUBLIC_API_URL`; there is no `app/api`. No CSS framework:
 the design is expressed in inline styles, matching the source canvas one
 declaration at a time, with shared fragments in [lib/theme.ts](lib/theme.ts).
 Fonts are self-hosted through `next/font` (Inter, Inter Tight, JetBrains Mono,
@@ -96,7 +99,10 @@ matters lives in React state any more.
 
 ```
 docker-compose.yml            Postgres 17 on 5437, one named volume
-proxy.ts                      the lock on the front door (Next 16's middleware)
+proxy.ts                      the front door: pages need a session cookie
+api/src/main.ts               the NestJS service: CORS, cookies, migrate + seed
+api/src/common/               SessionGuard (global, closed by default), errors
+api/src/<feature>/            one controller per feature, over lib/server
 lib/server/db/schema.ts       the schema, as an ordered list of migrations
 lib/server/db/client.ts       the pool, `q` / `one` / `tx`, and `ready()`
 lib/server/auth.ts            scrypt passwords, session rows, `requireUser`
@@ -109,9 +115,6 @@ lib/server/services/          the rules that are not the database's job:
                               researcher that reads frames
 lib/packs/enbn-website.ts     the shipped pack: rules, 12 sections, instructions
 lib/server/prompt.ts          system = voice + rules, user = source + inputs + deps
-app/api/                      auth, settings, integrations, sources, workspaces,
-                              series, topics, packs, runs, tools, research —
-                              every route outside auth calls requireUser()
 ```
 
 ### Signing in

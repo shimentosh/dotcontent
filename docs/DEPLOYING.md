@@ -1,6 +1,7 @@
 # Putting this online for a team
 
-One server runs the app and its database. Everyone opens the same URL, signs in
+One server runs the web app, the API and the database — three containers
+behind one reverse proxy. Everyone opens the same URL, signs in
 with their own account, and sees the same workspace — the same templates,
 series and content, live. There is nothing to seed: shared data is shared
 because it is one database, not because a copy was handed out.
@@ -13,7 +14,13 @@ subscription. A server has no CLI and no login, so it needs an
 missing. That is a real cost per run, and the reason to keep an eye on who runs
 what.
 
-**Not Vercel.** A run is a loop inside the server process (`driveRun`) that
+**Two hostnames.** The web app answers on `APP_HOST` and the NestJS API on
+`API_HOST`; the browser calls the API directly, cross-origin. The session
+cookie is set by the API and read by both, which works because both hosts sit
+under `COOKIE_DOMAIN` (`.content.yourcompany.com`). Put them on unrelated
+domains and you need `COOKIE_SAMESITE=none` — and you should not.
+
+**Not Vercel.** A run is a loop inside the API process (`driveRun`) that
 takes minutes and shells out to local binaries. Serverless kills both. A small
 VPS — Hetzner, DigitalOcean, anything with 2GB of RAM — is the shape this wants.
 
@@ -31,9 +38,14 @@ cp .env.production.example .env.production   # fill in every line
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-That brings up three containers: Postgres, the app, and Traefik, which gets a
-TLS certificate for `APP_HOST` on its own. Migrations run before the app takes
-traffic — the `command:` in the compose file does that, not you.
+That brings up four containers: Postgres, the API, the web app, and Traefik,
+which gets a TLS certificate for `APP_HOST` and `API_HOST` on its own.
+Migrations and the seed run inside the API as it starts, before it listens —
+not something you run.
+
+The web app learns the API's address at **build** time (`NEXT_PUBLIC_API_URL`
+is a build arg in the compose file), so changing `API_HOST` means rebuilding
+the `app` image, not restarting it.
 
 Open `https://APP_HOST`. The first account you make is the owner.
 
