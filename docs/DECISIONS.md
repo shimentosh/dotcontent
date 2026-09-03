@@ -136,6 +136,26 @@ and every model CLI is spawned with it as `cwd`. Nothing about this codebase
 reaches a content run. The API path never had the problem; it sends only the
 prompt.
 
+That alone was not enough. From an empty directory the CLI still decided
+there must be a "project's template file" it could not open, and said so at
+the top of the script — three times, in three wordings. Four things together
+fixed it, and each was needed:
+
+- `--exclude-dynamic-system-prompt-sections`: the default prompt's working
+  directory, git status and "you are in a project" framing are what made a
+  content run behave like an agent hunting for files. Replacing the whole
+  system prompt (`--system-prompt`) was tried first and the CLI never
+  finished — ten minutes, no answer — because the default is also what tells
+  print mode how to end. So: append, minus the dynamic sections.
+- `--disallowedTools Read,Glob,Grep,Bash,Edit,Write,NotebookEdit` unless
+  frames are handed over as files: an allowed-list still lets the agent
+  attempt a denied tool and then narrate the refusal.
+- `CLI_GUARD`, appended to the pack's prompt on the CLI paths only: there is
+  nothing to open, do not look, never mention files or permissions.
+- `scrubPreamble()`: if a leading paragraph is still about the tool rather
+  than the topic, it is cut before the section is saved. Only the first
+  paragraph, only when it reads as one.
+
 ## The backend is a NestJS service, and the browser calls it directly
 
 The API moved out of Next's route handlers into `api/`, a NestJS 12 service on
