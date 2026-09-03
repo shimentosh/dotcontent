@@ -1,5 +1,6 @@
 "use client";
 
+import { apiFetch, api } from "@/lib/api-base";
 import type { Source } from "@/lib/server/repos/sources";
 import { json } from "@/lib/api-json";
 
@@ -24,17 +25,17 @@ export const fetchSource = (body: {
   workspaceId?: string | null;
   refresh?: boolean;
 }) =>
-  fetch("/api/sources", {
+  apiFetch("/api/sources", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   }).then((r) => json<Source>(r));
 
 export const getSource = (id: string) =>
-  fetch(`/api/sources/${id}`, { cache: "no-store" }).then((r) => json<Source>(r));
+  apiFetch(`/api/sources/${id}`, { cache: "no-store" }).then((r) => json<Source>(r));
 
 export const listSources = (workspaceId?: string) =>
-  fetch(`/api/sources${workspaceId ? `?workspaceId=${workspaceId}` : ""}`, {
+  apiFetch(`/api/sources${workspaceId ? `?workspaceId=${workspaceId}` : ""}`, {
     cache: "no-store",
   }).then((r) => json<Source[]>(r));
 
@@ -45,9 +46,9 @@ export const listSources = (workspaceId?: string) =>
  * record, which is what the history is a list of.
  */
 export const removeSource = (id: string) =>
-  fetch(`/api/sources/${id}`, { method: "DELETE" }).then((r) =>
+  apiFetch(`/api/sources/${id}`, { method: "DELETE" }).then((r) =>
     json<{ ok: boolean }>(r),
   );
 
 export const frameUrl = (sourceId: string, file: string) =>
-  `/api/sources/${sourceId}/frames/${file}`;
+  api(`/api/sources/${sourceId}/frames/${file}`);

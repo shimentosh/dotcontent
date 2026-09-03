@@ -6,9 +6,9 @@ production dashboard where **topics** feed **packs**, packs run to produce
 
 ```bash
 npm run db:up         # Postgres in Docker, on 5437
-./start.sh            # dev server on http://localhost:3333
-./start.sh prod       # production build, then serve it on 3333
-PORT=4000 ./start.sh  # any other port
+./start.sh            # the NestJS API on :4000 and the Next dev server on :3333
+./start.sh prod       # production builds of both, then serve both
+PORT=3400 ./start.sh  # any other web port (API_PORT for the API's)
 ```
 
 `./start.sh` brings the database up itself and says so if it cannot — every
@@ -29,7 +29,10 @@ which default to port 3000.
 
 ## Stack
 
-Next.js 16 (App Router, Turbopack) · React 19 · TypeScript. No CSS framework:
+**Frontend:** Next.js 16 (App Router, Turbopack) · React 19 · TypeScript.
+**Backend:** NestJS 12 in `api/`, its own process on port 4000, sharing
+`lib/server` (the repos, the run driver, the ingest) with the root. The
+browser calls it directly at `NEXT_PUBLIC_API_URL`; there is no `app/api`. No CSS framework:
 the design is expressed in inline styles, matching the source canvas one
 declaration at a time, with shared fragments in [lib/theme.ts](lib/theme.ts).
 Fonts are self-hosted through `next/font` (Inter, Inter Tight, JetBrains Mono,
@@ -45,11 +48,15 @@ and Noto Sans Bengali for the Bangla script screens).
 | `/content/[topic]` | One document |
 | `/packs` | Pack library — the shipped pack and anything written here |
 | `/pack/[slug]` | One pack: its real sections, its rules, what it asks for |
-| `/builder` | Writing a pack — saves to the database |
+| `/builder` | Writing a new template — saving moves it to its own URL |
+| `/builder/[slug]` | Editing that template |
 | `/runs/[id]` | A run as it happens, section by section |
 | `/login`, `/signup` | Sign in; claim the console (open only while it has no owner) |
 | `/integrations` | What this machine can actually reach, probed live |
-| `/tools`, `/settings` | Tools; preferences, keys and the account |
+| `/tools` | This workspace's bench, grouped by category |
+| `/tools/manage` | Every tool: category, on/off, which workspaces it stands in |
+| `/tools/[tool]` | One tool — Content Research, or the video researcher |
+| `/settings` | Preferences, keys, team and the account |
 
 Three overlays render above any route: the **Run Pack** sheet, the **Add
 Section** sheet, and the **command palette** (`⌘K` / `Ctrl+K`, `Esc` to close).
@@ -66,14 +73,20 @@ components/
   views/             one component per screen
   overlays/          run-setup, add-section, command palette
   ui/                Hov (hover/press styles), Popover, Icons
+  tools/             the interactive pieces of a tool's screen (FramePicker)
 lib/
   data.ts            what is left of the design's strings and numbers
   store.tsx          client state, hydrated from the API and written back
+  use-*.ts           a screen's data logic as a hook (content list, run document)
+  slug.ts            the one rule for turning a name into part of a URL
   packs-client.ts    the pack API, and the brief <-> runtime translation
+  packs-transfer.ts  a template as a file: export, import, validation
   runs-client.ts     the run API
+  tools-client.ts    the tool bench, uploads, and the researcher
   theme.ts           fonts, colors, repeated style fragments
   config.ts          advancedNav / runSpeed, the canvas's two props
   server/            everything that touches the database (see below)
+tests/               vitest, pure functions only — `npm run check`
 design/              the imported source canvas, for reference
 ```
 
@@ -86,7 +99,10 @@ matters lives in React state any more.
 
 ```
 docker-compose.yml            Postgres 17 on 5437, one named volume
-middleware.ts                 the lock on the front door
+proxy.ts                      the front door: pages need a session cookie
+api/src/main.ts               the NestJS service: CORS, cookies, migrate + seed
+api/src/common/               SessionGuard (global, closed by default), errors
+api/src/<feature>/            one controller per feature, over lib/server
 lib/server/db/schema.ts       the schema, as an ordered list of migrations
 lib/server/db/client.ts       the pool, `q` / `one` / `tx`, and `ready()`
 lib/server/auth.ts            scrypt passwords, session rows, `requireUser`
@@ -94,12 +110,11 @@ lib/server/tools.ts           what is installed, by running it
 lib/server/brains.ts          the four models, each over a CLI or an API
 lib/server/repos/             rows in, objects out — workspaces, series, packs,
                               runs, sources, settings
-lib/server/services/          the rules that are not the database's job,
-                              including the yt-dlp / ffmpeg / whisper ingest
+lib/server/services/          the rules that are not the database's job:
+                              runs, the yt-dlp / ffmpeg / whisper ingest, the
+                              researcher that reads frames
 lib/packs/enbn-website.ts     the shipped pack: rules, 12 sections, instructions
 lib/server/prompt.ts          system = voice + rules, user = source + inputs + deps
-app/api/                      auth, settings, integrations, sources, workspaces,
-                              series, topics, packs, runs
 ```
 
 ### Signing in

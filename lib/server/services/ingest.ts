@@ -1,10 +1,14 @@
 import fs from "node:fs/promises";
+import { createWriteStream } from "node:fs";
 import path from "node:path";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 import { requireTool, run, toolStatus } from "@/lib/server/tools";
 import { getSettings } from "@/lib/server/repos/settings";
 import {
   createSource,
+  deleteSource,
   findByUrl,
   getSource,
   updateSource,
@@ -27,7 +31,17 @@ import {
  * failing the run: metadata alone is still far more than nothing.
  */
 
-const DATA = path.join(process.cwd(), ".data", "sources");
+/**
+ * Where downloads live.
+ *
+ * Off CONTENTOS_DATA_DIR rather than the working directory: the API is its
+ * own process now, started from api/, and "./.data" from there is a second
+ * folder the web app has never heard of. One root, named once, for both.
+ */
+export const DATA_ROOT = path.resolve(
+  process.env.CONTENTOS_DATA_DIR ?? path.join(process.cwd(), ".data"),
+);
+const DATA = path.join(DATA_ROOT, "sources");
 
 /** How many stills to take. Enough to see a flow, few enough to read. */
 const FRAME_COUNT = 8;
@@ -113,6 +127,17 @@ export async function ingest(input: {
 }
 
 /**
+ * The most an upload may be.
+ *
+ * A reel at 720p is tens of megabytes; a raw phone recording of one is a few
+ * hundred. Half a gigabyte is above anything this is for and below anything
+ * that would fill the disk by accident. Checked twice: on the declared size
+ * before a byte is read, and on the bytes as they arrive, because the first is
+ * a claim and the second is the truth.
+ */
+export const MAX_UPLOAD_BYTES = 512 * 1024 * 1024;
+
+/**
  * A video somebody had on their machine.
  *
  * The same pipeline as a link, minus the download: the file is written into
@@ -120,10 +145,16 @@ export async function ingest(input: {
  * one is. Footage that was never posted anywhere is the ordinary case for
  * research — a screen recording, a client's export, a reel saved months ago —
  * and it had no way in at all while a URL was the only input.
+ *
+ * Streamed to disk, not buffered. `await file.arrayBuffer()` holds the whole
+ * upload in memory — a 400MB recording became 400MB of heap in the route, then
+ * a second copy in the Buffer — and Node's process was the thing that fell
+ * over, not the request.
  */
 export async function ingestFile(input: {
   filename: string;
-  bytes: Buffer;
+  /** The upload's bytes, as the request hands them over. */
+  stream: ReadableStream<Uint8Array>;
   workspaceId?: string | null;
 }): Promise<Source> {
   const name = input.filename.trim() || "video.mp4";
@@ -144,7 +175,7 @@ export async function ingestFile(input: {
     const dir = dirFor(source.id);
     await fs.mkdir(dir, { recursive: true });
     const file = path.join(dir, `video${ext}`);
-    await fs.writeFile(file, input.bytes);
+    await writeCapped(input.stream, file);
 
     const seconds = await durationOf(file);
     const frames = await cutFrames(file, dir);
@@ -218,6 +249,59 @@ export async function addFrameAt(sourceId: string, at: number): Promise<Source> 
     (a, b) => a.at - b.at,
   );
   return (await updateSource(sourceId, { frames }))!;
+}
+
+/**
+ * Delete a source, and the download that went with it.
+ *
+ * The row and the directory are one thing: `deleteSource` on its own left a
+ * video and eight JPEGs on disk with nothing in the database pointing at them,
+ * so the only way to find them was to go looking. A reel is tens of megabytes
+ * — a few deletes and the disk is carrying a folder nobody can reach.
+ */
+export async function removeSource(sourceId: string) {
+  const gone = await deleteSource(sourceId);
+  // The files go whether or not the row was there: a half-deleted source is
+  // exactly the state this is meant to clean up.
+  await fs.rm(dirFor(sourceId), { recursive: true, force: true }).catch(() => {});
+  return gone;
+}
+
+/**
+ * Stream an upload to disk, refusing it the moment it passes the cap.
+ *
+ * Counted as the bytes pass rather than trusted from the header: a client can
+ * say 10MB and send 10GB. Past the limit the pipeline is torn down, the
+ * partial file removed, and the caller gets a sentence with the number in it.
+ */
+async function writeCapped(stream: ReadableStream<Uint8Array>, file: string) {
+  let seen = 0;
+  const cap = new Transform({
+    transform(chunk: Buffer, _enc, done) {
+      seen += chunk.length;
+      if (seen > MAX_UPLOAD_BYTES) {
+        done(
+          new IngestError(
+            `That file is over ${Math.round(MAX_UPLOAD_BYTES / 1048576)}MB — trim it or export it smaller.`,
+            413,
+          ),
+        );
+        return;
+      }
+      done(null, chunk);
+    },
+  });
+
+  try {
+    await pipeline(
+      Readable.fromWeb(stream as import("node:stream/web").ReadableStream),
+      cap,
+      createWriteStream(file),
+    );
+  } catch (e) {
+    await fs.rm(file, { force: true }).catch(() => {});
+    throw e;
+  }
 }
 
 /** The bytes of one frame, for a model that is going to look at it. */

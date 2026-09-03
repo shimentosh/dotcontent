@@ -1,5 +1,6 @@
 "use client";
 
+import { apiFetch } from "@/lib/api-base";
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
@@ -397,11 +398,11 @@ function Account({
   const [error, setError] = useState("");
 
   const refresh = () => {
-    void fetch("/api/auth/me", { cache: "no-store" })
+    void apiFetch("/api/auth/me", { cache: "no-store" })
       .then((r) => r.json())
       .then((b: { user?: typeof me }) => setMe(b.user ?? null))
       .catch(() => {});
-    void fetch("/api/auth/sessions", { cache: "no-store" })
+    void apiFetch("/api/auth/sessions", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : []))
       .then(setSessions)
       .catch(() => {});
@@ -409,13 +410,13 @@ function Account({
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/auth/me", { cache: "no-store" })
+    void apiFetch("/api/auth/me", { cache: "no-store" })
       .then((r) => r.json())
       .then((b: { user?: typeof me }) => {
         if (!cancelled) setMe(b.user ?? null);
       })
       .catch(() => {});
-    void fetch("/api/auth/sessions", { cache: "no-store" })
+    void apiFetch("/api/auth/sessions", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : []))
       .then((rows: Session[]) => {
         if (!cancelled) setSessions(rows);
@@ -429,7 +430,7 @@ function Account({
   async function changePassword() {
     setError("");
     setMessage("");
-    const res = await fetch("/api/auth/password", {
+    const res = await apiFetch("/api/auth/password", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ current, next }),
@@ -459,7 +460,7 @@ function Account({
         >
           <Button
             onClick={() => {
-              void fetch("/api/auth/logout", { method: "POST" }).then(onSignedOut);
+              void apiFetch("/api/auth/logout", { method: "POST" }).then(onSignedOut);
             }}
           >
             Sign out
@@ -538,7 +539,7 @@ function Account({
                   body: "Every other browser signed in to this console is signed out. This one stays.",
                   confirmLabel: "Sign out the others",
                   onConfirm: () => {
-                    void fetch("/api/auth/sessions", { method: "DELETE" }).then(
+                    void apiFetch("/api/auth/sessions", { method: "DELETE" }).then(
                       refresh,
                     );
                   },

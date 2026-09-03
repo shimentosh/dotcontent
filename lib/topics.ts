@@ -14,6 +14,7 @@
 import type { Decision } from "./content-docs";
 import { TOPIC_GROUPS } from "./data";
 import { normalizeName } from "@/lib/dedupe";
+import { slug } from "./slug";
 
 export type TopicStatus = "idea" | "generating" | "done";
 
@@ -197,12 +198,6 @@ const SEED_PACK: Record<string, string> = {
   AI: "ENBN Website Content",
   Business: "ENBN Website Content",
 };
-
-const slug = (s: string) =>
-  s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
 
 /** The series a fresh session starts with, lifted from the design data. */
 /**

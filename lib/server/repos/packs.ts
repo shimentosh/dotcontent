@@ -1,4 +1,5 @@
 import { id, iso, one, q } from "@/lib/server/db/client";
+import { slug } from "@/lib/slug";
 import { getRaw, setRaw } from "@/lib/server/repos/settings";
 import {
   PACKS as BUILTIN,
@@ -132,12 +133,9 @@ export type PackPatch = Partial<
 
 /** A slug from a name, made unique by suffix rather than by rejection. */
 async function freeSlug(name: string) {
-  const base =
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 48) || "pack";
+  // The same rule every other slug uses, capped so a pasted paragraph does not
+  // become a 400-character primary key.
+  const base = slug(name).slice(0, 48) || "pack";
   const taken = new Set([
     ...BUILTIN.map((p) => p.slug),
     ...(await q<{ slug: string }>("SELECT slug FROM packs")).map((r) => r.slug),

@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { mkdirSync } from "node:fs";
+import path from "node:path";
 
 /**
  * The binaries on this machine, and how to run them.
@@ -157,6 +159,29 @@ const quote = (value: string) =>
  * A flag is passed through as written — `--model` must not arrive quoted —
  * so anything that is not a bare flag is quoted.
  */
+/**
+ * Where a model CLI is started from: an empty directory of our own.
+ *
+ * `claude`, `codex` and `gemini` all read the project they are started in —
+ * CLAUDE.md, AGENTS.md, whatever sits in the working directory and its
+ * parents — and fold it into the conversation. Spawned from the repo, every
+ * script was quietly being written with this codebase's developer notes in
+ * the model's context. Spawned from api/, the CLI walked up to the repo's
+ * CLAUDE.md, was refused the `@AGENTS.md` it includes, and put a paragraph
+ * about the refusal at the top of an English script.
+ *
+ * So the CLI gets a directory with nothing in it, under the data root, and
+ * nothing about this codebase ever reaches a content run.
+ */
+export function cliHome() {
+  const root = path.resolve(
+    process.env.CONTENTOS_DATA_DIR ?? path.join(process.cwd(), ".data"),
+  );
+  const dir = path.join(root, "cli");
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 export function run(
   command: string,
   args: string[],

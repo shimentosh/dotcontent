@@ -21,6 +21,7 @@ export function RunSetupSheet() {
     setQuality,
     go,
     project,
+    projectsLoaded,
     seriesList,
     runTopicName,
     setRunTopicName,
@@ -129,9 +130,23 @@ export function RunSetupSheet() {
   const [fetching, setFetching] = useState(false);
   const [sourceError, setSourceError] = useState("");
 
+  /*
+   * Nothing is written against a workspace the server has not confirmed.
+   *
+   * The store opens on sample workspaces with empty ids until the first
+   * request answers. A run or a download in that window would go out with
+   * workspaceId "" and come back as a foreign-key error — reported as
+   * "something went wrong", on a button that looked ready.
+   */
+  const ready = projectsLoaded && Boolean(project.id);
+
   const pullSource = async () => {
     const url = sourceUrl.trim();
     if (!url || fetching) return;
+    if (!ready) {
+      setSourceError("Still loading the workspace — try again in a second.");
+      return;
+    }
     setFetching(true);
     setSourceError("");
     try {
@@ -155,6 +170,10 @@ export function RunSetupSheet() {
    */
   const start = async () => {
     if (starting) return;
+    if (!ready) {
+      setStartError("Still loading the workspace — try again in a second.");
+      return;
+    }
     setStarting(true);
     setStartError("");
     try {
@@ -741,6 +760,7 @@ export function RunSetupSheet() {
           <Hov
             as="span"
             onClick={start}
+            aria-disabled={!ready || undefined}
             style={{
               marginLeft: "auto",
               height: 34,
@@ -751,6 +771,7 @@ export function RunSetupSheet() {
               borderRadius: 10,
               fontSize: 12.5,
               fontWeight: 600,
+              opacity: ready ? 1 : 0.55,
               ...primary,
             }}
             hover={primaryHover}

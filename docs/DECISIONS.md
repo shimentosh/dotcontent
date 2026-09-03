@@ -120,6 +120,198 @@ Runs are untouched; `runs.topic_id` outlives the topic and a moved topic keeps
 its id. The Series screen marks duplicate rows and offers the merge; which copy
 is the real one is the user's call.
 
+## A run survives the API restarting
+
+"Writing" on a section means the model has been handed it and has not
+answered yet. Kill the process in between — a restart, a deploy, a closed
+terminal — and the row keeps saying so while the driver's memory of what it
+was doing dies with the process. A run sat on "Writing 01" for six minutes
+with nothing behind it, and nothing on the page could move it: Retry takes
+failed rows, Write the rest skips rows still marked writing.
+
+So a writing row with no driver is treated as what it is — not written.
+`requeueOrphans` puts such rows back to queued: for one run when `driveRun`
+starts on it (it is the only driver for that run, so a writing row cannot be
+a colleague's), and for every run as the API boots, when no driver can exist.
+Boot then drives each affected run again (`resumeOrphans`), because a run
+that was being written when the server went down was meant to finish.
+
+`updateTopic("generating")` moved inside the try in `writeSection` for the
+same reason: a topic that fails to update must not strand the section in
+writing with the failure recorded nowhere.
+
+## An unreachable API says so, in red, at the top
+
+With the backend on its own port, the console has a failure it never had
+before: the web app is up and the API is not. The store used to swallow that
+— the first fetch rejected, the catch was silent, and every screen rendered
+the design's sample workspaces with "0 templates" and "9 templates" beside a
+name nobody had typed. That reads as "my work is gone". It is not; nothing is
+answering on the port.
+
+`apiDown` on the store is set when the very first request cannot connect
+(not on a 401, not on a 503 from a running API). `ApiDownBanner` says which
+port, that the data is safe in the database, and how to start the service;
+the store asks every five seconds whether it is back and reloads the page
+when it is, so the banner leaves on its own.
+
+## A model CLI is started in an empty directory, and its system prompt arrives as a file
+
+Two findings, one story.
+
+`claude`, `codex` and `gemini` read the project they are started in — CLAUDE.md,
+AGENTS.md, anything in the working directory and its parents — and fold it into
+the conversation. Spawned from `api/` after the move to NestJS, the CLI walked
+up to the repo's CLAUDE.md, was refused the `@AGENTS.md` it includes, and put a
+paragraph about the refusal at the top of an English script. `cliHome()` in
+lib/server/tools.ts is an empty directory under the data root, and every model
+CLI is spawned with it as `cwd`; the filesystem tools are disallowed unless
+frames are handed over as files; a guard appended to the prompt says there is
+nothing to open; `scrubPreamble()` cuts a leading paragraph that is still about
+the tool rather than the topic.
+
+That fixed the narration and broke the scripts: every section came back as a
+report with bold metadata headers, the site named in the first line, and none
+of the pack's fixed spoken format. A four-way comparison on one prompt found
+why. The system prompt — the pack's rules, its purpose, the brand voice, six to
+eight thousand characters — was being passed to the CLI as a **command-line
+argument**, and on Windows a command line that long is cut off without a word.
+The fixed format, deep in the rules, never reached the model. The scripts that
+had come out right did so because the CLI, started in the repo, had opened
+`lib/packs/enbn-website.ts` itself and read the format off line 91 — the first
+line of one such script literally said so. Move the CLI to an empty directory
+and that accidental crutch was gone.
+
+So the system prompt is written to a file in the CLI's directory and passed
+with `--append-system-prompt-file`, whatever its length, and deleted after the
+call. The user prompt was already on stdin for the same reason. With that, the
+fixed opening and the series line come back in twenty seconds from the empty
+directory, with no narration. Two things were tried on the way and are not the
+fix: replacing the default system prompt (`--system-prompt`) — the CLI never
+finished, because the default is what tells print mode how to end — and
+stripping its dynamic sections, which changed nothing that mattered.
+
+## A template keeps its tiers and dependency arrows through the builder
+
+`fromDraft` wrote every section back as `tier: "standard", dependsOn: []`,
+because the builder edits neither. That is fine for a section written in the
+builder and ruinous for one that arrived with them: one Save on the shipped
+template and the Bangla script no longer received the English one, hashtags no
+longer saw the research, and the "high" sections ran at standard effort — with
+nothing on screen to say so. The export went through the same function, so a
+template file carried the same flattening to wherever it was imported.
+
+`DraftSection` now carries `tier` and `dependsOn` when it has them, and
+`fromDraft` writes them back; a section the builder created still gets the
+defaults. The export and the import round-trip both, and a test says so.
+
+## The backend is a NestJS service, and the browser calls it directly
+
+The API moved out of Next's route handlers into `api/`, a NestJS 12 service on
+its own port. It was a deliberate choice against the smaller option — Next's
+handlers were fine — made so the API is a thing of its own: reachable from
+something other than this web app, deployable and scaled on its own, and with
+the run driver in a process that exists to be long-lived.
+
+What did NOT move is the point of the layout: `lib/server` — the repos, the
+services, the prompt builder, the ingest — is shared. A controller is a thin
+translation from HTTP to those functions, ten of them in one module, because
+the "providers" already exist. Only one line of the old backend was tied to
+Next (`cookies()` in auth.ts), and it is gone.
+
+The browser goes cross-origin, on purpose, rather than through a Next
+rewrite: `lib/api-base.ts` names the API (`NEXT_PUBLIC_API_URL`) and every
+client call uses `apiFetch`, which sends credentials. CORS on the API allows
+exactly `WEB_ORIGIN`. The session cookie is set by the API with
+`COOKIE_DOMAIN` so the web origin's proxy can see it too. The cost is a
+second hostname and a cookie domain to get right; the gain is that the API
+is the API for anything, not a private back door of one Next app.
+
+Auth is closed by default: `SessionGuard` is a global guard, and a route is
+open only with `@Public()`. That is the shape the audit asked for — the hole
+it found was fifteen handlers that each had to remember one line.
+
+The two processes share one `.data` root (`CONTENTOS_DATA_DIR`), because the
+API started from `api/` would otherwise keep its own `./.data` that the web
+app has never heard of.
+
+## An upload is streamed to disk and capped, never buffered
+
+`await file.arrayBuffer()` held the whole upload in memory, then `Buffer.from`
+made a second copy — a 400MB recording was 800MB of heap in one route, and the
+Node process was what fell over, not the request. The upload route now hands
+`file.stream()` to the ingest, which pipes it to the source's directory through
+a counter that tears the pipeline down past `MAX_UPLOAD_BYTES` (512MB) and
+removes the partial file. The declared size is checked first, as a courtesy;
+the bytes are checked as they pass, because the header is a claim.
+
+## A screen's data logic lives in a hook beside it, not in the screen
+
+DocumentView and ContentGroupsView were each eighteen hundred lines: fetching,
+derived state, and layout in one file, so the subtlest rule on the page — which
+copy of a run to render, how facet counts are taken — sat between a tooltip and
+a border radius. Two hooks now hold what can be reasoned about without a
+screen:
+
+- `lib/use-run-document.ts` — the run, template, topic, document and reel a
+  document page is about, resolved from either address (`/runs/<id>` or
+  `/content/<topic>`), with the polled copy winning over the store's list.
+  `lib/use-run-watch.ts` underneath it is the poll.
+- `lib/use-content-list.ts` — every row on Content, the filters, the facet
+  counts taken with their own dimension left open, the sort, the writing strip.
+
+The views keep what only a view has: which menu is open, which row is being
+edited, rails made of glyphs. `components/tools/FramePicker.tsx` is the same
+cut on the researcher: the one part of that screen with real interaction, and
+it holds no state of its own so a new video cannot leave a stale selection.
+
+The line is "could a test exercise it without rendering". If yes, it belongs
+in the hook, and `tests/` is where its rules go.
+
+## Nothing writes against a workspace the server has not confirmed
+
+`projects` opens on the design's sample workspaces, whose ids are empty, so
+that every screen has a name to draw before the first request answers. A run
+or an upload in that second went out with `workspaceId: ""` and came back as a
+foreign-key error dressed as "something went wrong". `projectsLoaded` on the
+store says whether the list is the server's yet; the run sheet, the researcher
+and the tools manager refuse to write until it is, and say so.
+
+## Every route that touches data calls `requireUser`
+
+`proxy.ts` checks only that a session cookie is PRESENT — it cannot do more,
+because it runs before the database is reachable. Validity is the route's job,
+and for fifteen routes it was nobody's: `contentos_session=anything` listed
+every run, every template, every workspace, and could start runs that spend
+model credit. The comment in `proxy.ts` asserting the opposite is how it
+survived a year of reading that file.
+
+So: one `await requireUser()` under the `await ready()` in every handler except
+`/api/auth/login|logout|me|signup`, which are what you reach before you have a
+session. Adding a route means adding that line — the proxy will not save you,
+and nothing in a type or a test will notice.
+
+## One slug rule, in lib/slug.ts
+
+The same three lines lived in five files. Copies of a rule are a tidiness
+problem right up until two of them are load-bearing against each other, and two
+of these were: `/content/<slug>` finds its topic by comparing `slug(name)` to
+the address bar. A stray edit to one copy would not fail a build or a test — it
+would 404 one topic, silently, forever.
+
+## Tests cover what a screenshot cannot
+
+`tests/*.test.ts`, run by vitest, and deliberately narrow: no components, no
+database. They cover the pure functions the screens stand on — `statusOf` (the
+logic that had a dead run reading "Writing" for five days), the template
+import/export round trip, `interpolate`, `slug`, and the parse that has to
+survive a model wrapping its JSON in prose. `npm run check` is typecheck, lint
+and these together.
+
+Do not grow this into component tests. The screens are checked by opening them
+(`docs/BROWSER.md`); what these are for is the logic that fails silently, on one
+row, days later.
+
 ## A template travels as a file, and arrives as a draft
 
 Export writes the whole brief — rules, purpose, every section and its prompt,

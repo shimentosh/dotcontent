@@ -3,11 +3,19 @@
 ## Start it
 
 ```bash
-./start.sh          # Postgres, then the dev server on http://localhost:3333
-./start.sh prod     # production build, then serve it
+./start.sh          # Postgres, the NestJS API on :4000, then Next on :3333
+./start.sh prod     # production builds of both, then serve both
+npm run api:dev     # just the API (from the root; or `cd api && npm run dev`)
+npm run api:smoke   # six requests at the API: up, locked, answering, CORS
 npm run db:up       # just the database (docker compose, port 5437)
 npm run db:shell    # psql, inside the container
 ```
+
+The backend is a separate process: `api/` is a NestJS service, and the browser
+calls it directly at `NEXT_PUBLIC_API_URL` (default `http://localhost:4000`).
+Both have to be running for any screen to have data. The API shares
+`lib/server` with the root — a repo or service edited there is picked up by
+the API's ts-node on the next request, no restart needed.
 
 `npm run dev` is plain `next dev` on port 3000 — the app is normally on **3333**
 because `start.sh` puts it there. Assume 3333 unless told otherwise.
@@ -15,14 +23,23 @@ because `start.sh` puts it there. Assume 3333 unless told otherwise.
 ## Check it
 
 ```bash
-npm run typecheck       # tsc --noEmit
-npx eslint components lib app scripts
+npm run check           # typecheck, eslint, the tests, then the API's typecheck
+npm run test            # vitest, on its own
+npm run test:watch      # while you are in one of them
 npm run build:check     # a production build that does NOT touch the dev server
 ```
 
-Run typecheck and eslint after any edit. They are fast, and they catch the class
-of mistake that a screenshot never will — a renamed identifier, a filter key
-that no longer matches its type.
+Run `npm run check` after any edit. It is seconds, and it catches the class of
+mistake a screenshot never will — a renamed identifier, a filter key that no
+longer matches its type, a status that stops being derived the way the list
+expects.
+
+The tests are `tests/*.test.ts` and deliberately narrow: no components, no
+database. They cover the pure functions everything stands on — what status a
+row shows, what slug a URL resolves by, what an imported template turns into,
+what the researcher makes of a model's answer. Those are the ones that fail
+silently on one row, days later. Add to them when you touch that kind of
+logic; do not try to test the screens here.
 
 ## Never `next build` while the dev server is up
 

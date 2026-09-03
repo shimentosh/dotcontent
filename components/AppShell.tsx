@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 
 import { useStore } from "@/lib/store";
+import { ApiDownBanner } from "@/components/ApiDownBanner";
 import { Header } from "@/components/Header";
 import { Sidebar } from "@/components/Sidebar";
 import { AddSectionSheet } from "@/components/overlays/AddSectionSheet";
@@ -107,6 +108,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           minWidth: 0,
         }}
       >
+        <ApiDownBanner />
         <Header />
         <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
           {children}

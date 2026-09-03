@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# …except the template a fresh clone copies from — DEPLOYING.md tells you to
+# `cp` it, which needs it to be in the repo.
+!.env.production.example
 
 # vercel
 .vercel
@@ -54,3 +57,7 @@ next-env.d.ts
 
 # the real production secrets
 .env.production
+
+# the NestJS API has its own install and build output
+api/node_modules
+api/dist

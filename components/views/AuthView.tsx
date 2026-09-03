@@ -1,5 +1,6 @@
 "use client";
 
+import { apiFetch } from "@/lib/api-base";
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -42,7 +43,7 @@ export function AuthView({ mode }: { mode: "login" | "signup" }) {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/auth/me", { cache: "no-store" })
+    void apiFetch("/api/auth/me", { cache: "no-store" })
       .then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }))
       .then(({ status, body }: { status: number; body: { user?: unknown; signupOpen?: boolean; error?: string } }) => {
         if (cancelled) return;
@@ -77,7 +78,7 @@ export function AuthView({ mode }: { mode: "login" | "signup" }) {
     setBusy(true);
     setError("");
     try {
-      const res = await fetch(`/api/auth/${signup ? "signup" : "login"}`, {
+      const res = await apiFetch(`/api/auth/${signup ? "signup" : "login"}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(

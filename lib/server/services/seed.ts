@@ -15,6 +15,7 @@ import {
 } from "@/lib/server/repos/series";
 import { createRun, setSection } from "@/lib/server/repos/runs";
 import { seedPacks } from "@/lib/server/repos/packs";
+import { DATA_ROOT } from "@/lib/server/services/ingest";
 import { seedTools } from "@/lib/server/repos/tools";
 
 /**
@@ -99,7 +100,7 @@ export async function seedIfEmpty() {
  * because the storage underneath it changed.
  */
 async function importFileRuns(workspaceId: string) {
-  const dir = path.join(process.cwd(), ".data", "runs");
+  const dir = path.join(DATA_ROOT, "runs");
   let names: string[] = [];
   try {
     names = fs.readdirSync(dir).filter((n) => n.endsWith(".json"));

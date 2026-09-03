@@ -1,5 +1,6 @@
 "use client";
 
+import { apiFetch } from "@/lib/api-base";
 import type { StoredTool, ToolPatch } from "@/lib/server/repos/tools";
 import type { ResearchResult } from "@/lib/server/services/researcher";
 import type { Source } from "@/lib/server/repos/sources";
@@ -16,16 +17,16 @@ export type { StoredTool, ToolPatch, ResearchResult };
 
 /** Every tool and where it is assigned — what the manage screen reads. */
 export const listAllTools = () =>
-  fetch("/api/tools", { cache: "no-store" }).then((r) => json<StoredTool[]>(r));
+  apiFetch("/api/tools", { cache: "no-store" }).then((r) => json<StoredTool[]>(r));
 
 /** One workspace's bench: enabled, and allowed here. */
 export const listTools = (workspaceId: string) =>
-  fetch(`/api/tools?workspace=${encodeURIComponent(workspaceId)}`, {
+  apiFetch(`/api/tools?workspace=${encodeURIComponent(workspaceId)}`, {
     cache: "no-store",
   }).then((r) => json<StoredTool[]>(r));
 
 export const patchTool = (slug: string, patch: ToolPatch) =>
-  fetch(`/api/tools/${slug}`, {
+  apiFetch(`/api/tools/${slug}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
@@ -41,14 +42,14 @@ export const uploadSource = (file: File, workspaceId?: string | null) => {
   const form = new FormData();
   form.append("file", file);
   if (workspaceId) form.append("workspaceId", workspaceId);
-  return fetch("/api/sources/upload", { method: "POST", body: form }).then((r) =>
+  return apiFetch("/api/sources/upload", { method: "POST", body: form }).then((r) =>
     json<Source>(r),
   );
 };
 
 /** One more still, at a second the person asked for. */
 export const addFrame = (sourceId: string, at: number) =>
-  fetch(`/api/sources/${sourceId}/frames`, {
+  apiFetch(`/api/sources/${sourceId}/frames`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ at }),
@@ -60,7 +61,7 @@ export const runResearch = (body: {
   frames?: string[];
   note?: string;
 }) =>
-  fetch("/api/research", {
+  apiFetch("/api/research", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -71,7 +72,7 @@ export const addTopics = (
   seriesId: string,
   topics: { name: string; context?: string }[],
 ) =>
-  fetch(`/api/series/${seriesId}`, {
+  apiFetch(`/api/series/${seriesId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ topics }),

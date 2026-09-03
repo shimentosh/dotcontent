@@ -1,5 +1,6 @@
 "use client";
 
+import { apiFetch } from "@/lib/api-base";
 import {
   createContext,
   useCallback,
@@ -119,6 +120,25 @@ type Store = {
    * a project whose voice you have to restate in every brief instead.
    */
   projects: Project[];
+  /**
+   * Whether `projects` is the server's list yet.
+   *
+   * It opens on the design's sample workspaces, which carry an empty id, so
+   * that every screen has a name to show before the first request answers.
+   * Anything that WRITES with a workspace id has to wait for this — a run or
+   * an upload against `""` is a foreign-key error dressed as "something went
+   * wrong", and it is only reachable in the first second after a load.
+   */
+  projectsLoaded: boolean;
+  /**
+   * The API could not be reached at all.
+   *
+   * Not a 401 and not a 503 from a running API — a connection refused. The
+   * console used to render the design's sample workspaces and "0 templates"
+   * in that case, which reads as "my work is gone" rather than "the server is
+   * not running". The shell shows which it is, and reloads when it comes back.
+   */
+  apiDown: boolean;
   /** The one the switcher is pointed at. */
   project: Project;
   updateProject: (i: number, patch: Partial<Project>) => void;
@@ -503,7 +523,7 @@ const toProject = (w: ApiWorkspace): Project => ({
  * out of an input mid-sentence is worse than either.
  */
 function send(path: string, method: string, body?: unknown) {
-  void fetch(`/api${path}`, {
+  void apiFetch(`/api${path}`, {
     method,
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
@@ -520,6 +540,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [projectIdx, setProjectIdx] = useState(0);
   const [projects, setProjects] = useState<Project[]>(PROJECTS);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const [apiDown, setApiDown] = useState(false);
   const [projectSheet, setProjectSheet] = useState<number | "new" | null>(null);
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [projectOpen, setProjectOpen] = useState(false);
@@ -584,7 +606,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
 
-    void fetch("/api/auth/me", { cache: "no-store" })
+    void apiFetch("/api/auth/me", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { user: null }))
       .then(async (auth: { user: unknown }) => {
         if (cancelled) return;
@@ -608,7 +630,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
 
         const [rows, packRows, runRows, prefs] = await Promise.all([
-          fetch("/api/workspaces", { cache: "no-store" })
+          apiFetch("/api/workspaces", { cache: "no-store" })
             .then((r) => (r.ok ? (r.json() as Promise<ApiWorkspace[]>) : null))
             .catch(() => null),
           apiListPacks().catch(() => null),
@@ -619,6 +641,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         if (rows?.length) {
           setProjects(rows.map(toProject));
+          setProjectsLoaded(true);
           // The series shown are the current workspace's. Which one that is
           // comes from `projectIdx`, so this follows it below rather than here.
           setTopicSeries(rows[0].series.map(toSeries));
@@ -630,9 +653,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setQuality(prefs.quality);
         }
       })
-      // Silent: a console that cannot reach its own API should still render
-      // rather than throw a blank shell at whoever opened it.
-      .catch(() => {});
+      // A console that cannot reach its own API still renders — but says so,
+      // rather than showing the design's placeholders as if they were data.
+      .catch(() => {
+        if (!cancelled) setApiDown(true);
+      });
 
     return () => {
       cancelled = true;
@@ -656,8 +681,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
   }, []);
 
+  /*
+   * While the API is down, ask every few seconds whether it is back, and
+   * reload when it is. A reload rather than a re-run of the load above: the
+   * screens have rendered against placeholders by now, and starting the
+   * document again is the only way to be sure none of that is left standing.
+   */
+  useEffect(() => {
+    if (!apiDown) return;
+    const timer = setInterval(() => {
+      void apiFetch("/api/auth/me", { cache: "no-store" })
+        .then(() => window.location.reload())
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [apiDown]);
+
   const reloadSeries = useCallback(async () => {
-    const rows = await fetch("/api/workspaces", { cache: "no-store" })
+    const rows = await apiFetch("/api/workspaces", { cache: "no-store" })
       .then((r) => (r.ok ? (r.json() as Promise<ApiWorkspace[]>) : null))
       .catch(() => null);
     const mine = rows?.find((x) => x.id === projects[projectIdx]?.id);
@@ -780,7 +821,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
        * edited or deleted afterwards, so this is the one write whose answer
        * matters.
        */
-      void fetch("/api/workspaces", {
+      void apiFetch("/api/workspaces", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...patch, tint: patch.tint }),
@@ -1023,7 +1064,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ) => {
       const workspaceId = projects[projectIdx]?.id;
       if (!workspaceId) return;
-      void fetch("/api/series", {
+      void apiFetch("/api/series", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1072,7 +1113,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
    */
   const readSeriesSource = useCallback(async (id: string, url: string) => {
     try {
-      const res = await fetch(`/api/series/${id}/source`, {
+      const res = await apiFetch(`/api/series/${id}/source`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
@@ -1105,8 +1146,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      void fetch(`/api/series/${id}?keepTopics=1`, { method: "DELETE" })
-        .then(() => fetch("/api/workspaces"))
+      void apiFetch(`/api/series/${id}?keepTopics=1`, { method: "DELETE" })
+        .then(() => apiFetch("/api/workspaces"))
         .then((r) => (r.ok ? (r.json() as Promise<ApiWorkspace[]>) : null))
         .then((rows) => {
           const mine = rows?.find((w) => w.id === projects[projectIdx]?.id);
@@ -1127,7 +1168,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
    */
   const mergeSeriesInto = useCallback(
     async (fromId: string, intoId: string) => {
-      const res = await fetch(`/api/series/${fromId}/merge`, {
+      const res = await apiFetch(`/api/series/${fromId}/merge`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ into: intoId }),
@@ -1140,7 +1181,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } | null;
       if (!res.ok) throw new Error(report?.error || "The merge did not run");
 
-      const fresh = await fetch(`/api/workspaces`)
+      const fresh = await apiFetch(`/api/workspaces`)
         .then((r) => (r.ok ? (r.json() as Promise<ApiWorkspace[]>) : null))
         .catch(() => null);
       const mine = fresh?.find((w) => w.id === projects[projectIdx]?.id);
@@ -1316,12 +1357,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       topics: { name: string; context?: string; status?: string }[],
     ) => {
       if (!topics.length) return;
-      void fetch(`/api/series/${seriesId}`, {
+      void apiFetch(`/api/series/${seriesId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topics }),
       })
-        .then((r) => (r.ok ? fetch(`/api/series/${seriesId}`) : null))
+        .then((r) => (r.ok ? apiFetch(`/api/series/${seriesId}`) : null))
         .then((r) => (r?.ok ? r.json() : null))
         .then((fresh: ApiSeries | null) => {
           if (!fresh) return;
@@ -1632,6 +1673,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       },
 
       projects: countedProjects,
+      projectsLoaded,
+      apiDown,
       // Clamped rather than indexed blindly: the switcher's index and the list
       // are separate pieces of state, and a stale index must not blank the
       // header while every screen reads `project.name` off it.
@@ -1816,6 +1859,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       newPack,
       savePack,
       projectIdx,
+      projectsLoaded,
+      apiDown,
       projectOpen,
       addProject,
       confirm,

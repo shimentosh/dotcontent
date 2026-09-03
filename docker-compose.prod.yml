@@ -24,20 +24,49 @@ services:
       retries: 20
     # No published port: only the app talks to it, over the compose network.
 
-  app:
-    build: .
+  # The backend: NestJS, on its own hostname. Every browser call goes here.
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
     restart: unless-stopped
     env_file: .env.production
     environment:
       DATABASE_URL: postgres://contentos:${POSTGRES_PASSWORD}@postgres:5432/contentos
-      PORT: "3333"
+      PORT: "4000"
+      # The web app's origin, for CORS. Cookies cross from APP_HOST to
+      # API_HOST because both sit under COOKIE_DOMAIN — see .env.production.
+      WEB_ORIGIN: https://${APP_HOST:?set APP_HOST}
     depends_on:
       postgres:
         condition: service_healthy
-    # Migrations first, then the server — a deploy that adds a column must not
-    # take traffic against a database that has not got it yet.
-    command: >
-      sh -c "node scripts/migrate.mjs && node server.js"
+    volumes:
+      # The downloads live here: every fetched video, and the stills cut out of
+      # it. Without this they are inside the container, so a redeploy loses
+      # them and every frame the researcher already read 404s.
+      - sourcedata:/app/.data
+    # Migrations and the seed run inside the API as it starts, before it
+    # listens — a deploy that adds a column never takes traffic against a
+    # database that has not got it yet.
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.contentos-api.rule=Host(`${API_HOST:?set API_HOST}`)
+      - traefik.http.routers.contentos-api.entrypoints=websecure
+      - traefik.http.routers.contentos-api.tls.certresolver=le
+      - traefik.http.services.contentos-api.loadbalancer.server.port=4000
+
+  # The web app: Next.js, frontend only. It knows the API's address at build
+  # time, which is why the origin is a build arg and not a runtime variable.
+  app:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_API_URL: https://${API_HOST:?set API_HOST}
+    restart: unless-stopped
+    environment:
+      PORT: "3333"
+    depends_on:
+      - api
     labels:
       - traefik.enable=true
       - traefik.http.routers.contentos.rule=Host(`${APP_HOST:?set APP_HOST}`)
@@ -66,4 +95,7 @@ services:
 
 volumes:
   pgdata:
+  # Videos and frames. Big, and re-fetchable — worth keeping across a deploy,
+  # not worth putting in the nightly dump beside the database.
+  sourcedata:
   letsencrypt:

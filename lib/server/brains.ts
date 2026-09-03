@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { run, toolStatuses } from "@/lib/server/tools";
+import { cliHome, run, toolStatuses } from "@/lib/server/tools";
 import { getSecret, getSettings } from "@/lib/server/repos/settings";
 
 /**
@@ -306,6 +306,41 @@ export async function write(brainId: string, req: WriteRequest): Promise<string>
  */
 const CLAUDE_TOOLS = "WebFetch,WebSearch";
 
+/**
+ * The tools a content run must never touch, named so the CLI cannot even try.
+ *
+ * `--allowedTools` says what is granted; an agentic CLI still ATTEMPTS a
+ * denied tool, is refused, and then writes a sentence about the refusal into
+ * the script. Disallowing the filesystem outright removes the attempt.
+ * Read is left off the list only when frames are handed over as files.
+ */
+const CLAUDE_NO_FILES = "Read,Glob,Grep,Bash,Edit,Write,NotebookEdit";
+
+/**
+ * Said to every CLI, after the pack's own system prompt.
+ *
+ * A CLI is an agent: told to "follow the fixed structure exactly", it went
+ * looking for a file called the template, found an empty directory, and put
+ * "I couldn't read the repo's script template" at the top of an English
+ * script. The API transports never do this — they have no tools — so this is
+ * appended on the CLI paths only, and it says the one thing an agent needs
+ * to hear before it starts hunting: there is nothing to find.
+ *
+ * With frames handed over as files, "there is nothing to open" would be a
+ * lie, so that run gets the shorter version: read those, and only those.
+ */
+const CLI_GUARD = `
+
+EVERYTHING YOU NEED IS IN THIS MESSAGE. There are no files, templates or documents to open — the rules and the structure above are the whole brief. Do not read, search for, or look for anything on disk. Never mention files, directories, permissions, tools, or your own working directory in what you write. Output only the section that was asked for.`;
+
+const CLI_GUARD_FRAMES = `
+
+Apart from the frame files named below there is nothing to open — the rules above are the whole brief. Never mention files, directories, permissions, tools, or your own working directory in what you write. Output only what was asked for.`;
+
+/** The system prompt as a CLI hears it. */
+const cliSystem = (req: WriteRequest) =>
+  req.system + (req.imageFiles?.length ? CLI_GUARD_FRAMES : CLI_GUARD);
+
 async function viaClaudeCli(def: BrainDef, req: WriteRequest) {
   /*
    * Frames become a list of files to open, and Read is granted for that one
@@ -325,6 +360,24 @@ ${files
 Read nothing else on this machine — these files and nothing beside them.`
     : req.user;
 
+  /*
+   * The system prompt goes in a FILE, never on the command line.
+   *
+   * It is six to eight thousand characters — the pack's rules, its purpose,
+   * the brand voice — and on Windows a command line that long is cut off
+   * without a word of warning. So the fixed script format, deep in the rules,
+   * never reached the model. The scripts that came out right did so because
+   * the CLI, started in the repo, had read lib/packs/enbn-website.ts itself
+   * and found the format there; move it to an empty directory and the format
+   * vanished. `--append-system-prompt-file` carries the whole thing, whatever
+   * its length, and the file lives in the CLI's own empty directory.
+   */
+  const systemFile = path.join(
+    cliHome(),
+    `system-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}.md`,
+  );
+  await fs.writeFile(systemFile, cliSystem(req), "utf8");
+
   const { code, out, err } = await run(
     "claude",
     [
@@ -332,13 +385,40 @@ Read nothing else on this machine — these files and nothing beside them.`
       ...(def.cliModel ? ["--model", def.cliModel] : []),
       "--allowedTools",
       tools,
-      "--append-system-prompt",
-      req.system,
+      ...(files.length ? [] : ["--disallowedTools", CLAUDE_NO_FILES]),
+      /*
+       * Append to the CLI's system prompt; do not replace it. Replacing it
+       * (`--system-prompt`) was tried: the model never finished, because the
+       * default prompt is also what tells print mode how to end.
+       */
+      "--append-system-prompt-file",
+      systemFile,
     ],
-    { input: user, timeout: req.timeoutMs ?? 600_000 },
-  );
-  if (code === 0 && out.trim()) return out.trim();
+    { input: user, cwd: cliHome(), timeout: req.timeoutMs ?? 600_000 },
+  ).finally(() => fs.unlink(systemFile).catch(() => {}));
+  if (code === 0 && out.trim()) return scrubPreamble(out.trim());
   throw new Error(err.trim() || `claude exited ${code} with no output`);
+}
+
+/** The ways a CLI talks about itself instead of writing the section. */
+const PREAMBLE =
+  /AGENTS\.md|working director|read scope|I (couldn't|can't|cannot|could not) (read|open|access)|this session has no|no file-read|shell tools/i;
+
+/**
+ * Drop a first paragraph that is about the tool rather than the topic.
+ *
+ * Belt and braces. The guard tells the CLI there is nothing to open and the
+ * dynamic sections that made it think otherwise are gone; if a disclaimer
+ * still comes first, it is cut before the section is saved. Only the leading
+ * paragraph, and only when it reads as one of these — a script that mentions
+ * "permission" in its own words further down is left alone.
+ */
+function scrubPreamble(text: string) {
+  const parts = text.split(/\n\s*\n/);
+  if (parts.length > 1 && PREAMBLE.test(parts[0]) && !parts[0].startsWith("#")) {
+    return parts.slice(1).join("\n\n").trim();
+  }
+  return text;
 }
 
 /**
@@ -383,7 +463,8 @@ THE ${files.length} FRAMES ARE ATTACHED TO THIS MESSAGE, in the order listed abo
         "-",
       ],
       {
-        input: `${req.system}\n\n---\n\n${user}`,
+        input: `${cliSystem(req)}\n\n---\n\n${user}`,
+        cwd: cliHome(),
         timeout: req.timeoutMs ?? 600_000,
       },
     );
@@ -407,11 +488,11 @@ async function viaGeminiCli(def: BrainDef, req: WriteRequest) {
   const frames = req.imageFiles ?? [];
   const dirs = [...new Set(frames.map((frame) => path.dirname(frame)))];
   const system = frames.length
-    ? `${req.system}
+    ? `${cliSystem(req)}
 
 THE FRAMES ARE THESE FILES, in this order. Look at every one of them, and answer from what you SEE:
 ${frames.map((frame, i) => `${i + 1}. @${frame}`).join("\n")}`
-    : req.system;
+    : cliSystem(req);
 
   const { code, out, err } = await run(
     "gemini",
@@ -423,7 +504,7 @@ ${frames.map((frame, i) => `${i + 1}. @${frame}`).join("\n")}`
       "-p",
       system,
     ],
-    { input: req.user, timeout: req.timeoutMs ?? 600_000 },
+    { input: req.user, cwd: cliHome(), timeout: req.timeoutMs ?? 600_000 },
   );
   if (code === 0 && out.trim()) return out.trim();
   throw new Error(lastUseful(err) || `gemini exited ${code} with no output`);

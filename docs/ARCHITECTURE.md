@@ -44,26 +44,43 @@ link and the API. Only the user-facing word is "Template".
 
 ```
 app/                 routes; a page.tsx is a thin shell that renders a view
-app/api/**/route.ts  the API — auth, packs, runs, series, settings, sources, …
+api/                 the backend: a NestJS service on its own port (4000),
+                     one controller per feature under api/src, sharing
+                     lib/server with the root. There is no app/api any more.
 components/views/    one file per screen
 components/overlays/ full-window things: sheets, dialogs, command palette, reading mode
 components/ui/       the kit — read components/ui/README.md before adding to it
 components/topics/   TopicAdmin: the topic controls, mounted inside Content
-lib/*-client.ts      browser-side fetch wrappers for the API
+components/tools/    pieces of a tool's screen with real interaction (FramePicker)
+lib/api-base.ts      where the API is (NEXT_PUBLIC_API_URL) and apiFetch()
+lib/*-client.ts      browser-side fetch wrappers for the API, all via apiFetch
+lib/use-*.ts         a screen's data logic as a hook — what can be reasoned
+                     about without rendering (use-content-list, use-run-document,
+                     use-run-watch)
 lib/store.tsx        client state, navigation (`go`), filters
+lib/slug.ts          the one rule for turning a name into part of a URL
 lib/theme.ts         tokens: t(), w(), font, spring, panel(), layer
-lib/server/          server-only: auth, db, repos, services, prompt building
+lib/server/          shared with api/: auth, db, repos, services, prompt building
 lib/server/db/       Postgres pool + the schema as an ordered migration list
 lib/server/repos/    one module per table
+lib/server/services/ the rules between a route and a repo: runs, ingest,
+                     researcher, seed
 lib/packs/           the shipped template(s), as code
+tests/               vitest, pure functions only — `npm run check` runs them
+.github/workflows/   the same checks, on every push
 ```
 
 ## How a change reaches the screen
 
 1. A view calls a `lib/*-client.ts` function.
-2. That fetches an `app/api/**/route.ts` handler.
-3. The handler calls `requireUser()` and then a repo in `lib/server/repos/`.
-4. The repo runs SQL through `lib/server/db/client.ts` against Postgres.
+2. That calls `apiFetch()`, which goes cross-origin to the NestJS service at
+   `NEXT_PUBLIC_API_URL` with `credentials: "include"`, so the session
+   cookie travels.
+3. A controller in `api/src/<feature>/` receives it. A global `SessionGuard`
+   has already refused anything without a live session; `@Public()` marks
+   the handful of sign-in routes that are open.
+4. The controller calls a service or repo in `lib/server/`, which runs SQL
+   through `lib/server/db/client.ts` against Postgres.
 
 Every client fetch reads its response through `json()` in `lib/api-json.ts`,
 which turns a 401 into a redirect to `/login?next=…` rather than an error
@@ -126,9 +143,16 @@ the reader shows an EDITED mark, and regenerating clears both.
 
 ## Auth
 
-`middleware.ts` gates everything except `/login`, `/signup` and `/api/auth/*`.
-It only checks that a session cookie is **present** — validity is checked by
-`requireUser()` in every route handler. Sessions are rows in Postgres; signup
+`proxy.ts` — Next 16 renamed the `middleware` convention — gates every page
+except `/login` and `/signup`. It only checks that a session cookie is
+**present**. Validity is the API's job: `api/src/common/session.guard.ts` is
+registered as a global guard, so every controller route is closed unless it
+carries `@Public()`. The Next handlers used to have to remember a
+`requireUser()` line each, and fifteen did not; a default that fails closed
+cannot be forgotten.
+
+The cookie is set by the API on its own origin. For the proxy on the web
+origin to see it, both hosts share `COOKIE_DOMAIN` — see api/src/common/cookie.ts. Sessions are rows in Postgres; signup
 is open only while `users` is empty (`signupOpen()`), so a second account can
 only be made by an existing one.
 

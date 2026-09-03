@@ -74,16 +74,35 @@ if [ "${SKIP_WHISPER:-0}" != "1" ] && ! command -v whisper >/dev/null 2>&1; then
   fi
 fi
 
+# The API is its own process now, on API_PORT (4000). It is started here so
+# that one command still brings the whole thing up; stopping this script
+# stops both.
+API_PORT="${API_PORT:-4000}"
+if [ ! -d api/node_modules ]; then
+  echo "→ installing the API's dependencies"
+  (cd api && npm install)
+fi
+
 case "$MODE" in
   dev)
+    echo "→ Content OS API (dev) on http://localhost:$API_PORT/api"
+    (cd api && PORT="$API_PORT" WEB_ORIGIN="http://localhost:$PORT" npm run dev) &
+    API_PID=$!
+    trap 'kill $API_PID 2>/dev/null' EXIT
     echo "→ Content OS (dev) on http://localhost:$PORT"
-    exec npm run dev -- --port "$PORT"
+    NEXT_PUBLIC_API_URL="http://localhost:$API_PORT" npm run dev -- --port "$PORT"
     ;;
   prod | start)
+    echo "→ building the API"
+    (cd api && npm run build)
     echo "→ building Content OS"
-    npm run build
+    NEXT_PUBLIC_API_URL="http://localhost:$API_PORT" npm run build
+    echo "→ Content OS API on http://localhost:$API_PORT/api"
+    (cd api && PORT="$API_PORT" WEB_ORIGIN="http://localhost:$PORT" CONTENTOS_DATA_DIR=../.data npm run start) &
+    API_PID=$!
+    trap 'kill $API_PID 2>/dev/null' EXIT
     echo "→ Content OS (production) on http://localhost:$PORT"
-    exec npm run start -- --port "$PORT"
+    npm run start -- --port "$PORT"
     ;;
   *)
     echo "usage: ./start.sh [dev|prod]   (PORT overrides the default 3333)" >&2

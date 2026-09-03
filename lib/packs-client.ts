@@ -1,5 +1,6 @@
 "use client";
 
+import { apiFetch } from "@/lib/api-base";
 import type { PackDraft } from "@/lib/data";
 import type { Pack as UiPack, PackStatus } from "@/lib/packs";
 import { json } from "@/lib/api-json";
@@ -92,6 +93,8 @@ export function toUiPack(p: ApiPack, index: number): UiPack {
         type: s.type || s.tier || "Custom Text",
         brief: s.instruction,
         summary: s.summary,
+        tier: s.tier,
+        dependsOn: s.dependsOn,
       })),
     },
   };
@@ -144,11 +147,12 @@ export function fromDraft(draft: PackDraft): PackBody {
       id: s.id,
       title: s.name,
       summary: "",
-      // Nothing in the builder draws dependency arrows yet, so a written pack
-      // runs top to bottom. Every earlier section is still pasted in above the
-      // current one by the prompt builder, which is what the order is for.
-      dependsOn: [],
-      tier: "standard",
+      // The builder draws no dependency arrows and sets no tier, so a section
+      // written there gets the defaults. A section that ARRIVED with them —
+      // from a shipped template, or an import — keeps them: saving from the
+      // builder used to cut every chain a template had.
+      dependsOn: s.dependsOn ?? [],
+      tier: s.tier ?? "standard",
       instruction: s.brief,
       type: s.type,
     })),
@@ -157,14 +161,14 @@ export function fromDraft(draft: PackDraft): PackBody {
 }
 
 export const listPacks = () =>
-  fetch("/api/packs", { cache: "no-store" }).then((r) => json<ApiPack[]>(r));
+  apiFetch("/api/packs", { cache: "no-store" }).then((r) => json<ApiPack[]>(r));
 
 /** One pack in the shape a run executes — sections, tiers, dependency arrows. */
 export const getPack = (slug: string) =>
-  fetch(`/api/packs/${slug}`, { cache: "no-store" }).then((r) => json<ApiPack>(r));
+  apiFetch(`/api/packs/${slug}`, { cache: "no-store" }).then((r) => json<ApiPack>(r));
 
 export const createPack = (body: PackBody) =>
-  fetch("/api/packs", {
+  apiFetch("/api/packs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -172,16 +176,16 @@ export const createPack = (body: PackBody) =>
 
 /** Put a pack back the way it shipped. Only for one that ships. */
 export const restorePack = (slug: string) =>
-  fetch(`/api/packs/${slug}`, { method: "POST" }).then((r) => json<ApiPack>(r));
+  apiFetch(`/api/packs/${slug}`, { method: "POST" }).then((r) => json<ApiPack>(r));
 
 export const patchPack = (slug: string, body: unknown) =>
-  fetch(`/api/packs/${slug}`, {
+  apiFetch(`/api/packs/${slug}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   }).then((r) => json<ApiPack>(r));
 
 export const removePack = (slug: string) =>
-  fetch(`/api/packs/${slug}`, { method: "DELETE" }).then((r) =>
+  apiFetch(`/api/packs/${slug}`, { method: "DELETE" }).then((r) =>
     json<{ ok: boolean }>(r),
   );
