@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Inter+Tight:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin:0; padding:0; background:#06060a; color:#f0f0f4; font-family:Inter, system-ui, sans-serif; -webkit-font-smoothing:antialiased; }
+  * { box-sizing:border-box; }
+  ::selection { background:rgba(243,75,4,0.35); }
+  a { color:#F34B04; text-decoration:none; }
+  a:hover { color:#ff6a2b; text-decoration:underline; text-underline-offset:4px; }
+  input, button, textarea { font-family:inherit; }
+  ::-webkit-scrollbar { width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.10); border-radius:8px; border:3px solid transparent; background-clip:content-box; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  @keyframes os-pulse { 0%,100% { opacity:1 } 50% { opacity:0.35 } }
+  @keyframes os-spin { to { transform:rotate(360deg) } }
+  @keyframes os-rise { from { opacity:0; transform:translateY(10px) } to { opacity:1; transform:none } }
+  @keyframes os-pop { from { opacity:0; transform:translateY(-8px) scale(0.985) } to { opacity:1; transform:none } }
+</style>
+</helmet>
+
+<div style="position:relative;min-height:100vh;display:flex;background:#06060a;overflow:hidden">
+
+  <div style="position:fixed;inset:0;pointer-events:none;background:radial-gradient(900px 620px at 12% -8%, rgba(243,75,4,0.22), transparent 60%), radial-gradient(760px 560px at 88% 4%, rgba(90,60,220,0.20), transparent 62%), radial-gradient(900px 700px at 60% 108%, rgba(20,160,120,0.14), transparent 60%), #06060a"></div>
+  <div style="position:fixed;inset:0;pointer-events:none;opacity:0.35;background-image:radial-gradient(rgba(255,255,255,0.12) 1px, transparent 1px);background-size:28px 28px"></div>
+
+  <aside style="position:relative;z-index:2;width:248px;flex:0 0 248px;height:100vh;display:flex;flex-direction:column;gap:6px;padding:14px 12px;background:rgba(255,255,255,0.045);backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);border-right:1px solid rgba(255,255,255,0.08);box-shadow:inset -1px 0 0 rgba(255,255,255,0.03)">
+
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 10px 14px">
+      <div style="width:26px;height:26px;border-radius:8px;display:grid;place-items:center;background:linear-gradient(150deg,#F34B04,#b32f00);box-shadow:0 4px 14px rgba(243,75,4,0.45),inset 0 1px 0 rgba(255,255,255,0.35)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>
+      </div>
+      <div style="font-family:'Inter Tight',Inter,sans-serif;font-weight:700;font-size:15px;letter-spacing:-0.02em">Meshclip</div>
+      <div style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:0.1em;color:rgba(240,240,244,0.4);border:1px solid rgba(255,255,255,0.12);border-radius:5px;padding:2px 5px">2.4</div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <div onClick="{{ goHome }}" style="display:flex;align-items:center;gap:11px;height:38px;padding:0 11px;border-radius:11px;cursor:pointer;font-size:13.5px;font-weight:500;transition:background 160ms,color 160ms;background:{{ nb.home }};color:{{ nc.home }};box-shadow:{{ ns.home }}" style-hover="background:rgba(255,255,255,0.07)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"></path><path d="M5 9.5V21h14V9.5"></path></svg>
+        <span>Home</span>
+      </div>
+      <div onClick="{{ goTopics }}" style="display:flex;align-items:center;gap:11px;height:38px;padding:0 11px;border-radius:11px;cursor:pointer;font-size:13.5px;font-weight:500;transition:background 160ms,color 160ms;background:{{ nb.topics }};color:{{ nc.topics }};box-shadow:{{ ns.topics }}" style-hover="background:rgba(255,255,255,0.07)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"></path></svg>
+        <span>Topics</span>
+        <span style="margin-left:auto;font-size:11px;color:rgba(240,240,244,0.35)">18</span>
+      </div>
+      <div onClick="{{ goContent }}" style="display:flex;align-items:center;gap:11px;height:38px;padding:0 11px;border-radius:11px;cursor:pointer;font-size:13.5px;font-weight:500;transition:background 160ms,color 160ms;background:{{ nb.content }};color:{{ nc.content }};box-shadow:{{ ns.content }}" style-hover="background:rgba(255,255,255,0.07)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2.5"></rect><path d="M8 8h8M8 12h8M8 16h5"></path></svg>
+        <span>Content</span>
+        <span style="margin-left:auto;font-size:11px;color:rgba(240,240,244,0.35)">214</span>
+      </div>
+      <div onClick="{{ goPacks }}" style="display:flex;align-items:center;gap:11px;height:38px;padding:0 11px;border-radius:11px;cursor:pointer;font-size:13.5px;font-weight:500;transition:background 160ms,color 160ms;background:{{ nb.packs }};color:{{ nc.packs }};box-shadow:{{ ns.packs }}" style-hover="background:rgba(255,255,255,0.07)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-4.5L21 8l-9 4.5L3 8Z"></path><path d="M3 12.5 12 17l9-4.5"></path><path d="M3 16.5 12 21l9-4.5"></path></svg>
+        <span>Packs</span>
+        <span style="margin-left:auto;font-size:11px;color:rgba(240,240,244,0.35)">9</span>
+      </div>
+      <div onClick="{{ goLibrary }}" style="display:flex;align-items:center;gap:11px;height:38px;padding:0 11px;border-radius:11px;cursor:pointer;font-size:13.5px;font-weight:500;transition:background 160ms,color 160ms;background:{{ nb.library }};color:{{ nc.library }};box-shadow:{{ ns.library }}" style-hover="background:rgba(255,255,255,0.07)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5v-13Z"></path><path d="M12 4h3.5A1.5 1.5 0 0 1 17 5.5v13A1.5 1.5 0 0 1 15.5 20H12V4Z"></path><path d="M19.5 6.5 21 18"></path></svg>
+        <span>Library</span>
+      </div>
+    </div>
+
+    <sc-if value="{{ advancedNav }}" hint-placeholder-val="{{ true }}">
+    <div style="margin-top:16px;padding:0 11px 7px;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(240,240,244,0.32)">Advanced</div>
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <div onClick="{{ goPrompts }}" style="display:flex;align-items:center;gap:11px;height:34px;padding:0 11px;border-radius:10px;cursor:pointer;font-size:13px;color:{{ nc.prompts }};background:{{ nb.prompts }}" style-hover="background:rgba(255,255,255,0.06)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m8 8-4 4 4 4"></path><path d="m16 8 4 4-4 4"></path><path d="M13 5l-2 14"></path></svg>
+        <span>Prompts</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:11px;height:34px;padding:0 11px;border-radius:10px;cursor:pointer;font-size:13px;color:rgba(240,240,244,0.62)" style-hover="background:rgba(255,255,255,0.06)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"></path></svg>
+        <span>Automations</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:11px;height:34px;padding:0 11px;border-radius:10px;cursor:pointer;font-size:13px;color:rgba(240,240,244,0.62)" style-hover="background:rgba(255,255,255,0.06)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"></path><path d="M15 7h2a5 5 0 0 1 0 10h-2"></path><path d="M8 12h8"></path></svg>
+        <span>Integrations</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:11px;height:34px;padding:0 11px;border-radius:10px;cursor:pointer;font-size:13px;color:rgba(240,240,244,0.62)" style-hover="background:rgba(255,255,255,0.06)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-2.87 1.2V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-2.87-1.2l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a2 2 0 0 1-1.6-1.96 2 2 0 0 1 1.6-1.96 1.7 1.7 0 0 0 1.14-2.87l-.06-.06A2 2 0 1 1 8.51 5.3l.06.06A1.7 1.7 0 0 0 11.44 4.2V4a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 2.87 1.16l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 22.4 11a2 2 0 0 1 0 4Z"></path></svg>
+        <span>Settings</span>
+      </div>
+    </div>
+    </sc-if>
+
+    <div style="margin-top:auto;padding:13px;border-radius:15px;background:linear-gradient(160deg,rgba(255,255,255,0.09),rgba(255,255,255,0.03));border:1px solid rgba(255,255,255,0.09);box-shadow:inset 0 1px 0 rgba(255,255,255,0.08)">
+      <div style="display:flex;align-items:center;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.13em;color:rgba(240,240,244,0.45)">
+        <span>AI CREDITS</span><span style="color:#f0f0f4">18.2K</span>
+      </div>
+      <div style="height:4px;border-radius:3px;margin:9px 0 10px;background:rgba(255,255,255,0.10);overflow:hidden">
+        <div style="width:62%;height:100%;border-radius:3px;background:linear-gradient(90deg,#F34B04,#ff8a4c)"></div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:11.5px;color:rgba(240,240,244,0.5)">Studio plan</span>
+        <span style="font-size:11.5px;font-weight:600;color:#F34B04;cursor:pointer">Upgrade →</span>
+      </div>
+    </div>
+  </aside>
+
+  <main style="position:relative;z-index:2;flex:1;height:100vh;display:flex;flex-direction:column;min-width:0">
+
+    <header style="flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:11px 20px;background:rgba(255,255,255,0.04);backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);border-bottom:1px solid rgba(255,255,255,0.07)">
+      <div style="position:relative">
+        <div onClick="{{ toggleProject }}" style="display:flex;align-items:center;gap:9px;height:31px;padding:0 11px;border-radius:9px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.09);cursor:pointer;font-size:12.5px;font-weight:600" style-hover="background:rgba(255,255,255,0.10)">
+          <span style="width:15px;height:15px;border-radius:5px;background:{{ project.tint }}"></span>
+          <span>{{ project.name }}</span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="rgba(240,240,244,0.5)" stroke-width="2.2" stroke-linecap="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </div>
+        <sc-if value="{{ projectOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;top:38px;left:0;width:286px;z-index:45;padding:6px;border-radius:15px;background:rgba(26,26,32,0.74);backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);border:1px solid rgba(255,255,255,0.12);box-shadow:0 24px 56px rgba(0,0,0,0.62);animation:os-pop 140ms ease-out">
+            <div style="padding:8px 9px 6px;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.14em;color:rgba(240,240,244,0.38)">PROJECTS · WORKSPACES</div>
+            <sc-for list="{{ projects }}" as="p" hint-placeholder-count="4">
+              <div onClick="{{ p.pick }}" style="display:flex;align-items:center;gap:10px;padding:8px 9px;border-radius:10px;cursor:pointer;background:{{ p.rowBg }}" style-hover="background:rgba(255,255,255,0.09)">
+                <span style="width:24px;height:24px;flex:none;border-radius:8px;background:{{ p.tint }};box-shadow:inset 0 1px 0 rgba(255,255,255,0.28)"></span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.name }}</div>
+                  <div style="font-size:11px;color:rgba(240,240,244,0.4)">{{ p.handle }} · {{ p.packs }} packs</div>
+                </div>
+                <span style="width:11px;flex:none;font-size:11px;color:#ff8a4c">{{ p.mark }}</span>
+              </div>
+            </sc-for>
+            <div style="height:1px;margin:5px 7px;background:rgba(255,255,255,0.09)"></div>
+            <div onClick="{{ goProjects }}" style="display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:10px;cursor:pointer;font-size:12.5px;color:rgba(240,240,244,0.72)" style-hover="background:rgba(255,255,255,0.09);color:#f0f0f4">Manage projects</div>
+            <div onClick="{{ goProjects }}" style="display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:10px;cursor:pointer;font-size:12.5px;font-weight:600;color:#F34B04" style-hover="background:rgba(243,75,4,0.14)">+ New project</div>
+          </div>
+        </sc-if>
+      </div>
+
+      <div onClick="{{ openPalette }}" style="flex:1;max-width:440px;display:flex;align-items:center;gap:9px;height:31px;padding:0 11px;border-radius:9px;background:rgba(0,0,0,0.28);border:1px solid rgba(255,255,255,0.08);cursor:text;color:rgba(240,240,244,0.42);font-size:12.5px" style-hover="border-color:rgba(255,255,255,0.16)">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4.5-4.5"></path></svg>
+        <span>Search topics, packs, content…</span>
+        <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:10px;border:1px solid rgba(255,255,255,0.12);border-radius:5px;padding:1px 5px">⌘K</span>
+      </div>
+
+      <div style="margin-left:auto;display:flex;align-items:center;gap:9px">
+        <div style="position:relative">
+          <div onClick="{{ toggleCreate }}" style="display:flex;align-items:center;gap:7px;height:31px;padding:0 13px;border-radius:9px;cursor:pointer;font-size:12.5px;font-weight:600;color:#fff;background:linear-gradient(180deg,#f9612a,#e04203);box-shadow:0 4px 14px rgba(243,75,4,0.38),inset 0 1px 0 rgba(255,255,255,0.28)" style-hover="filter:brightness(1.07)" style-active="transform:translateY(1px)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+            <span>Create</span>
+          </div>
+          <sc-if value="{{ createOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;top:38px;right:0;width:214px;z-index:40;padding:6px;border-radius:14px;background:rgba(26,26,32,0.72);backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);border:1px solid rgba(255,255,255,0.12);box-shadow:0 22px 50px rgba(0,0,0,0.6);animation:os-pop 140ms ease-out">
+              <div onClick="{{ goTopics }}" style="display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:9px;cursor:pointer;font-size:12.5px" style-hover="background:rgba(255,255,255,0.09)">Create Topic</div>
+              <div onClick="{{ goBuilder }}" style="display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:9px;cursor:pointer;font-size:12.5px" style-hover="background:rgba(255,255,255,0.09)">Create Content Pack</div>
+              <div onClick="{{ goContent }}" style="display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:9px;cursor:pointer;font-size:12.5px" style-hover="background:rgba(255,255,255,0.09)">Create Content</div>
+              <div style="height:1px;margin:5px 7px;background:rgba(255,255,255,0.09)"></div>
+              <div onClick="{{ goRunSetup }}" style="display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:9px;cursor:pointer;font-size:12.5px;color:#F34B04;font-weight:600" style-hover="background:rgba(243,75,4,0.14)">Generate from Pack</div>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="width:31px;height:31px;display:grid;place-items:center;border-radius:9px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.09);cursor:pointer;position:relative" style-hover="background:rgba(255,255,255,0.10)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(240,240,244,0.75)" stroke-width="1.7" stroke-linecap="round"><path d="M18 8A6 6 0 1 0 6 8c0 7-3 8-3 8h18s-3-1-3-8"></path><path d="M13.7 20a2 2 0 0 1-3.4 0"></path></svg>
+          <span style="position:absolute;top:6px;right:7px;width:5px;height:5px;border-radius:50%;background:#F34B04;box-shadow:0 0 8px #F34B04"></span>
+        </div>
+        <div style="width:31px;height:31px;border-radius:50%;background:linear-gradient(150deg,#84cc16,#0e7c3a);display:grid;place-items:center;font-size:11.5px;font-weight:700;cursor:pointer;box-shadow:inset 0 1px 0 rgba(255,255,255,0.3)">SR</div>
+      </div>
+    </header>
+
+    <div style="flex:1;overflow-y:auto;overflow-x:hidden">
+
+      <!-- ═══ PROJECTS ═══ -->
+      <sc-if value="{{ isProjects }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:1100px;margin:0 auto;padding:40px 30px 60px;animation:os-rise 260ms ease-out">
+        <div style="display:flex;align-items:flex-end;gap:16px;margin-bottom:26px">
+          <div style="flex:1">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;color:rgba(240,240,244,0.4)">WORKSPACES</div>
+            <h1 style="font-family:'Inter Tight',Inter,sans-serif;font-size:32px;font-weight:700;letter-spacing:-0.03em;margin:9px 0 4px">Projects</h1>
+            <p style="margin:0;font-size:14px;color:rgba(240,240,244,0.5)">Each project is its own workspace. Topics, packs, content and credits stay isolated.</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:7px;height:33px;padding:0 14px;border-radius:10px;cursor:pointer;font-size:12.5px;font-weight:600;color:#fff;background:linear-gradient(180deg,#f9612a,#e04203);box-shadow:0 4px 14px rgba(243,75,4,0.38),inset 0 1px 0 rgba(255,255,255,0.28)" style-hover="filter:brightness(1.07)" style-active="transform:translateY(1px)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+            <span>New Project</span>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">
+          <sc-for list="{{ projects }}" as="p" hint-placeholder-count="4">
+            <div onClick="{{ p.pick }}" style="padding:17px;border-radius:18px;cursor:pointer;background:rgba(255,255,255,0.045);border:1px solid {{ p.cardBd }};backdrop-filter:blur(24px);box-shadow:0 10px 30px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.07);transition:all 180ms" style-hover="background:rgba(255,255,255,0.085);transform:translateY(-2px)">
+              <div style="display:flex;align-items:center;gap:11px;margin-bottom:15px">
+                <span style="width:34px;height:34px;flex:none;border-radius:11px;background:{{ p.tint }};box-shadow:inset 0 1px 0 rgba(255,255,255,0.3)"></span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.name }}</div>
+                  <div style="font-size:11.5px;color:rgba(240,240,244,0.42)">{{ p.handle }} · {{ p.lang }}</div>
+                </div>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:0.12em;padding:3px 7px;border-radius:20px;background:{{ p.badgeBg }};color:{{ p.badgeFg }}">{{ p.badge }}</span>
+              </div>
+              <div style="display:flex;gap:7px;margin-bottom:14px">
+                <div style="flex:1;padding:9px 10px;border-radius:11px;background:rgba(0,0,0,0.24);border:1px solid rgba(255,255,255,0.06)">
+                  <div style="font-family:'Inter Tight',Inter,sans-serif;font-size:16px;font-weight:700">{{ p.topics }}</div>
+                  <div style="font-size:10.5px;color:rgba(240,240,244,0.4)">Topics</div>
+                </div>
+                <div style="flex:1;padding:9px 10px;border-radius:11px;background:rgba(0,0,0,0.24);border:1px solid rgba(255,255,255,0.06)">
+                  <div style="font-family:'Inter Tight',Inter,sans-serif;font-size:16px;font-weight:700">{{ p.packs }}</div>
+                  <div style="font-size:10.5px;color:rgba(240,240,244,0.4)">Packs</div>
+                </div>
+                <div style="flex:1;padding:9px 10px;border-radius:11px;background:rgba(0,0,0,0.24);border:1px solid rgba(255,255,255,0.06)">
+                  <div style="font-family:'Inter Tight',Inter,sans-serif;font-size:16px;font-weight:700">{{ p.content }}</div>
+                  <div style="font-size:10.5px;color:rgba(240,240,244,0.4)">Content</div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:rgba(240,240,244,0.5)">
+                <span style="width:6px;height:6px;border-radius:50%;background:{{ p.dot }}"></span>
+                <span>{{ p.run }}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ═══ HOME ═══ -->
+      <sc-if value="{{ isHome }}" hint-placeholder-val="{{ true }}">
+      <div style="max-width:1180px;margin:0 auto;padding:40px 30px 60px;animation:os-rise 260ms ease-out">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;color:rgba(240,240,244,0.4)">TUESDAY · 26 AUGUST</div>
+        <h1 style="font-family:'Inter Tight',Inter,sans-serif;font-size:38px;font-weight:700;letter-spacing:-0.03em;line-height:1.1;margin:10px 0 4px">What are you creating?</h1>
+        <p style="margin:0 0 24px;font-size:14.5px;color:rgba(240,240,244,0.5)">Three packs are mid-run and two sections are waiting on your review.</p>
+
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:34px">
+          <div onClick="{{ goTopics }}" style="padding:17px;border-radius:16px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.09);backdrop-filter:blur(24px);box-shadow:inset 0 1px 0 rgba(255,255,255,0.07);transition:all 180ms" style-hover="background:rgba(255,255,255,0.09);transform:translateY(-2px)">
+            <div style="width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:rgba(14,165,233,0.16);margin-bottom:22px">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5ac8fa" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v4M12 17v4M3 12h4M17 12h4"></path></svg>
+            </div>
+            <div style="font-size:14.5px;font-weight:600;margin-bottom:3px">New Topic</div>
+            <div style="font-size:12.5px;color:rgba(240,240,244,0.45)">Park an idea, research it later</div>
+          </div>
+          <div onClick="{{ goBuilder }}" style="padding:17px;border-radius:16px;cursor:pointer;background:linear-gradient(160deg,rgba(243,75,4,0.20),rgba(243,75,4,0.05));border:1px solid rgba(243,75,4,0.34);backdrop-filter:blur(24px);box-shadow:inset 0 1px 0 rgba(255,255,255,0.10);transition:all 180ms" style-hover="transform:translateY(-2px);border-color:rgba(243,75,4,0.6)">
+            <div style="width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:rgba(243,75,4,0.24);margin-bottom:22px">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ff8a4c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-4.5L21 8l-9 4.5L3 8Z"></path><path d="M3 12.5 12 17l9-4.5"></path></svg>
+            </div>
+            <div style="font-size:14.5px;font-weight:600;margin-bottom:3px">New Content Pack</div>
+            <div style="font-size:12.5px;color:rgba(240,240,244,0.55)">A reusable brief that produces everything</div>
+          </div>
+          <div onClick="{{ goContent }}" style="padding:17px;border-radius:16px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.09);backdrop-filter:blur(24px);box-shadow:inset 0 1px 0 rgba(255,255,255,0.07);transition:all 180ms" style-hover="background:rgba(255,255,255,0.09);transform:translateY(-2px)">
+            <div style="width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:rgba(132,204,22,0.16);margin-bottom:22px">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a3e635" stroke-width="1.8" stroke-linecap="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"></path></svg>
+            </div>
+            <div style="font-size:14.5px;font-weight:600;margin-bottom:3px">Create Content</div>
+            <div style="font-size:12.5px;color:rgba(240,240,244,0.45)">One script, title, caption or reply</div>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px">
+          <h2 style="font-family:'Inter Tight',Inter,sans-serif;font-size:16px;font-weight:700;letter-spacing:-0.01em;margin:0">Continue working</h2>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:34px">
+          <sc-for list="{{ continueItems }}" as="c" hint-placeholder-count="2">
+            <div onClick="{{ c.open }}" style="display:flex;align-items:center;gap:14px;padding:15px 16px;border-radius:16px;cursor:pointer;background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 8px 24px rgba(0,0,0,0.28),inset 0 1px 0 rgba(255,255,255,0.06);transition:all 180ms" style-hover="background:rgba(255,255,255,0.08)">
+              <div style="flex:1;min-width:0">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.13em;color:rgba(240,240,244,0.38);margin-bottom:5px">{{ c.kicker }}</div>
+                <div style="font-size:14px;font-weight:600;margin-bottom:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.title }}</div>
+                <div style="height:3px;border-radius:2px;background:rgba(255,255,255,0.09);overflow:hidden">
+                  <div style="height:100%;border-radius:2px;background:linear-gradient(90deg,#F34B04,#ff9a63);width:{{ c.pct }}"></div>
+                </div>
+                <div style="margin-top:7px;font-size:11.5px;color:rgba(240,240,244,0.45)">{{ c.meta }}</div>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(240,240,244,0.35)" stroke-width="1.8" stroke-linecap="round"><path d="m9 6 6 6-6 6"></path></svg>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1.35fr 1fr;gap:12px;align-items:start">
+          <div style="padding:6px;border-radius:18px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 10px 30px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.06)">
+            <div style="display:flex;align-items:center;gap:9px;padding:12px 12px 10px">
+              <span style="width:22px;height:22px;border-radius:7px;display:grid;place-items:center;background:rgba(243,75,4,0.18)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ff8a4c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-4.5L21 8l-9 4.5L3 8Z"></path></svg>
+              </span>
+              <span style="font-size:13.5px;font-weight:700">Recent packs</span>
+              <span onClick="{{ goPacks }}" style="margin-left:auto;font-size:12px;color:#F34B04;font-weight:600;cursor:pointer">View all →</span>
+            </div>
+            <sc-for list="{{ recentPacks }}" as="p" hint-placeholder-count="3">
+              <div onClick="{{ p.open }}" style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:13px;cursor:pointer;transition:background 160ms" style-hover="background:rgba(255,255,255,0.06)">
+                <div style="width:34px;height:34px;border-radius:11px;display:grid;place-items:center;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.09);color:rgba(240,240,244,0.7)">{{ p.n }}</div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:13px;font-weight:600">{{ p.name }}</div>
+                  <div style="font-size:11.5px;color:rgba(240,240,244,0.42)">{{ p.meta }}</div>
+                </div>
+                <div style="font-size:11px;padding:3px 8px;border-radius:20px;background:{{ p.bg }};color:{{ p.fg }}">{{ p.status }}</div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="padding:6px;border-radius:18px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 10px 30px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.06)">
+              <div style="display:flex;align-items:center;gap:9px;padding:12px 12px 10px">
+                <span style="width:22px;height:22px;border-radius:7px;display:grid;place-items:center;background:rgba(245,158,11,0.18)">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2.2" stroke-linecap="round"><path d="M12 8v5M12 17h.01"></path><circle cx="12" cy="12" r="9"></circle></svg>
+                </span>
+                <span style="font-size:13.5px;font-weight:700">Needs attention</span>
+                <span style="margin-left:auto;font-size:11px;font-family:'JetBrains Mono',monospace;color:rgba(240,240,244,0.4)">2</span>
+              </div>
+              <sc-for list="{{ attention }}" as="a" hint-placeholder-count="2">
+                <div onClick="{{ a.open }}" style="padding:10px 12px;border-radius:13px;cursor:pointer" style-hover="background:rgba(255,255,255,0.06)">
+                  <div style="font-size:12.5px;font-weight:600;margin-bottom:2px">{{ a.title }}</div>
+                  <div style="font-size:11.5px;color:rgba(240,240,244,0.44)">{{ a.meta }}</div>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="padding:6px;border-radius:18px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 10px 30px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.06)">
+              <div style="padding:12px 12px 8px;font-size:13.5px;font-weight:700">Recent activity</div>
+              <sc-for list="{{ activity }}" as="v" hint-placeholder-count="4">
+                <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px">
+                  <span style="margin-top:5px;width:6px;height:6px;border-radius:50%;flex:0 0 6px;background:{{ v.dot }}"></span>
+                  <div style="flex:1;font-size:12px;color:rgba(240,240,244,0.72);line-height:1.45">{{ v.text }}</div>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(240,240,244,0.32)">{{ v.time }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ═══ TOPICS ═══ -->
+      <sc-if value="{{ isTopics }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:1180px;margin:0 auto;padding:34px 30px 60px;animation:os-rise 240ms ease-out">
+        <div style="display:flex;align-items:flex-end;gap:14px;margin-bottom:26px">
+          <div>
+            <h1 style="font-family:'Inter Tight',Inter,sans-serif;font-size:28px;font-weight:700;letter-spacing:-0.025em;margin:0 0 5px">Topics</h1>
+            <p style="margin:0;font-size:13.5px;color:rgba(240,240,244,0.48)">Persistent content ideas, grouped. Research once, reuse across every pack.</p>
+          </div>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <div style="display:flex;align-items:center;gap:7px;height:32px;padding:0 12px;border-radius:9px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.09);font-size:12.5px;cursor:pointer" style-hover="background:rgba(255,255,255,0.1)">Group by ▾</div>
+            <div style="display:flex;align-items:center;gap:7px;height:32px;padding:0 13px;border-radius:9px;font-size:12.5px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(180deg,#f9612a,#e04203);box-shadow:0 4px 14px rgba(243,75,4,0.35),inset 0 1px 0 rgba(255,255,255,0.25)">New Topic</div>
+          </div>
+        </div>
+
+        <sc-for list="{{ topicGroups }}" as="g" hint-placeholder-count="2">
+          <div style="margin-bottom:26px">
+            <div style="display:flex;align-items:center;gap:9px;margin-bottom:11px">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(240,240,244,0.42)">{{ g.name }}</span>
+              <span style="flex:1;height:1px;background:rgba(255,255,255,0.07)"></span>
+              <span style="font-size:11px;color:rgba(240,240,244,0.32)">{{ g.count }}</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+              <sc-for list="{{ g.items }}" as="t" hint-placeholder-count="3">
+                <div style="padding:16px;border-radius:16px;background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 8px 24px rgba(0,0,0,0.26),inset 0 1px 0 rgba(255,255,255,0.06);transition:all 180ms" style-hover="background:rgba(255,255,255,0.075);border-color:rgba(255,255,255,0.16)">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
+                    <span style="font-size:14.5px;font-weight:600">{{ t.name }}</span>
+                    <span style="margin-left:auto;font-size:10.5px;padding:2px 7px;border-radius:20px;background:{{ t.bg }};color:{{ t.fg }}">{{ t.status }}</span>
+                  </div>
+                  <div style="font-size:12.5px;color:rgba(240,240,244,0.48);line-height:1.5;margin-bottom:13px;min-height:38px;text-wrap:pretty">{{ t.desc }}</div>
+                  <div style="display:flex;gap:14px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.07)">
+                    <div><div style="font-family:'JetBrains Mono',monospace;font-size:14px">{{ t.content }}</div><div style="font-size:10px;letter-spacing:0.1em;color:rgba(240,240,244,0.35)">CONTENT</div></div>
+                    <div><div style="font-family:'JetBrains Mono',monospace;font-size:14px">{{ t.packs }}</div><div style="font-size:10px;letter-spacing:0.1em;color:rgba(240,240,244,0.35)">PACKS</div></div>
+                    <div style="margin-left:auto;align-self:flex-end;font-size:11px;color:rgba(240,240,244,0.35)">{{ t.activity }}</div>
+                  </div>
+                  <div style="display:flex;gap:7px;padding-top:12px">
+                    <span onClick="{{ goPackDetail }}" style="font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:8px;background:rgba(255,255,255,0.08);cursor:pointer" style-hover="background:rgba(255,255,255,0.14)">Open</span>
+                    <span style="font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:8px;background:rgba(255,255,255,0.08);cursor:pointer" style-hover="background:rgba(255,255,255,0.14)">Research</span>
+                    <span onClick="{{ goRunSetup }}" style="font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:8px;color:#F34B04;background:rgba(243,75,4,0.14);cursor:pointer" style-hover="background:rgba(243,75,4,0.24)">Create Pack</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      </sc-if>
+
+      <!-- ═══ PACK LIBRARY ═══ -->
+      <sc-if value="{{ isPacks }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:1180px;margin:0 auto;padding:34px 30px 60px;animation:os-rise 240ms ease-out">
+        <div style="display:flex;align-items:flex-end;margin-bottom:20px">
+          <div>
+            <h1 style="font-family:'Inter Tight',Inter,sans-serif;font-size:28px;font-weight:700;letter-spacing:-0.025em;margin:0 0 5px">Packs</h1>
+            <p style="margin:0;font-size:13.5px;color:rgba(240,240,244,0.48)">A pack is a production brief. Point it at a topic and it makes everything.</p>
+          </div>
+          <div onClick="{{ goBuilder }}" style="margin-left:auto;display:flex;align-items:center;gap:7px;height:32px;padding:0 13px;border-radius:9px;font-size:12.5px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(180deg,#f9612a,#e04203);box-shadow:0 4px 14px rgba(243,75,4,0.35),inset 0 1px 0 rgba(255,255,255,0.25)">Create Pack</div>
+        </div>
+
+        <div style="display:inline-flex;gap:3px;padding:3px;border-radius:11px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.07);margin-bottom:20px">
+          <sc-for list="{{ packTabs }}" as="tb" hint-placeholder-count="3">
+            <div onClick="{{ tb.pick }}" style="padding:6px 14px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;background:{{ tb.bg }};color:{{ tb.fg }}">{{ tb.label }}</div>
+          </sc-for>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+          <sc-for list="{{ packList }}" as="p" hint-placeholder-count="6">
+            <div onClick="{{ p.open }}" style="display:flex;flex-direction:column;padding:17px;border-radius:17px;cursor:pointer;background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 10px 28px rgba(0,0,0,0.28),inset 0 1px 0 rgba(255,255,255,0.06);transition:all 180ms" style-hover="background:rgba(255,255,255,0.08);transform:translateY(-2px);border-color:rgba(255,255,255,0.18)">
+              <div style="display:flex;align-items:center;gap:9px;margin-bottom:12px">
+                <span style="width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-family:'JetBrains Mono',monospace;font-size:10px;background:{{ p.bg }};color:{{ p.fg }}">{{ p.n }}</span>
+                <span style="margin-left:auto;font-size:10.5px;font-family:'JetBrains Mono',monospace;letter-spacing:0.1em;padding:2px 7px;border-radius:20px;background:{{ p.bg }};color:{{ p.fg }}">{{ p.status }}</span>
+              </div>
+              <div style="font-size:15px;font-weight:600;letter-spacing:-0.01em;margin-bottom:5px">{{ p.name }}</div>
+              <div style="font-size:12.5px;color:rgba(240,240,244,0.48);line-height:1.5;margin-bottom:14px;min-height:38px;text-wrap:pretty">{{ p.desc }}</div>
+              <div style="margin-top:auto;display:flex;align-items:center;gap:8px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.07);font-size:11.5px;color:rgba(240,240,244,0.45)">
+                <span style="font-family:'JetBrains Mono',monospace;color:rgba(240,240,244,0.7)">{{ p.sections }}</span>
+                <span>sections</span>
+                <span style="margin-left:auto">{{ p.used }}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ═══ PACK DETAIL ═══ -->
+      <sc-if value="{{ isPackDetail }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:1180px;margin:0 auto;padding:26px 30px 60px;animation:os-rise 240ms ease-out">
+        <div onClick="{{ goPacks }}" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:rgba(240,240,244,0.5);cursor:pointer;margin-bottom:14px" style-hover="color:#f0f0f4">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 6-6 6 6 6"></path></svg>
+          <span>Packs</span>
+        </div>
+
+        <div style="display:flex;align-items:flex-start;gap:20px;margin-bottom:24px">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">
+              <h1 style="font-family:'Inter Tight',Inter,sans-serif;font-size:30px;font-weight:700;letter-spacing:-0.03em;margin:0">BN AI Prompt Series</h1>
+              <span style="font-size:10.5px;font-family:'JetBrains Mono',monospace;letter-spacing:0.1em;padding:3px 8px;border-radius:20px;background:rgba(132,204,22,0.16);color:#a3e635">ACTIVE</span>
+            </div>
+            <p style="margin:0;font-size:14px;color:rgba(240,240,244,0.5);max-width:660px;text-wrap:pretty">Short-form Bangla AI content — three prompts, a narrated script, a voiceover and the whole social package around it.</p>
+          </div>
+          <div style="display:flex;gap:8px;flex:0 0 auto">
+            <div onClick="{{ goRunSetup }}" style="display:flex;align-items:center;gap:7px;height:34px;padding:0 15px;border-radius:10px;font-size:13px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(180deg,#f9612a,#e04203);box-shadow:0 5px 18px rgba(243,75,4,0.4),inset 0 1px 0 rgba(255,255,255,0.28)" style-hover="filter:brightness(1.07)" style-active="transform:translateY(1px)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="#fff" stroke="none"><path d="M7 4.5v15l13-7.5-13-7.5Z"></path></svg>
+              <span>Run Pack</span>
+            </div>
+            <div onClick="{{ goBuilder }}" style="height:34px;padding:0 14px;display:grid;place-items:center;border-radius:10px;font-size:13px;font-weight:600;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);cursor:pointer" style-hover="background:rgba(255,255,255,0.12)">Edit</div>
+            <div style="width:34px;height:34px;display:grid;place-items:center;border-radius:10px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);cursor:pointer" style-hover="background:rgba(255,255,255,0.12)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="rgba(240,240,244,0.7)"><circle cx="5" cy="12" r="1.7"></circle><circle cx="12" cy="12" r="1.7"></circle><circle cx="19" cy="12" r="1.7"></circle></svg>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 340px;gap:14px;align-items:start">
+
+          <div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:11px">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;color:rgba(240,240,244,0.42)">SECTIONS</span>
+              <span style="flex:1;height:1px;background:rgba(255,255,255,0.07)"></span>
+              <span style="font-size:11.5px;color:rgba(240,240,244,0.38)">{{ doneCount }} of 10 complete</span>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <sc-for list="{{ sections }}" as="s" hint-placeholder-count="10">
+                <div style="display:grid;grid-template-columns:34px 1fr auto;gap:13px;align-items:center;padding:13px 15px;border-radius:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.075);backdrop-filter:blur(20px);transition:all 160ms" style-hover="background:rgba(255,255,255,0.075);border-color:rgba(255,255,255,0.16)">
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:rgba(240,240,244,0.32)">{{ s.n }}</div>
+                  <div style="min-width:0">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+                      <span style="font-size:13.5px;font-weight:600">{{ s.name }}</span>
+                      <span style="font-size:9.5px;font-family:'JetBrains Mono',monospace;letter-spacing:0.1em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,0.07);color:rgba(240,240,244,0.5)">{{ s.type }}</span>
+                    </div>
+                    <div style="font-size:12px;color:rgba(240,240,244,0.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.purpose }}</div>
+                    <div style="margin-top:5px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(240,240,244,0.34)">{{ s.preview }}</div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:9px">
+                    <span style="display:flex;align-items:center;gap:6px;font-size:11px;padding:4px 9px;border-radius:20px;background:{{ s.bg }};color:{{ s.fg }}">
+                      <span style="width:5px;height:5px;border-radius:50%;background:currentColor;animation:{{ s.anim }}"></span>{{ s.status }}
+                    </span>
+                    <span onClick="{{ s.open }}" style="font-size:11.5px;font-weight:600;padding:5px 11px;border-radius:8px;background:rgba(255,255,255,0.08);cursor:pointer" style-hover="background:rgba(255,255,255,0.16)">Open</span>
+                  </div>
+                </div>
+              </sc-for>
+
+              <div onClick="{{ toggleAddSection }}" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:13px;border-radius:14px;border:1px dashed rgba(255,255,255,0.16);font-size:12.5px;font-weight:600;color:rgba(240,240,244,0.55);cursor:pointer" style-hover="background:rgba(255,255,255,0.05);color:#f0f0f4;border-color:rgba(255,255,255,0.3)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+                <span>Add Section</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:12px;position:sticky;top:0">
+            <div style="padding:16px;border-radius:17px;background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 10px 30px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.06)">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;color:rgba(240,240,244,0.42);margin-bottom:13px">PACK OVERVIEW</div>
+              <sc-for list="{{ overview }}" as="o" hint-placeholder-count="6">
+                <div style="display:flex;gap:12px;padding:7px 0;border-top:1px solid rgba(255,255,255,0.055)">
+                  <span style="flex:0 0 78px;font-size:12px;color:rgba(240,240,244,0.42)">{{ o.k }}</span>
+                  <span style="flex:1;font-size:12.5px;font-weight:500;text-wrap:pretty">{{ o.v }}</span>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="padding:16px;border-radius:17px;background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 10px 30px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.06)">
+              <div style="display:flex;align-items:center;margin-bottom:12px">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;color:rgba(240,240,244,0.42)">PACK RULES</span>
+                <span onClick="{{ toggleInstructions }}" style="margin-left:auto;font-size:11.5px;font-weight:600;color:#F34B04;cursor:pointer">{{ instrLabel }}</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <sc-for list="{{ rules }}" as="r" hint-placeholder-count="4">
+                  <div style="display:flex;gap:9px;font-size:12.5px;color:rgba(240,240,244,0.72);line-height:1.45">
+                    <span style="color:#F34B04;flex:0 0 auto">—</span><span style="text-wrap:pretty">{{ r.text }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <sc-if value="{{ showInstructions }}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top:13px;padding:12px;border-radius:11px;background:rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.08);font-family:'JetBrains Mono',monospace;font-size:10.5px;line-height:1.7;color:rgba(240,240,244,0.6);white-space:pre-wrap">{{ systemPrompt }}</div>
+              </sc-if>
+            </div>
+
+            <div style="padding:16px;border-radius:17px;background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 10px 30px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.06)">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;color:rgba(240,240,244,0.42);margin-bottom:12px">CONTEXT USED</div>
+              <sc-for list="{{ contextItems }}" as="c" hint-placeholder-count="4">
+                <div style="display:flex;align-items:center;gap:9px;padding:5px 0;font-size:12.5px;color:{{ c.color }}">
+                  <span>{{ c.mark }}</span><span>{{ c.label }}</span>
+                  <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(240,240,244,0.32)">{{ c.size }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ═══ SECTION DETAIL ═══ -->
+      <sc-if value="{{ isSection }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:1180px;margin:0 auto;padding:26px 30px 60px;animation:os-rise 240ms ease-out">
+        <div onClick="{{ goPackDetail }}" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:rgba(240,240,244,0.5);cursor:pointer;margin-bottom:14px" style-hover="color:#f0f0f4">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 6-6 6 6 6"></path></svg>
+          <span>BN AI Prompt Series</span>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:11px;margin-bottom:22px">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:19px;color:rgba(240,240,244,0.3)">{{ cur.n }}</span>
+          <h1 style="font-family:'Inter Tight',Inter,sans-serif;font-size:27px;font-weight:700;letter-spacing:-0.028em;margin:0">{{ cur.name }}</h1>
+          <span style="font-size:11px;padding:4px 10px;border-radius:20px;background:{{ cur.bg }};color:{{ cur.fg }}">{{ cur.status }}</span>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <div onClick="{{ regenerate }}" style="display:flex;align-items:center;gap:7px;height:33px;padding:0 13px;border-radius:10px;font-size:12.5px;font-weight:600;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);cursor:pointer" style-hover="background:rgba(255,255,255,0.12)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7"></path><path d="M21 4v5h-5"></path></svg>
+              <span>Regenerate</span>
+            </div>
+            <div onClick="{{ goArtifact }}" style="height:33px;padding:0 14px;display:grid;place-items:center;border-radius:10px;font-size:12.5px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(180deg,#f9612a,#e04203);box-shadow:0 4px 14px rgba(243,75,4,0.35),inset 0 1px 0 rgba(255,255,255,0.25)">Approve</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 300px;gap:14px;align-items:start">
+          <div style="border-radius:18px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 12px 34px rgba(0,0,0,0.32),inset 0 1px 0 rgba(255,255,255,0.06);overflow:hidden">
+            <div style="display:flex;align-items:center;gap:9px;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,0.07);background:rgba(255,255,255,0.025)">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;color:rgba(240,240,244,0.45)">OUTPUT</span>
+              <span style="font-size:10.5px;padding:2px 7px;border-radius:5px;background:rgba(255,255,255,0.07);color:rgba(240,240,244,0.55)">v4</span>
+              <span style="margin-left:auto;font-size:11.5px;color:rgba(240,240,244,0.38)">130 words · 9 beats · Bangla</span>
+            </div>
+            <div style="padding:22px 24px;font-size:15px;line-height:1.85;color:rgba(240,240,244,0.88);text-wrap:pretty">
+              <p style="margin:0 0 15px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#F34B04;margin-right:9px">HOOK</span>তিনটা প্রম্পট, আর আপনার পুরো সপ্তাহের কনটেন্ট রেডি। প্রথমটা শুনলেই বুঝবেন কেন।</p>
+              <p style="margin:0 0 15px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(240,240,244,0.32);margin-right:9px">BEAT 1</span>প্রথম প্রম্পট হলো রিসার্চ প্রম্পট। আপনার টপিক দিন, আর এটা আপনাকে দশটা অ্যাঙ্গেল বের করে দেবে — যেগুলো নিয়ে আসলে মানুষ কথা বলছে।</p>
+              <p style="margin:0 0 15px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(240,240,244,0.32);margin-right:9px">BEAT 2</span>দ্বিতীয়টা স্ক্রিপ্ট প্রম্পট। এখানে টোন আর দৈর্ঘ্য ফিক্স করে দিতে হবে, নাহলে আউটপুট জেনেরিক হয়ে যায়।</p>
+              <p style="margin:0 0 15px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(240,240,244,0.32);margin-right:9px">BEAT 3</span>তৃতীয়টা রিপারপাজ প্রম্পট — একটা স্ক্রিপ্ট থেকে ক্যাপশন, টাইটেল আর কমেন্ট রিপ্লাই।</p>
+              <p style="margin:0"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#F34B04;margin-right:9px">CTA</span>তিনটা প্রম্পট কমেন্টে চাইলে লিখুন — <strong style="color:#f0f0f4">PROMPT</strong>।</p>
+            </div>
+            <div style="display:flex;gap:8px;padding:13px 16px;border-top:1px solid rgba(255,255,255,0.07);background:rgba(0,0,0,0.2)">
+              <span style="font-size:11.5px;font-weight:600;padding:6px 11px;border-radius:8px;background:rgba(255,255,255,0.08);cursor:pointer" style-hover="background:rgba(255,255,255,0.15)">Edit</span>
+              <span style="font-size:11.5px;font-weight:600;padding:6px 11px;border-radius:8px;background:rgba(255,255,255,0.08);cursor:pointer" style-hover="background:rgba(255,255,255,0.15)">Run Again</span>
+              <span style="font-size:11.5px;font-weight:600;padding:6px 11px;border-radius:8px;background:rgba(255,255,255,0.08);cursor:pointer" style-hover="background:rgba(255,255,255,0.15)">Save as Reusable Section</span>
+              <span onClick="{{ goVoice }}" style="margin-left:auto;font-size:11.5px;font-weight:600;padding:6px 11px;border-radius:8px;color:#F34B04;background:rgba(243,75,4,0.14);cursor:pointer" style-hover="background:rgba(243,75,4,0.24)">Generate Voice →</span>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="padding:16px;border-radius:17px;background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 10px 30px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.06)">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;color:rgba(240,240,244,0.42);margin-bottom:9px">PURPOSE</div>
+              <div style="font-size:12.5px;line-height:1.55;color:rgba(240,240,244,0.75);text-wrap:pretty">{{ cur.purpose }}</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;color:rgba(240,240,244,0.42);margin:16px 0 8px">INPUTS</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                <sc-for list="{{ cur.inputs }}" as="i" hint-placeholder-count="3">
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;padding:3px 8px;border-radius:6px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.08);color:rgba(240,240,244,0.7)">{{ i.name }}</span>
+                </sc-for>
+              </div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;color:rgba(240,240,244,0.42);margin:16px 0 8px">OUTPUT</div>
+              <div style="font-size:12.5px;color:rgba(240,240,244,0.75)">{{ cur.output }}</div>
+            </div>
+
+            <div style="padding:16px;border-radius:17px;background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 10px 30px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.06)">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;color:rgba(240,240,244,0.42);margin-bottom:10px">RULES</div>
+              <div style="display:flex;flex-direction:column;gap:7px">
+                <sc-for list="{{ sectionRules }}" as="r" hint-placeholder-count="4">
+                  <div style="display:flex;gap:8px;font-size:12px;color:rgba(240,240,244,0.68);line-height:1.45"><span style="color:#F34B04">—</span><span style="text-wrap:pretty">{{ r.text }}</span></div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="padding:14px 16px;border-radius:17px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07)">
+              <div style="font-size:11.5px;color:rgba(240,240,244,0.42);line-height:1.6">Depends on <strong style="color:rgba(240,240,244,0.75)">02 Three Prompts</strong>. Regenerating this also regenerates <strong style="color:rgba(240,240,244,0.75)">04 Voiceover</strong> and <strong style="color:rgba(240,240,244,0.75)">05 CTA Keyword</strong>.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ═══ ARTIFACT ═══ -->
+      <sc-if value="{{ isArtifact }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:1180px;margin:0 auto;padding:26px 30px 60px;animation:os-rise 240ms ease-out">
+        <div onClick="{{ goContent }}" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:rgba(240,240,244,0.5);cursor:pointer;margin-bottom:14px" style-hover="color:#f0f0f4">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 6-6 6 6 6"></path></svg><span>Content</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:11px;margin-bottom:22px">
+          <h1 style="font-family:'Inter Tight',Inter,sans-serif;font-size:27px;font-weight:700;letter-spacing:-0.028em;margin:0">Bangla Script — Three Prompts</h1>
+          <span style="font-size:10.5px;font-family:'JetBrains Mono',monospace;letter-spacing:0.1em;padding:3px 8px;border-radius:20px;background:rgba(132,204,22,0.16);color:#a3e635">APPROVED</span>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <div style="height:33px;padding:0 13px;display:grid;place-items:center;border-radius:10px;font-size:12.5px;font-weight:600;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);cursor:pointer" style-hover="background:rgba(255,255,255,0.12)">Create Variant</div>
+            <div style="height:33px;padding:0 14px;display:flex;align-items:center;gap:7px;border-radius:10px;font-size:12.5px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(180deg,#f9612a,#e04203);box-shadow:0 4px 14px rgba(243,75,4,0.35),inset 0 1px 0 rgba(255,255,255,0.25)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg>
+              <span>Send to Video</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 300px;gap:14px;align-items:start">
+          <div style="border-radius:18px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 12px 34px rgba(0,0,0,0.32),inset 0 1px 0 rgba(255,255,255,0.06);overflow:hidden">
+            <div style="padding:22px 24px;font-size:15px;line-height:1.85;color:rgba(240,240,244,0.88)">
+              <p style="margin:0 0 15px">তিনটা প্রম্পট, আর আপনার পুরো সপ্তাহের কনটেন্ট রেডি। প্রথমটা শুনলেই বুঝবেন কেন।</p>
+              <p style="margin:0 0 15px">প্রথম প্রম্পট হলো রিসার্চ প্রম্পট। আপনার টপিক দিন, আর এটা আপনাকে দশটা অ্যাঙ্গেল বের করে দেবে।</p>
+              <p style="margin:0">তিনটা প্রম্পট কমেন্টে চাইলে লিখুন — <strong style="color:#f0f0f4">PROMPT</strong>।</p>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;padding:13px 16px;border-top:1px solid rgba(255,255,255,0.07);background:rgba(0,0,0,0.2)">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.13em;color:rgba(240,240,244,0.35);align-self:center;margin-right:3px">NEXT</span>
+              <span style="font-size:11.5px;font-weight:600;padding:6px 11px;border-radius:8px;background:rgba(255,255,255,0.08);cursor:pointer" style-hover="background:rgba(255,255,255,0.15)">Generate Title</span>
+              <span style="font-size:11.5px;font-weight:600;padding:6px 11px;border-radius:8px;background:rgba(255,255,255,0.08);cursor:pointer" style-hover="background:rgba(255,255,255,0.15)">Generate CTA</span>
+              <span style="font-size:11.5px;font-weight:600;padding:6px 11px;border-radius:8px;background:rgba(255,255,255,0.08);cursor:pointer" style-hover="background:rgba(255,255,255,0.15)">Generate Caption</span>
+              <span onClick="{{ goVoice }}" style="font-size:11.5px;font-weight:600;padding:6px 11px;border-radius:8px;color:#F34B04;background:rgba(243,75,4,0.14);cursor:pointer" style-hover="background:rgba(243,75,4,0.24)">Generate Voice</span>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="padding:16px;border-radius:17px;background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 10px 30px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.06)">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;color:rgba(240,240,244,0.42);margin-bottom:11px">ARTIFACT</div>
+              <sc-for list="{{ artifactMeta }}" as="m" hint-placeholder-count="7">
+                <div style="display:flex;gap:12px;padding:6px 0;border-top:1px solid rgba(255,255,255,0.055)">
+                  <span style="flex:0 0 68px;font-size:12px;color:rgba(240,240,244,0.42)">{{ m.k }}</span>
+                  <span style="flex:1;font-size:12.5px;font-weight:500">{{ m.v }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="padding:16px;border-radius:17px;background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 10px 30px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.06)">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;color:rgba(240,240,244,0.42);margin-bottom:11px">VERSIONS</div>
+              <sc-for list="{{ versions }}" as="v" hint-placeholder-count="4">
+                <div style="display:flex;align-items:center;gap:10px;padding:6px 0;font-size:12px">
+                  <span style="font-family:'JetBrains Mono',monospace;color:{{ v.color }}">{{ v.tag }}</span>
+                  <span style="color:rgba(240,240,244,0.55)">{{ v.note }}</span>
+                  <span style="margin-left:auto;font-size:10.5px;color:rgba(240,240,244,0.3)">{{ v.when }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ═══ VOICE ═══ -->
+      <sc-if value="{{ isVoice }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:1000px;margin:0 auto;padding:26px 30px 60px;animation:os-rise 240ms ease-out">
+        <div onClick="{{ goPackDetail }}" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:rgba(240,240,244,0.5);cursor:pointer;margin-bottom:14px" style-hover="color:#f0f0f4">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 6-6 6 6 6"></path></svg><span>BN AI Prompt Series</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:11px;margin-bottom:22px">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:19px;color:rgba(240,240,244,0.3)">04</span>
+          <h1 style="font-family:'Inter Tight',Inter,sans-serif;font-size:27px;font-weight:700;letter-spacing:-0.028em;margin:0">Voiceover</h1>
+          <span style="font-size:11px;padding:4px 10px;border-radius:20px;background:rgba(139,92,246,0.18);color:#c4b5fd">Audio · 62 sec</span>
+        </div>
+
+        <div style="border-radius:18px;background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 14px 40px rgba(0,0,0,0.34),inset 0 1px 0 rgba(255,255,255,0.07);overflow:hidden;margin-bottom:14px">
+          <div style="display:flex;align-items:center;gap:16px;padding:20px 22px">
+            <div onClick="{{ togglePlay }}" style="width:50px;height:50px;flex:0 0 50px;border-radius:50%;display:grid;place-items:center;cursor:pointer;background:linear-gradient(180deg,#f9612a,#e04203);box-shadow:0 6px 20px rgba(243,75,4,0.45),inset 0 1px 0 rgba(255,255,255,0.3)" style-hover="filter:brightness(1.08)">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="#fff"><path d="M7 4.5v15l13-7.5-13-7.5Z"></path></svg>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:flex-end;gap:2px;height:46px">
+                <sc-for list="{{ bars }}" as="b" hint-placeholder-count="60">
+                  <span style="flex:1;border-radius:2px;background:{{ b.color }};height:{{ b.h }}"></span>
+                </sc-for>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(240,240,244,0.35)">
+                <span>0:24</span><span>Bangla · My Voice v2</span><span>1:02</span>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;padding:13px 22px;border-top:1px solid rgba(255,255,255,0.07);background:rgba(0,0,0,0.22)">
+            <span style="font-size:11.5px;font-weight:600;padding:6px 11px;border-radius:8px;background:rgba(255,255,255,0.08);cursor:pointer" style-hover="background:rgba(255,255,255,0.15)">Regenerate</span>
+            <span style="font-size:11.5px;font-weight:600;padding:6px 11px;border-radius:8px;background:rgba(255,255,255,0.08);cursor:pointer" style-hover="background:rgba(255,255,255,0.15)">Download</span>
+            <span style="margin-left:auto;font-size:11.5px;font-weight:600;padding:6px 11px;border-radius:8px;color:#F34B04;background:rgba(243,75,4,0.14);cursor:pointer" style-hover="background:rgba(243,75,4,0.24)">Send to Video →</span>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div style="padding:17px;border-radius:17px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px)">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;color:rgba(240,240,244,0.42);margin-bottom:13px">SOURCE</div>
+            <div onClick="{{ goSection }}" style="display:flex;align-items:center;gap:11px;padding:11px;border-radius:12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);cursor:pointer" style-hover="background:rgba(255,255,255,0.09)">
+              <span style="width:28px;height:28px;border-radius:9px;display:grid;place-items:center;background:rgba(14,165,233,0.16);font-family:'JetBrains Mono',monospace;font-size:10px;color:#5ac8fa">03</span>
+              <div style="flex:1"><div style="font-size:12.5px;font-weight:600">Bangla Script</div><div style="font-size:11px;color:rgba(240,240,244,0.4)">v4 · 130 words · approved</div></div>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(240,240,244,0.35)" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"></path></svg>
+            </div>
+          </div>
+          <div style="padding:17px;border-radius:17px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px)">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;color:rgba(240,240,244,0.42);margin-bottom:13px">DELIVERY</div>
+            <sc-for list="{{ voiceSettings }}" as="v" hint-placeholder-count="4">
+              <div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-top:1px solid rgba(255,255,255,0.055)">
+                <span style="flex:0 0 74px;font-size:12px;color:rgba(240,240,244,0.42)">{{ v.k }}</span>
+                <span style="flex:1;font-size:12.5px;font-weight:500">{{ v.v }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ═══ CONTENT LIBRARY ═══ -->
+      <sc-if value="{{ isContent }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:1180px;margin:0 auto;padding:34px 30px 60px;animation:os-rise 240ms ease-out">
+        <h1 style="font-family:'Inter Tight',Inter,sans-serif;font-size:28px;font-weight:700;letter-spacing:-0.025em;margin:0 0 5px">Content</h1>
+        <p style="margin:0 0 20px;font-size:13.5px;color:rgba(240,240,244,0.48)">Every artifact any pack has ever produced, in one place.</p>
+
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+          <div style="display:inline-flex;gap:3px;padding:3px;border-radius:11px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.07)">
+            <sc-for list="{{ contentTabs }}" as="tb" hint-placeholder-count="6">
+              <div onClick="{{ tb.pick }}" style="padding:6px 13px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;background:{{ tb.bg }};color:{{ tb.fg }}">{{ tb.label }}</div>
+            </sc-for>
+          </div>
+          <div style="margin-left:auto;display:flex;gap:7px">
+            <span style="height:30px;padding:0 11px;display:grid;place-items:center;border-radius:9px;font-size:12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);cursor:pointer" style-hover="background:rgba(255,255,255,0.1)">Topic ▾</span>
+            <span style="height:30px;padding:0 11px;display:grid;place-items:center;border-radius:9px;font-size:12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);cursor:pointer" style-hover="background:rgba(255,255,255,0.1)">Pack ▾</span>
+            <span style="height:30px;padding:0 11px;display:grid;place-items:center;border-radius:9px;font-size:12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);cursor:pointer" style-hover="background:rgba(255,255,255,0.1)">Status ▾</span>
+          </div>
+        </div>
+
+        <div style="border-radius:18px;background:rgba(255,255,255,0.035);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 12px 34px rgba(0,0,0,0.3),inset 0 1px 0 rgba(255,255,255,0.05);overflow:hidden">
+          <div style="display:grid;grid-template-columns:1fr 110px 150px 140px 90px;gap:14px;padding:10px 18px;border-bottom:1px solid rgba(255,255,255,0.07);background:rgba(255,255,255,0.025);font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.13em;color:rgba(240,240,244,0.4)">
+            <span>TITLE</span><span>TYPE</span><span>TOPIC</span><span>PACK</span><span>UPDATED</span>
+          </div>
+          <sc-for list="{{ contentRows }}" as="r" hint-placeholder-count="9">
+            <div onClick="{{ r.open }}" style="display:grid;grid-template-columns:1fr 110px 150px 140px 90px;gap:14px;align-items:center;padding:12px 18px;border-bottom:1px solid rgba(255,255,255,0.045);cursor:pointer;transition:background 140ms" style-hover="background:rgba(255,255,255,0.055)">
+              <div style="min-width:0;display:flex;align-items:center;gap:9px">
+                <span style="width:6px;height:6px;border-radius:50%;flex:0 0 6px;background:{{ r.dot }}"></span>
+                <span style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.title }}</span>
+              </div>
+              <span style="font-size:11px;padding:2px 8px;border-radius:6px;justify-self:start;background:rgba(255,255,255,0.07);color:rgba(240,240,244,0.6)">{{ r.type }}</span>
+              <span style="font-size:12px;color:rgba(240,240,244,0.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.topic }}</span>
+              <span style="font-size:12px;color:rgba(240,240,244,0.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.pack }}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(240,240,244,0.35)">{{ r.updated }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ═══ PACK BUILDER ═══ -->
+      <sc-if value="{{ isBuilder }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:1060px;margin:0 auto;padding:34px 30px 60px;animation:os-rise 240ms ease-out">
+        <h1 style="font-family:'Inter Tight',Inter,sans-serif;font-size:28px;font-weight:700;letter-spacing:-0.025em;margin:0 0 5px">New Content Pack</h1>
+        <p style="margin:0 0 22px;font-size:13.5px;color:rgba(240,240,244,0.48)">Describe what you want produced. No wiring, no nodes.</p>
+
+        <div style="display:grid;grid-template-columns:196px 1fr;gap:16px;align-items:start">
+          <div style="padding:8px;border-radius:16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px)">
+            <sc-for list="{{ steps }}" as="st" hint-placeholder-count="8">
+              <div onClick="{{ st.pick }}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;cursor:pointer;background:{{ st.bg }}" style-hover="background:rgba(255,255,255,0.06)">
+                <span style="width:19px;height:19px;flex:0 0 19px;border-radius:50%;display:grid;place-items:center;font-family:'JetBrains Mono',monospace;font-size:9.5px;background:{{ st.dotBg }};color:{{ st.dotFg }}">{{ st.n }}</span>
+                <span style="font-size:12.5px;font-weight:500;color:{{ st.fg }}">{{ st.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="padding:22px;border-radius:18px;background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 12px 34px rgba(0,0,0,0.32),inset 0 1px 0 rgba(255,255,255,0.06)">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;color:#F34B04;margin-bottom:6px">STEP 6 OF 8</div>
+            <h2 style="font-family:'Inter Tight',Inter,sans-serif;font-size:20px;font-weight:700;letter-spacing:-0.02em;margin:0 0 4px">Sections</h2>
+            <p style="margin:0 0 18px;font-size:13px;color:rgba(240,240,244,0.48)">Choose what this pack produces. Drag to reorder — dependencies follow the order.</p>
+
+            <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
+              <sc-for list="{{ builderSections }}" as="b" hint-placeholder-count="5">
+                <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:12px;background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.08);cursor:grab" style-hover="background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.16)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(240,240,244,0.28)"><circle cx="9" cy="6" r="1.4"></circle><circle cx="15" cy="6" r="1.4"></circle><circle cx="9" cy="12" r="1.4"></circle><circle cx="15" cy="12" r="1.4"></circle><circle cx="9" cy="18" r="1.4"></circle><circle cx="15" cy="18" r="1.4"></circle></svg>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(240,240,244,0.32)">{{ b.n }}</span>
+                  <span style="font-size:13px;font-weight:600">{{ b.name }}</span>
+                  <span style="font-size:9.5px;font-family:'JetBrains Mono',monospace;letter-spacing:0.1em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:rgba(255,255,255,0.07);color:rgba(240,240,244,0.5)">{{ b.type }}</span>
+                  <span style="margin-left:auto;font-size:11.5px;color:rgba(240,240,244,0.4);cursor:pointer" style-hover="color:#f0f0f4">Configure</span>
+                </div>
+              </sc-for>
+            </div>
+
+            <div onClick="{{ toggleAddSection }}" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;border-radius:12px;border:1px dashed rgba(255,255,255,0.16);font-size:12.5px;font-weight:600;color:rgba(240,240,244,0.55);cursor:pointer;margin-bottom:20px" style-hover="background:rgba(255,255,255,0.05);color:#f0f0f4">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg><span>Add Section</span>
+            </div>
+
+            <div style="display:flex;gap:8px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.07)">
+              <span style="height:33px;padding:0 14px;display:grid;place-items:center;border-radius:10px;font-size:12.5px;font-weight:600;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);cursor:pointer" style-hover="background:rgba(255,255,255,0.12)">Back</span>
+              <span style="margin-left:auto;height:33px;padding:0 14px;display:grid;place-items:center;border-radius:10px;font-size:12.5px;font-weight:600;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);cursor:pointer" style-hover="background:rgba(255,255,255,0.12)">Save Draft</span>
+              <span onClick="{{ goPackDetail }}" style="height:33px;padding:0 16px;display:grid;place-items:center;border-radius:10px;font-size:12.5px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(180deg,#f9612a,#e04203);box-shadow:0 4px 14px rgba(243,75,4,0.35),inset 0 1px 0 rgba(255,255,255,0.25)">Continue → Test</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ═══ RUN PROGRESS ═══ -->
+      <sc-if value="{{ isRunProgress }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:720px;margin:0 auto;padding:44px 30px 60px;animation:os-rise 240ms ease-out">
+        <div style="display:flex;align-items:center;gap:11px;margin-bottom:6px">
+          <h1 style="font-family:'Inter Tight',Inter,sans-serif;font-size:26px;font-weight:700;letter-spacing:-0.028em;margin:0">{{ runTitle }}</h1>
+          <span style="font-size:11px;padding:4px 10px;border-radius:20px;background:{{ runBadgeBg }};color:{{ runBadgeFg }}">{{ runBadge }}</span>
+        </div>
+        <p style="margin:0 0 22px;font-size:13.5px;color:rgba(240,240,244,0.48)">BN AI Prompt Series · Topic: AI Agents · Balanced quality</p>
+
+        <div style="padding:6px;border-radius:18px;background:rgba(255,255,255,0.045);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(24px);box-shadow:0 14px 40px rgba(0,0,0,0.34),inset 0 1px 0 rgba(255,255,255,0.07);margin-bottom:14px">
+          <sc-for list="{{ runRows }}" as="r" hint-placeholder-count="6">
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:13px;background:{{ r.rowBg }}">
+              <span style="width:20px;height:20px;flex:0 0 20px;border-radius:50%;display:grid;place-items:center;font-size:11px;background:{{ r.bg }};color:{{ r.fg }};animation:{{ r.anim }}">{{ r.mark }}</span>
+              <span style="font-size:13.5px;font-weight:500;color:{{ r.textColor }}">{{ r.name }}</span>
+              <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:rgba(240,240,244,0.34)">{{ r.note }}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,0.09);overflow:hidden">
+            <div style="height:100%;border-radius:3px;background:linear-gradient(90deg,#F34B04,#ff9a63);transition:width 400ms ease;width:{{ runPct }}"></div>
+          </div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(240,240,244,0.45)">{{ runPct }}</span>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:20px">
+          <span onClick="{{ goPackDetail }}" style="height:33px;padding:0 14px;display:grid;place-items:center;border-radius:10px;font-size:12.5px;font-weight:600;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);cursor:pointer" style-hover="background:rgba(255,255,255,0.12)">{{ runExitLabel }}</span>
+          <span style="height:33px;padding:0 14px;display:grid;place-items:center;border-radius:10px;font-size:12.5px;color:rgba(240,240,244,0.5);cursor:pointer" style-hover="color:#f0f0f4">View Details</span>
+          <sc-if value="{{ runDone }}" hint-placeholder-val="{{ false }}">
+            <span onClick="{{ goSection }}" style="margin-left:auto;height:33px;padding:0 16px;display:grid;place-items:center;border-radius:10px;font-size:12.5px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(180deg,#f9612a,#e04203);box-shadow:0 4px 14px rgba(243,75,4,0.35),inset 0 1px 0 rgba(255,255,255,0.25)">Review 2 sections →</span>
+          </sc-if>
+        </div>
+      </div>
+      </sc-if>
+    </div>
+  </main>
+
+  <!-- ═══ RUN SETUP SHEET ═══ -->
+  <sc-if value="{{ isRunSetup }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ goPackDetail }}" style="position:fixed;inset:0;z-index:60;background:rgba(4,4,8,0.55);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:grid;place-items:center;padding:30px">
+      <div onClick="{{ stop }}" style="width:100%;max-width:520px;border-radius:22px;background:rgba(26,26,32,0.72);backdrop-filter:blur(50px) saturate(180%);-webkit-backdrop-filter:blur(50px) saturate(180%);border:1px solid rgba(255,255,255,0.13);box-shadow:0 40px 90px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.12);overflow:hidden;animation:os-pop 180ms ease-out">
+        <div style="padding:20px 22px 0">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.14em;color:rgba(240,240,244,0.42)">RUN PACK</div>
+          <h2 style="font-family:'Inter Tight',Inter,sans-serif;font-size:21px;font-weight:700;letter-spacing:-0.022em;margin:6px 0 18px">BN AI Prompt Series</h2>
+        </div>
+        <div style="padding:0 22px 18px">
+          <div style="font-size:11.5px;color:rgba(240,240,244,0.42);margin-bottom:7px">Topic</div>
+          <div style="display:flex;align-items:center;gap:9px;height:38px;padding:0 12px;border-radius:11px;background:rgba(0,0,0,0.32);border:1px solid rgba(255,255,255,0.1);font-size:13px;font-weight:500;cursor:pointer;margin-bottom:18px" style-hover="border-color:rgba(255,255,255,0.2)">
+            <span>AI Agents</span>
+            <svg style="margin-left:auto" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(240,240,244,0.5)" stroke-width="2.2" stroke-linecap="round"><path d="m6 9 6 6 6-6"></path></svg>
+          </div>
+
+          <div style="font-size:11.5px;color:rgba(240,240,244,0.42);margin-bottom:7px">Generate</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px">
+            <sc-for list="{{ runPicks }}" as="p" hint-placeholder-count="6">
+              <span onClick="{{ p.toggle }}" style="display:flex;align-items:center;gap:7px;padding:6px 11px;border-radius:9px;font-size:12px;font-weight:500;cursor:pointer;background:{{ p.bg }};border:1px solid {{ p.border }};color:{{ p.fg }}">
+                <span>{{ p.mark }}</span>{{ p.label }}
+              </span>
+            </sc-for>
+          </div>
+
+          <div style="font-size:11.5px;color:rgba(240,240,244,0.42);margin-bottom:7px">Quality</div>
+          <div style="display:flex;gap:3px;padding:3px;border-radius:11px;background:rgba(0,0,0,0.32);border:1px solid rgba(255,255,255,0.08)">
+            <sc-for list="{{ qualities }}" as="q" hint-placeholder-count="3">
+              <div onClick="{{ q.pick }}" style="flex:1;text-align:center;padding:7px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;background:{{ q.bg }};color:{{ q.fg }}">{{ q.label }}</div>
+            </sc-for>
+          </div>
+          <div style="margin-top:14px;padding:11px 13px;border-radius:11px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);font-size:11.5px;color:rgba(240,240,244,0.48);line-height:1.55">Context: <strong style="color:rgba(240,240,244,0.8)">Project</strong> · <strong style="color:rgba(240,240,244,0.8)">Topic</strong> · <strong style="color:rgba(240,240,244,0.8)">Pack</strong> — 12.4K tokens</div>
+        </div>
+        <div style="display:flex;gap:8px;padding:14px 22px;border-top:1px solid rgba(255,255,255,0.09);background:rgba(0,0,0,0.24)">
+          <span onClick="{{ goPackDetail }}" style="height:34px;padding:0 14px;display:grid;place-items:center;border-radius:10px;font-size:12.5px;font-weight:600;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);cursor:pointer" style-hover="background:rgba(255,255,255,0.12)">Cancel</span>
+          <span onClick="{{ startRun }}" style="margin-left:auto;height:34px;padding:0 20px;display:flex;align-items:center;gap:8px;border-radius:10px;font-size:12.5px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(180deg,#f9612a,#e04203);box-shadow:0 5px 18px rgba(243,75,4,0.42),inset 0 1px 0 rgba(255,255,255,0.28)" style-hover="filter:brightness(1.07)" style-active="transform:translateY(1px)">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="#fff"><path d="M7 4.5v15l13-7.5-13-7.5Z"></path></svg><span>Run</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ═══ ADD SECTION SHEET ═══ -->
+  <sc-if value="{{ addSectionOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ toggleAddSection }}" style="position:fixed;inset:0;z-index:60;background:rgba(4,4,8,0.55);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:grid;place-items:center;padding:30px">
+      <div onClick="{{ stop }}" style="width:100%;max-width:520px;max-height:78vh;display:flex;flex-direction:column;border-radius:22px;background:rgba(26,26,32,0.74);backdrop-filter:blur(50px) saturate(180%);-webkit-backdrop-filter:blur(50px) saturate(180%);border:1px solid rgba(255,255,255,0.13);box-shadow:0 40px 90px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.12);overflow:hidden;animation:os-pop 180ms ease-out">
+        <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.09)">
+          <div style="font-family:'Inter Tight',Inter,sans-serif;font-size:17px;font-weight:700;letter-spacing:-0.02em;margin-bottom:11px">Add Section</div>
+          <div style="display:flex;align-items:center;gap:9px;height:34px;padding:0 11px;border-radius:10px;background:rgba(0,0,0,0.34);border:1px solid rgba(255,255,255,0.1);color:rgba(240,240,244,0.4);font-size:12.5px">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4.5-4.5"></path></svg>
+            <span>What do you want to produce?</span>
+          </div>
+        </div>
+        <div style="overflow-y:auto;padding:12px 14px 16px">
+          <sc-for list="{{ sectionTypeGroups }}" as="g" hint-placeholder-count="4">
+            <div style="margin-bottom:14px">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.14em;color:rgba(240,240,244,0.36);padding:0 6px 8px">{{ g.name }}</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                <sc-for list="{{ g.items }}" as="i" hint-placeholder-count="6">
+                  <span onClick="{{ toggleAddSection }}" style="padding:7px 12px;border-radius:9px;font-size:12.5px;font-weight:500;cursor:pointer;background:rgba(255,255,255,0.055);border:1px solid rgba(255,255,255,0.09)" style-hover="background:rgba(243,75,4,0.16);border-color:rgba(243,75,4,0.4)">{{ i.name }}</span>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+          <div onClick="{{ toggleAddSection }}" style="display:flex;align-items:center;gap:9px;padding:12px 13px;border-radius:12px;border:1px dashed rgba(243,75,4,0.4);background:rgba(243,75,4,0.08);cursor:pointer" style-hover="background:rgba(243,75,4,0.16)">
+            <span style="font-size:12.5px;font-weight:600;color:#ff8a4c">Describe something custom</span>
+            <span style="font-size:11.5px;color:rgba(240,240,244,0.45)">e.g. “Generate a reply to every comment”</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ═══ COMMAND PALETTE ═══ -->
+  <sc-if value="{{ paletteOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closePalette }}" style="position:fixed;inset:0;z-index:70;background:rgba(4,4,8,0.5);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);display:flex;justify-content:center;align-items:flex-start;padding:14vh 30px 30px">
+      <div onClick="{{ stop }}" style="width:100%;max-width:580px;border-radius:20px;background:rgba(26,26,32,0.76);backdrop-filter:blur(50px) saturate(180%);-webkit-backdrop-filter:blur(50px) saturate(180%);border:1px solid rgba(255,255,255,0.14);box-shadow:0 40px 90px rgba(0,0,0,0.62),inset 0 1px 0 rgba(255,255,255,0.13);overflow:hidden;animation:os-pop 160ms ease-out">
+        <div style="display:flex;align-items:center;gap:11px;padding:15px 18px;border-bottom:1px solid rgba(255,255,255,0.09)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(240,240,244,0.4)" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4.5-4.5"></path></svg>
+          <input value="{{ query }}" onChange="{{ setQuery }}" placeholder="Type a command or search…" autoFocus="{{ true }}" style="flex:1;background:transparent;border:none;outline:none;color:#f0f0f4;font-size:14.5px" />
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(240,240,244,0.3);border:1px solid rgba(255,255,255,0.12);border-radius:5px;padding:1px 5px">ESC</span>
+        </div>
+        <div style="max-height:56vh;overflow-y:auto;padding:8px">
+          <sc-for list="{{ paletteGroups }}" as="g" hint-placeholder-count="3">
+            <div style="margin-bottom:6px">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.14em;color:rgba(240,240,244,0.34);padding:7px 10px 5px">{{ g.name }}</div>
+              <sc-for list="{{ g.items }}" as="c" hint-placeholder-count="4">
+                <div onClick="{{ c.run }}" style="display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:10px;cursor:pointer" style-hover="background:rgba(255,255,255,0.09)">
+                  <span style="width:22px;height:22px;flex:0 0 22px;border-radius:7px;display:grid;place-items:center;font-size:11px;background:{{ c.bg }};color:{{ c.fg }}">{{ c.glyph }}</span>
+                  <span style="font-size:13px;font-weight:500">{{ c.label }}</span>
+                  <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(240,240,244,0.3)">{{ c.hint }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;advancedNav&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Shell&quot;},&quot;runSpeed&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:900,&quot;min&quot;:250,&quot;max&quot;:2000,&quot;step&quot;:50,&quot;unit&quot;:&quot;ms&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Run&quot;}}">
+class Component extends DCLogic {
+  state = {
+    route: 'home', packTab: 'My Packs', contentTab: 'All', quality: 'Balanced',
+    projectOpen: false, projectIdx: 0,
+    createOpen: false, paletteOpen: false, addSectionOpen: false, showInstructions: false,
+    query: '', builderStep: 6, runIndex: -1, runDone: false,
+    picks: { 'Topic Brief': true, 'Three Prompts': true, 'Bangla Script': true, 'CTA Keyword': true, 'Social Caption': true, 'Voiceover': true, 'Titles': false, 'Shot Plan': false },
+    statuses: ['complete','complete','ready','not','not','not','not','review','not','review']
+  };
+
+  SECTIONS = [
+    ['01','Topic Brief','Research','Frames the angle and what the audience already knows.','4 angles · 2 sources'],
+    ['02','Three Prompts','Prompt','The three prompts the video actually teaches.','3 prompts · tested'],
+    ['03','Bangla Script','Script','Writes the final Bangla narration.','130 words · 9 beats'],
+    ['04','Voiceover','Voice','Narrates the approved script in my cloned voice.','—'],
+    ['05','CTA Keyword','CTA','Picks the comment keyword for the offer.','—'],
+    ['06','Voice Direction','Planning','Pace, emphasis and pause notes for delivery.','—'],
+    ['07','Shot Plan','Planning','B-roll and on-screen text per beat.','—'],
+    ['08','Titles','Title','Five title options ranked by hook strength.','5 options'],
+    ['09','Comment Reply','Reply','Reply templates for the keyword drop.','—'],
+    ['10','Social Caption','Caption','Caption plus hashtag set for each platform.','12 hashtags']
+  ];
+
+  STATUS = {
+    complete: ['Complete', 'rgba(132,204,22,0.16)', '#a3e635'],
+    ready:    ['Ready', 'rgba(14,165,233,0.16)', '#5ac8fa'],
+    running:  ['Running', 'rgba(243,75,4,0.18)', '#ff8a4c'],
+    review:   ['Needs review', 'rgba(245,158,11,0.16)', '#fbbf24'],
+    not:      ['Not started', 'rgba(255,255,255,0.07)', 'rgba(240,240,244,0.5)'],
+    failed:   ['Failed', 'rgba(244,63,94,0.16)', '#fb7185']
+  };
+
+  componentDidMount() {
+    this._key = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); this.setState(s => ({ paletteOpen: !s.paletteOpen })); }
+      if (e.key === 'Escape') this.setState({ paletteOpen: false, addSectionOpen: false, createOpen: false });
+    };
+    window.addEventListener('keydown', this._key);
+  }
+  componentWillUnmount() { window.removeEventListener('keydown', this._key); clearInterval(this._t); }
+
+  go = (route) => () => this.setState({ route, createOpen: false, paletteOpen: false, projectOpen: false });
+
+  PROJECTS = [
+    { name: 'AI Growth Studio', handle: '@aigrowth', tint: 'linear-gradient(150deg,#5ac8fa,#2a6df5)', lang: 'Bangla · English', topics: '18', packs: '9', content: '214', run: '2 packs running', dot: '#a3e635' },
+    { name: 'Dropship Lab', handle: '@dropshiplab', tint: 'linear-gradient(150deg,#ff8a4c,#e04203)', lang: 'English', topics: '11', packs: '6', content: '96', run: 'Idle', dot: 'rgba(240,240,244,0.3)' },
+    { name: 'Affiliate Desk', handle: '@affdesk', tint: 'linear-gradient(150deg,#c4b5fd,#7c3aed)', lang: 'Bangla', topics: '7', packs: '4', content: '61', run: '1 pack running', dot: '#a3e635' },
+    { name: 'Client — NovaSkin', handle: '@novaskin', tint: 'linear-gradient(150deg,#84cc16,#0e7c3a)', lang: 'English · Hindi', topics: '5', packs: '3', content: '38', run: 'Awaiting review', dot: '#fbbf24' }
+  ];
+
+  startRun = () => {
+    clearInterval(this._t);
+    const speed = this.props.runSpeed ?? 900;
+    const order = [0,1,2,4,9,3];
+    const st = ['not','not','not','not','not','not','not','not','not','not'];
+    this.setState({ route: 'runProgress', runIndex: 0, runDone: false, statuses: st });
+    let i = 0;
+    this._t = setInterval(() => {
+      const s = this.state.statuses.slice();
+      if (i > 0) s[order[i-1]] = 'complete';
+      if (i < order.length) { s[order[i]] = 'running'; this.setState({ statuses: s, runIndex: i }); i++; }
+      else {
+        s[7] = 'review'; s[9] = 'review';
+        clearInterval(this._t);
+        this.setState({ statuses: s, runDone: true, runIndex: order.length });
+      }
+    }, speed);
+  };
+
+  renderVals() {
+    const r = this.state.route;
+    const S = this.STATUS;
+    const meta = (k) => { const m = S[k] || S.not; return { status: m[0], bg: m[1], fg: m[2], anim: k === 'running' ? 'os-pulse 1.1s ease-in-out infinite' : 'none' }; };
+
+    const navOn = (k) => ({
+      bg: r === k ? 'rgba(255,255,255,0.10)' : 'transparent',
+      fg: r === k ? '#f0f0f4' : 'rgba(240,240,244,0.62)',
+      sh: r === k ? 'inset 0 1px 0 rgba(255,255,255,0.10), 0 2px 8px rgba(0,0,0,0.25)' : 'none'
+    });
+    const packRoutes = ['packs','packDetail','runSetup','runProgress','section','builder','voice'];
+    const nk = { home: r === 'home', topics: r === 'topics', content: r === 'content' || r === 'artifact', packs: packRoutes.indexOf(r) >= 0, library: r === 'library', prompts: r === 'prompts' };
+    const nb = {}, nc = {}, ns = {};
+    Object.keys(nk).forEach(k => {
+      nb[k] = nk[k] ? 'rgba(255,255,255,0.10)' : 'transparent';
+      nc[k] = nk[k] ? '#f0f0f4' : 'rgba(240,240,244,0.62)';
+      ns[k] = nk[k] ? 'inset 0 1px 0 rgba(255,255,255,0.10), 0 2px 8px rgba(0,0,0,0.25)' : 'none';
+    });
+
+    const sections = this.SECTIONS.map((s, i) => {
+      const m = meta(this.state.statuses[i]);
+      return { n: s[0], name: s[1], type: s[2], purpose: s[3], preview: s[4], ...m, open: () => this.setState({ route: s[2] === 'Voice' ? 'voice' : 'section', cur: i }) };
+    });
+    const curIdx = this.state.cur == null ? 2 : this.state.cur;
+    const cur = { ...sections[curIdx], inputs: [{ name: 'topic' }, { name: 'topic_brief' }, { name: 'three_prompts' }, { name: 'audience' }], output: 'Bangla narration script (plain text)' };
+
+    const tab = (list, key, cur) => list.map(l => ({
+      label: l, bg: cur === l ? 'rgba(255,255,255,0.12)' : 'transparent',
+      fg: cur === l ? '#f0f0f4' : 'rgba(240,240,244,0.5)',
+      pick: () => this.setState({ [key]: l })
+    }));
+
+    const runOrder = ['Topic Brief','Three Prompts','Bangla Script','CTA Keyword','Social Caption','Voiceover'];
+    const ri = this.state.runIndex;
+    const runRows = runOrder.map((name, i) => {
+      const done = i < ri, active = i === ri && !this.state.runDone;
+      return {
+        name,
+        mark: done || this.state.runDone ? '✓' : active ? '●' : '',
+        bg: done || this.state.runDone ? 'rgba(132,204,22,0.18)' : active ? 'rgba(243,75,4,0.2)' : 'rgba(255,255,255,0.06)',
+        fg: done || this.state.runDone ? '#a3e635' : active ? '#ff8a4c' : 'rgba(240,240,244,0.3)',
+        anim: active ? 'os-pulse 1s ease-in-out infinite' : 'none',
+        rowBg: active ? 'rgba(243,75,4,0.07)' : 'transparent',
+        textColor: done || active || this.state.runDone ? '#f0f0f4' : 'rgba(240,240,244,0.45)',
+        note: this.state.runDone ? 'done' : done ? 'done' : active ? 'generating…' : 'queued'
+      };
+    });
+    const pct = this.state.runDone ? 100 : Math.max(0, Math.round((ri / runOrder.length) * 100));
+
+    const bars = Array.from({ length: 64 }, (_, i) => {
+      const h = 8 + Math.abs(Math.sin(i * 0.7) * 22) + Math.abs(Math.cos(i * 0.31) * 14);
+      return { h: Math.round(h) + 'px', color: i < 24 ? 'linear-gradient(180deg,#ff9a63,#F34B04)' : 'rgba(255,255,255,0.16)' };
+    });
+
+    return {
+      isHome: r === 'home', isTopics: r === 'topics', isPacks: r === 'packs', isPackDetail: r === 'packDetail',
+      isRunSetup: r === 'runSetup', isRunProgress: r === 'runProgress', isSection: r === 'section',
+      isArtifact: r === 'artifact', isVoice: r === 'voice', isContent: r === 'content', isBuilder: r === 'builder',
+      isProjects: r === 'projects', goProjects: this.go('projects'),
+      projectOpen: this.state.projectOpen,
+      toggleProject: () => this.setState(s => ({ projectOpen: !s.projectOpen, createOpen: false })),
+      project: this.PROJECTS[this.state.projectIdx],
+      projects: this.PROJECTS.map((p, i) => ({
+        ...p, active: i === this.state.projectIdx,
+        mark: i === this.state.projectIdx ? '✓' : '',
+        rowBg: i === this.state.projectIdx ? 'rgba(255,255,255,0.09)' : 'transparent',
+        cardBd: i === this.state.projectIdx ? 'rgba(243,75,4,0.4)' : 'rgba(255,255,255,0.09)',
+        badge: i === this.state.projectIdx ? 'CURRENT' : 'SWITCH',
+        badgeBg: i === this.state.projectIdx ? 'rgba(243,75,4,0.18)' : 'rgba(255,255,255,0.07)',
+        badgeFg: i === this.state.projectIdx ? '#ff8a4c' : 'rgba(240,240,244,0.5)',
+        pick: () => this.setState({ projectIdx: i, projectOpen: false, route: 'home' })
+      })),
+      nb, nc, ns, advancedNav: this.props.advancedNav ?? true,
+      goHome: this.go('home'), goTopics: this.go('topics'), goContent: this.go('content'), goPacks: this.go('packs'),
+      goLibrary: this.go('library'), goPrompts: this.go('prompts'), goPackDetail: this.go('packDetail'),
+      goRunSetup: this.go('runSetup'), goSection: this.go('section'), goArtifact: this.go('artifact'),
+      goVoice: this.go('voice'), goBuilder: this.go('builder'),
+      startRun: this.startRun, stop: (e) => e.stopPropagation(),
+      createOpen: this.state.createOpen, toggleCreate: () => this.setState(s => ({ createOpen: !s.createOpen })),
+      paletteOpen: this.state.paletteOpen, openPalette: () => this.setState({ paletteOpen: true }),
+      closePalette: () => this.setState({ paletteOpen: false }),
+      addSectionOpen: this.state.addSectionOpen, toggleAddSection: () => this.setState(s => ({ addSectionOpen: !s.addSectionOpen })),
+      showInstructions: this.state.showInstructions, instrLabel: this.state.showInstructions ? 'Hide Instructions' : 'View Instructions',
+      toggleInstructions: () => this.setState(s => ({ showInstructions: !s.showInstructions })),
+      query: this.state.query, setQuery: (e) => this.setState({ query: e.target.value }),
+      togglePlay: () => {}, regenerate: this.startRun,
+
+      sections, cur, doneCount: this.state.statuses.filter(x => x === 'complete').length,
+      runRows, runPct: pct + '%', runDone: this.state.runDone,
+      runTitle: this.state.runDone ? 'Pack complete' : 'Running pack',
+      runBadge: this.state.runDone ? '6 OF 6' : 'IN PROGRESS',
+      runBadgeBg: this.state.runDone ? 'rgba(132,204,22,0.16)' : 'rgba(243,75,4,0.18)',
+      runBadgeFg: this.state.runDone ? '#a3e635' : '#ff8a4c',
+      runExitLabel: this.state.runDone ? 'Back to pack' : 'Pause',
+      bars,
+
+      continueItems: [
+        { kicker: 'PACK RUN · 6 OF 10', title: 'BN AI Prompt Series — AI Agents', pct: '60%', meta: 'Script approved, voiceover queued', open: this.go('packDetail') },
+        { kicker: 'DRAFT · STEP 6 OF 8', title: 'Dropship Product Teardown', pct: '72%', meta: 'Sections defined, needs a test run', open: this.go('builder') }
+      ],
+      recentPacks: [
+        { n: '10', name: 'BN AI Prompt Series', meta: 'Short-form AI content · 2h ago', status: 'Active', bg: 'rgba(132,204,22,0.16)', fg: '#a3e635', open: this.go('packDetail') },
+        { n: '07', name: 'Affiliate Review Pack', meta: 'Product reviews · yesterday', status: 'Ready', bg: 'rgba(14,165,233,0.16)', fg: '#5ac8fa', open: this.go('packDetail') },
+        { n: '05', name: 'Comment Engine', meta: 'Replies & DMs · 3d ago', status: 'Draft', bg: 'rgba(255,255,255,0.07)', fg: 'rgba(240,240,244,0.5)', open: this.go('packDetail') }
+      ],
+      attention: [
+        { title: 'Titles need review', meta: 'BN AI Prompt Series · 08 Titles', open: this.go('section') },
+        { title: 'Social Caption exceeded length rule', meta: 'BN AI Prompt Series · 10 Social Caption', open: this.go('section') }
+      ],
+      activity: [
+        { dot: '#a3e635', text: 'Bangla Script v4 approved', time: '2h' },
+        { dot: '#ff8a4c', text: 'Voiceover regenerated with slower pace', time: '3h' },
+        { dot: '#5ac8fa', text: 'Research added to topic AI Agents', time: '5h' },
+        { dot: '#c4b5fd', text: 'Comment Reply Generator saved as reusable section', time: '1d' }
+      ],
+      topicGroups: [
+        { name: 'AI', count: '3 topics', items: [
+          { name: 'AI Agents', status: 'Researched', bg: 'rgba(132,204,22,0.16)', fg: '#a3e635', desc: 'Agent tooling explained for creators who do not code.', content: '34', packs: '3', activity: '2h ago' },
+          { name: 'AI Automation', status: 'Active', bg: 'rgba(14,165,233,0.16)', fg: '#5ac8fa', desc: 'Workflows that replace repetitive posting work.', content: '21', packs: '2', activity: 'yesterday' },
+          { name: 'AI Tools', status: 'Idea', bg: 'rgba(255,255,255,0.07)', fg: 'rgba(240,240,244,0.5)', desc: 'Weekly tool picks, one honest verdict each.', content: '8', packs: '1', activity: '4d ago' }
+        ]},
+        { name: 'Business', count: '3 topics', items: [
+          { name: 'Marketing', status: 'Active', bg: 'rgba(14,165,233,0.16)', fg: '#5ac8fa', desc: 'Offer framing and hooks for short-form.', content: '19', packs: '2', activity: '1d ago' },
+          { name: 'Productivity', status: 'Researched', bg: 'rgba(132,204,22,0.16)', fg: '#a3e635', desc: 'Systems for solo creators shipping daily.', content: '27', packs: '1', activity: '3d ago' },
+          { name: 'SaaS', status: 'Idea', bg: 'rgba(255,255,255,0.07)', fg: 'rgba(240,240,244,0.5)', desc: 'Teardown format for small SaaS products.', content: '6', packs: '0', activity: '2w ago' }
+        ]}
+      ],
+      packTabs: tab(['My Packs','System Packs','Collections'], 'packTab', this.state.packTab),
+      packList: [
+        { n: '10', name: 'BN AI Prompt Series', desc: 'Short-form Bangla AI content — prompts, script, voice and the full social package.', sections: '10', used: '2h ago', status: 'ACTIVE', bg: 'rgba(132,204,22,0.16)', fg: '#a3e635', open: this.go('packDetail') },
+        { n: '07', name: 'Affiliate Review Pack', desc: 'Honest product review with claims, counter-claims and a comparison beat.', sections: '7', used: 'yesterday', status: 'READY', bg: 'rgba(14,165,233,0.16)', fg: '#5ac8fa', open: this.go('packDetail') },
+        { n: '05', name: 'Comment Engine', desc: 'Reply templates, DM follow-ups and keyword triggers for one campaign.', sections: '5', used: '3d ago', status: 'DRAFT', bg: 'rgba(255,255,255,0.07)', fg: 'rgba(240,240,244,0.5)', open: this.go('packDetail') },
+        { n: '09', name: 'Dropship Product Teardown', desc: 'Product, problem, proof, price — the four-beat teardown format.', sections: '9', used: '1w ago', status: 'DRAFT', bg: 'rgba(255,255,255,0.07)', fg: 'rgba(240,240,244,0.5)', open: this.go('packDetail') },
+        { n: '06', name: 'Weekly Tool Roundup', desc: 'Three tools, one verdict each, one CTA at the end.', sections: '6', used: '2w ago', status: 'READY', bg: 'rgba(14,165,233,0.16)', fg: '#5ac8fa', open: this.go('packDetail') },
+        { n: '04', name: 'Voice-only Narration', desc: 'Takes an approved script and produces narration variants only.', sections: '4', used: '2w ago', status: 'READY', bg: 'rgba(139,92,246,0.18)', fg: '#c4b5fd', open: this.go('packDetail') }
+      ],
+      overview: [
+        { k: 'Purpose', v: 'Teach three usable AI prompts per video' },
+        { k: 'Audience', v: 'Bangla-speaking creators, beginner to intermediate' },
+        { k: 'Format', v: 'Short-form vertical, 45–70 seconds' },
+        { k: 'Language', v: 'Bangla narration, English tool names' },
+        { k: 'Style', v: 'Direct, practical, no hype' },
+        { k: 'Context', v: 'Project + Topic + Pack' }
+      ],
+      rules: [
+        { text: 'Bangla creator voice — spoken, never written-formal.' },
+        { text: 'Exactly three prompts. Never four, never two.' },
+        { text: 'Every prompt needs one concrete example.' },
+        { text: 'Keep tool names in English; translate nothing technical.' },
+        { text: 'CTA is always a comment keyword, never a link.' }
+      ],
+      systemPrompt: 'ROLE\n  You write short-form Bangla scripts for a creator teaching AI prompts.\n\nCONSTRAINTS\n  - exactly 3 prompts\n  - 45–70s spoken length\n  - hook within first 8 words\n  - keep {{tool_names}} in English\n\nINPUTS\n  {{topic}} {{topic_brief}} {{three_prompts}} {{audience}}',
+      contextItems: [
+        { mark: '✓', label: 'Project context', size: '4.1K', color: 'rgba(240,240,244,0.8)' },
+        { mark: '✓', label: 'Topic context', size: '5.8K', color: 'rgba(240,240,244,0.8)' },
+        { mark: '✓', label: 'Pack context', size: '2.5K', color: 'rgba(240,240,244,0.8)' },
+        { mark: '○', label: 'Additional context', size: '—', color: 'rgba(240,240,244,0.4)' }
+      ],
+      sectionRules: [
+        { text: 'Nine beats maximum, one idea per beat.' },
+        { text: 'Hook lands in the first eight words.' },
+        { text: 'No English sentences, only English tool names.' },
+        { text: 'Close on the CTA keyword from section 05.' }
+      ],
+      artifactMeta: [
+        { k: 'Type', v: 'Script' }, { k: 'Topic', v: 'AI Agents' }, { k: 'Pack', v: 'BN AI Prompt Series' },
+        { k: 'Section', v: '03 Bangla Script' }, { k: 'Version', v: 'v4' }, { k: 'Created', v: '24 Aug, 09:12' }, { k: 'Updated', v: '2 hours ago' }
+      ],
+      versions: [
+        { tag: 'v4', note: 'Tightened hook, approved', when: '2h', color: '#a3e635' },
+        { tag: 'v3', note: 'Shortened beat 4', when: '4h', color: 'rgba(240,240,244,0.5)' },
+        { tag: 'v2', note: 'Regenerated with new brief', when: '1d', color: 'rgba(240,240,244,0.5)' },
+        { tag: 'v1', note: 'First run', when: '2d', color: 'rgba(240,240,244,0.5)' }
+      ],
+      voiceSettings: [
+        { k: 'Voice', v: 'My Voice v2 (cloned)' }, { k: 'Style', v: 'Conversational' },
+        { k: 'Speed', v: '1.0×' }, { k: 'Emotion', v: 'Natural' }
+      ],
+      contentTabs: tab(['All','Scripts','Titles','Hooks','Captions','CTAs','Prompts','Voice'], 'contentTab', this.state.contentTab),
+      contentRows: [
+        { title: 'Bangla Script — Three Prompts', type: 'Script', topic: 'AI Agents', pack: 'BN AI Prompt Series', updated: '2h', dot: '#a3e635', open: this.go('artifact') },
+        { title: 'Bangla Voiceover v2', type: 'Voice', topic: 'AI Agents', pack: 'BN AI Prompt Series', updated: '3h', dot: '#c4b5fd', open: this.go('voice') },
+        { title: 'CTA keyword — PROMPT', type: 'CTA', topic: 'AI Agents', pack: 'BN AI Prompt Series', updated: '3h', dot: '#a3e635', open: this.go('artifact') },
+        { title: '5 title options, ranked', type: 'Title', topic: 'AI Agents', pack: 'BN AI Prompt Series', updated: '4h', dot: '#fbbf24', open: this.go('artifact') },
+        { title: 'Social caption + hashtags', type: 'Caption', topic: 'AI Agents', pack: 'BN AI Prompt Series', updated: '4h', dot: '#fbbf24', open: this.go('artifact') },
+        { title: 'Reply set — keyword drop', type: 'Reply', topic: 'Marketing', pack: 'Comment Engine', updated: '1d', dot: '#a3e635', open: this.go('artifact') },
+        { title: 'Research prompt v3', type: 'Prompt', topic: 'AI Automation', pack: '—', updated: '1d', dot: '#5ac8fa', open: this.go('artifact') },
+        { title: 'Hook bank — automation', type: 'Hook', topic: 'AI Automation', pack: 'Weekly Tool Roundup', updated: '2d', dot: '#a3e635', open: this.go('artifact') },
+        { title: 'Teardown script — LED lamp', type: 'Script', topic: 'SaaS', pack: 'Dropship Product Teardown', updated: '1w', dot: 'rgba(240,240,244,0.4)', open: this.go('artifact') }
+      ],
+      steps: ['Name','Purpose','Audience','Global Context','Global Rules','Sections','Test','Save'].map((l, i) => {
+        const n = i + 1, active = n === this.state.builderStep, done = n < this.state.builderStep;
+        return {
+          n: done ? '✓' : String(n), label: l,
+          bg: active ? 'rgba(255,255,255,0.09)' : 'transparent',
+          fg: active ? '#f0f0f4' : done ? 'rgba(240,240,244,0.6)' : 'rgba(240,240,244,0.4)',
+          dotBg: active ? 'rgba(243,75,4,0.24)' : done ? 'rgba(132,204,22,0.18)' : 'rgba(255,255,255,0.07)',
+          dotFg: active ? '#ff8a4c' : done ? '#a3e635' : 'rgba(240,240,244,0.4)',
+          pick: () => this.setState({ builderStep: n })
+        };
+      }),
+      builderSections: [
+        { n: '01', name: 'Topic Brief', type: 'Research' },
+        { n: '02', name: 'Teardown Beats', type: 'Content Plan' },
+        { n: '03', name: 'Script', type: 'Script' },
+        { n: '04', name: 'Titles', type: 'Title' },
+        { n: '05', name: 'Social Caption', type: 'Caption' }
+      ],
+      runPicks: Object.keys(this.state.picks).map(k => {
+        const on = this.state.picks[k];
+        return {
+          label: k, mark: on ? '✓' : '○',
+          bg: on ? 'rgba(243,75,4,0.16)' : 'rgba(255,255,255,0.05)',
+          border: on ? 'rgba(243,75,4,0.4)' : 'rgba(255,255,255,0.1)',
+          fg: on ? '#ffb08c' : 'rgba(240,240,244,0.55)',
+          toggle: () => this.setState(s => ({ picks: { ...s.picks, [k]: !s.picks[k] } }))
+        };
+      }),
+      qualities: ['Fast','Balanced','Deep'].map(q => ({
+        label: q, bg: this.state.quality === q ? 'rgba(255,255,255,0.12)' : 'transparent',
+        fg: this.state.quality === q ? '#f0f0f4' : 'rgba(240,240,244,0.5)',
+        pick: () => this.setState({ quality: q })
+      })),
+      sectionTypeGroups: [
+        { name: 'CONTENT', items: ['Script','Title','Hook','CTA','Caption','Description','Comment Reply','Prompt','Custom Text'].map(n => ({ name: n })) },
+        { name: 'RESEARCH', items: ['Research','Analysis','Fact Check'].map(n => ({ name: n })) },
+        { name: 'MEDIA', items: ['Voice','Audio','Image'].map(n => ({ name: n })) },
+        { name: 'PLANNING', items: ['Content Plan','Shot Plan','Visual Plan'].map(n => ({ name: n })) },
+        { name: 'CONTROL', items: ['Approval','Human Input'].map(n => ({ name: n })) },
+        { name: 'FROM LIBRARY', items: ['Comment Reply Generator','Hook Bank','Bangla CTA Picker'].map(n => ({ name: n })) }
+      ],
+      paletteGroups: [
+        { name: 'IN THIS PACK', items: [
+          { glyph: '▶', label: 'Run BN AI Prompt Series', hint: '⏎', bg: 'rgba(243,75,4,0.18)', fg: '#ff8a4c', run: this.go('runSetup') },
+          { glyph: '↺', label: 'Regenerate 03 Bangla Script', hint: '', bg: 'rgba(14,165,233,0.16)', fg: '#5ac8fa', run: this.go('section') },
+          { glyph: '♫', label: 'Generate Voice from script', hint: '', bg: 'rgba(139,92,246,0.18)', fg: '#c4b5fd', run: this.go('voice') }
+        ]},
+        { name: 'CREATE', items: [
+          { glyph: '+', label: 'Create Content Pack', hint: '⌘⇧P', bg: 'rgba(255,255,255,0.07)', fg: 'rgba(240,240,244,0.7)', run: this.go('builder') },
+          { glyph: '+', label: 'Create Topic', hint: '⌘⇧T', bg: 'rgba(255,255,255,0.07)', fg: 'rgba(240,240,244,0.7)', run: this.go('topics') }
+        ]},
+        { name: 'GO TO', items: [
+          { glyph: '⌂', label: 'Home', hint: 'G H', bg: 'rgba(255,255,255,0.07)', fg: 'rgba(240,240,244,0.7)', run: this.go('home') },
+          { glyph: '◫', label: 'Packs', hint: 'G P', bg: 'rgba(255,255,255,0.07)', fg: 'rgba(240,240,244,0.7)', run: this.go('packs') },
+          { glyph: '≡', label: 'Content', hint: 'G C', bg: 'rgba(255,255,255,0.07)', fg: 'rgba(240,240,244,0.7)', run: this.go('content') }
+        ]}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

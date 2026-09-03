@@ -1,0 +1,35 @@
+{
+  "name": "meshclip",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down",
+    "db:dump": "node scripts/snapshot.mjs dump",
+    "db:restore": "node scripts/snapshot.mjs restore",
+    "db:migrate": "node scripts/migrate.mjs",
+    "db:shell": "docker compose exec postgres psql -U contentos -d contentos",
+    "build": "next build",
+    "build:check": "node scripts/build-check.mjs",
+    "typecheck": "tsc --noEmit",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.121.0",
+    "next": "16.3.3",
+    "pg": "^8.23.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.3",
+    "typescript": "^5"
+  }
+}
