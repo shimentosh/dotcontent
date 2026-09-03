@@ -303,6 +303,17 @@ export type DraftSection = {
   /** This section's own prompt, written on top of the pack rules. */
   brief: string;
   /**
+   * How much thinking the section gets, and which sections it must wait for.
+   *
+   * Neither is edited in the builder, but both have to survive a trip through
+   * it. They did not: saving a template from the builder wrote every section
+   * back as "standard" with no dependencies, and exporting one did the same —
+   * so a template that chained the Bangla script on the English one came back
+   * with the chain cut and nothing on screen to say so.
+   */
+  tier?: string;
+  dependsOn?: string[];
+  /**
    * One line on what the section is for, when the pack carries one. The
    * shipped packs do; the builder does not ask for it, so a written section
    * shows its prompt instead.

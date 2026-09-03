@@ -112,6 +112,33 @@ describe("fromFile", () => {
   });
 });
 
+describe("tiers and dependency arrows", () => {
+  it("survive the export and the import", () => {
+    // One Save from the builder used to write every section back as standard
+    // with no dependencies — the Bangla script stopped receiving the English
+    // one, and nothing on screen said so. The export went the same way.
+    const p = pack();
+    p.draft.sections[1] = {
+      ...p.draft.sections[1],
+      tier: "high",
+      dependsOn: ["research"],
+    };
+    const file = toFile(p);
+    expect(file.template.sections[1].tier).toBe("high");
+    expect(file.template.sections[1].dependsOn).toEqual(["research"]);
+
+    const back = fromFile(file);
+    expect(back.sections[1].tier).toBe("high");
+    expect(back.sections[1].dependsOn).toEqual(["research"]);
+  });
+
+  it("gives a builder-made section the defaults", () => {
+    const back = fromFile(toFile(pack()));
+    expect(back.sections[0].tier).toBe("standard");
+    expect(back.sections[0].dependsOn).toEqual([]);
+  });
+});
+
 describe("fileNameFor", () => {
   it("is the slug rule plus a suffix", () => {
     expect(fileNameFor("ENBN Website Content")).toBe(

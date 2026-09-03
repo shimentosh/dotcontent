@@ -93,6 +93,8 @@ export function toUiPack(p: ApiPack, index: number): UiPack {
         type: s.type || s.tier || "Custom Text",
         brief: s.instruction,
         summary: s.summary,
+        tier: s.tier,
+        dependsOn: s.dependsOn,
       })),
     },
   };
@@ -145,11 +147,12 @@ export function fromDraft(draft: PackDraft): PackBody {
       id: s.id,
       title: s.name,
       summary: "",
-      // Nothing in the builder draws dependency arrows yet, so a written pack
-      // runs top to bottom. Every earlier section is still pasted in above the
-      // current one by the prompt builder, which is what the order is for.
-      dependsOn: [],
-      tier: "standard",
+      // The builder draws no dependency arrows and sets no tier, so a section
+      // written there gets the defaults. A section that ARRIVED with them —
+      // from a shipped template, or an import — keeps them: saving from the
+      // builder used to cut every chain a template had.
+      dependsOn: s.dependsOn ?? [],
+      tier: s.tier ?? "standard",
       instruction: s.brief,
       type: s.type,
     })),

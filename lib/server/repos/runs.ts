@@ -225,6 +225,35 @@ export async function requeueFailed(rid: string) {
 }
 
 /**
+ * Sections left in "writing" with nobody writing them.
+ *
+ * A row says "writing" from the moment a section is handed to the model to
+ * the moment it lands. If the process dies in between — a restart, a deploy,
+ * a killed terminal — the row keeps saying it, and the driver's own memory of
+ * what it was doing is gone with the process. So a run sat on "Writing 01"
+ * for six minutes with nothing behind it, and neither Retry (which only takes
+ * failed rows) nor Write the rest (which skips rows still "writing") could
+ * touch it.
+ *
+ * Back to queued: the truth is that it has not been written. Scoped to one
+ * run when the driver starts on it, or to every run at boot, when no driver
+ * can possibly exist. Returns the run ids touched so boot can pick them up.
+ */
+export async function requeueOrphans(runId?: string) {
+  const rows = runId
+    ? await q<{ run_id: string }>(
+        `UPDATE run_sections SET state = 'queued', updated_at = now()
+          WHERE run_id = $1 AND state = 'writing' RETURNING run_id`,
+        [runId],
+      )
+    : await q<{ run_id: string }>(
+        `UPDATE run_sections SET state = 'queued', updated_at = now()
+          WHERE state = 'writing' RETURNING run_id`,
+      );
+  return [...new Set(rows.map((r) => r.run_id))];
+}
+
+/**
  * Mark a run used, ready or ignored.
  *
  * Its own function rather than a general patch: this is the only field on a

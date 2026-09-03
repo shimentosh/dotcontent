@@ -360,6 +360,24 @@ ${files
 Read nothing else on this machine — these files and nothing beside them.`
     : req.user;
 
+  /*
+   * The system prompt goes in a FILE, never on the command line.
+   *
+   * It is six to eight thousand characters — the pack's rules, its purpose,
+   * the brand voice — and on Windows a command line that long is cut off
+   * without a word of warning. So the fixed script format, deep in the rules,
+   * never reached the model. The scripts that came out right did so because
+   * the CLI, started in the repo, had read lib/packs/enbn-website.ts itself
+   * and found the format there; move it to an empty directory and the format
+   * vanished. `--append-system-prompt-file` carries the whole thing, whatever
+   * its length, and the file lives in the CLI's own empty directory.
+   */
+  const systemFile = path.join(
+    cliHome(),
+    `system-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}.md`,
+  );
+  await fs.writeFile(systemFile, cliSystem(req), "utf8");
+
   const { code, out, err } = await run(
     "claude",
     [
@@ -369,28 +387,22 @@ Read nothing else on this machine — these files and nothing beside them.`
       tools,
       ...(files.length ? [] : ["--disallowedTools", CLAUDE_NO_FILES]),
       /*
-       * Append to the CLI's system prompt; do not replace it.
-       *
-       * Replacing it (`--system-prompt`) was tried: the model then never
-       * finished — ten minutes, no answer — because the default prompt is
-       * also what tells print mode how to end. What it does NOT need is the
-       * default's dynamic sections: the working directory, the git status,
-       * the "you are in a project" framing that had a content run deciding
-       * there must be a template file it could not open. Those go.
+       * Append to the CLI's system prompt; do not replace it. Replacing it
+       * (`--system-prompt`) was tried: the model never finished, because the
+       * default prompt is also what tells print mode how to end.
        */
-      "--exclude-dynamic-system-prompt-sections",
-      "--append-system-prompt",
-      cliSystem(req),
+      "--append-system-prompt-file",
+      systemFile,
     ],
     { input: user, cwd: cliHome(), timeout: req.timeoutMs ?? 600_000 },
-  );
+  ).finally(() => fs.unlink(systemFile).catch(() => {}));
   if (code === 0 && out.trim()) return scrubPreamble(out.trim());
   throw new Error(err.trim() || `claude exited ${code} with no output`);
 }
 
 /** The ways a CLI talks about itself instead of writing the section. */
 const PREAMBLE =
-  /AGENTS\.md|working director|read scope|granted|couldn't (read|open)|can't (read|open)|cannot (read|open)|template file|no file-read|shell tools|on disk|permission/i;
+  /AGENTS\.md|working director|read scope|I (couldn't|can't|cannot|could not) (read|open|access)|this session has no|no file-read|shell tools/i;
 
 /**
  * Drop a first paragraph that is about the tool rather than the topic.

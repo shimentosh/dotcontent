@@ -120,6 +120,26 @@ Runs are untouched; `runs.topic_id` outlives the topic and a moved topic keeps
 its id. The Series screen marks duplicate rows and offers the merge; which copy
 is the real one is the user's call.
 
+## A run survives the API restarting
+
+"Writing" on a section means the model has been handed it and has not
+answered yet. Kill the process in between — a restart, a deploy, a closed
+terminal — and the row keeps saying so while the driver's memory of what it
+was doing dies with the process. A run sat on "Writing 01" for six minutes
+with nothing behind it, and nothing on the page could move it: Retry takes
+failed rows, Write the rest skips rows still marked writing.
+
+So a writing row with no driver is treated as what it is — not written.
+`requeueOrphans` puts such rows back to queued: for one run when `driveRun`
+starts on it (it is the only driver for that run, so a writing row cannot be
+a colleague's), and for every run as the API boots, when no driver can exist.
+Boot then drives each affected run again (`resumeOrphans`), because a run
+that was being written when the server went down was meant to finish.
+
+`updateTopic("generating")` moved inside the try in `writeSection` for the
+same reason: a topic that fails to update must not strand the section in
+writing with the failure recorded nowhere.
+
 ## An unreachable API says so, in red, at the top
 
 With the backend on its own port, the console has a failure it never had
@@ -135,41 +155,55 @@ port, that the data is safe in the database, and how to start the service;
 the store asks every five seconds whether it is back and reloads the page
 when it is, so the banner leaves on its own.
 
-## A model CLI is started in an empty directory, never in the repo
+## A model CLI is started in an empty directory, and its system prompt arrives as a file
+
+Two findings, one story.
 
 `claude`, `codex` and `gemini` read the project they are started in — CLAUDE.md,
 AGENTS.md, anything in the working directory and its parents — and fold it into
-the conversation. Spawned from the repo root, every script this app ever wrote
-had this codebase's developer notes in the model's context. Spawned from `api/`
-after the move to NestJS, the CLI walked up to the repo's CLAUDE.md, was refused
-the `@AGENTS.md` it includes ("outside the granted working directory"), and put
-a paragraph about the refusal at the top of an English script — which is how
-the older, quieter version of the problem was found.
+the conversation. Spawned from `api/` after the move to NestJS, the CLI walked
+up to the repo's CLAUDE.md, was refused the `@AGENTS.md` it includes, and put a
+paragraph about the refusal at the top of an English script. `cliHome()` in
+lib/server/tools.ts is an empty directory under the data root, and every model
+CLI is spawned with it as `cwd`; the filesystem tools are disallowed unless
+frames are handed over as files; a guard appended to the prompt says there is
+nothing to open; `scrubPreamble()` cuts a leading paragraph that is still about
+the tool rather than the topic.
 
-`cliHome()` in lib/server/tools.ts is an empty directory under the data root,
-and every model CLI is spawned with it as `cwd`. Nothing about this codebase
-reaches a content run. The API path never had the problem; it sends only the
-prompt.
+That fixed the narration and broke the scripts: every section came back as a
+report with bold metadata headers, the site named in the first line, and none
+of the pack's fixed spoken format. A four-way comparison on one prompt found
+why. The system prompt — the pack's rules, its purpose, the brand voice, six to
+eight thousand characters — was being passed to the CLI as a **command-line
+argument**, and on Windows a command line that long is cut off without a word.
+The fixed format, deep in the rules, never reached the model. The scripts that
+had come out right did so because the CLI, started in the repo, had opened
+`lib/packs/enbn-website.ts` itself and read the format off line 91 — the first
+line of one such script literally said so. Move the CLI to an empty directory
+and that accidental crutch was gone.
 
-That alone was not enough. From an empty directory the CLI still decided
-there must be a "project's template file" it could not open, and said so at
-the top of the script — three times, in three wordings. Four things together
-fixed it, and each was needed:
+So the system prompt is written to a file in the CLI's directory and passed
+with `--append-system-prompt-file`, whatever its length, and deleted after the
+call. The user prompt was already on stdin for the same reason. With that, the
+fixed opening and the series line come back in twenty seconds from the empty
+directory, with no narration. Two things were tried on the way and are not the
+fix: replacing the default system prompt (`--system-prompt`) — the CLI never
+finished, because the default is what tells print mode how to end — and
+stripping its dynamic sections, which changed nothing that mattered.
 
-- `--exclude-dynamic-system-prompt-sections`: the default prompt's working
-  directory, git status and "you are in a project" framing are what made a
-  content run behave like an agent hunting for files. Replacing the whole
-  system prompt (`--system-prompt`) was tried first and the CLI never
-  finished — ten minutes, no answer — because the default is also what tells
-  print mode how to end. So: append, minus the dynamic sections.
-- `--disallowedTools Read,Glob,Grep,Bash,Edit,Write,NotebookEdit` unless
-  frames are handed over as files: an allowed-list still lets the agent
-  attempt a denied tool and then narrate the refusal.
-- `CLI_GUARD`, appended to the pack's prompt on the CLI paths only: there is
-  nothing to open, do not look, never mention files or permissions.
-- `scrubPreamble()`: if a leading paragraph is still about the tool rather
-  than the topic, it is cut before the section is saved. Only the first
-  paragraph, only when it reads as one.
+## A template keeps its tiers and dependency arrows through the builder
+
+`fromDraft` wrote every section back as `tier: "standard", dependsOn: []`,
+because the builder edits neither. That is fine for a section written in the
+builder and ruinous for one that arrived with them: one Save on the shipped
+template and the Bangla script no longer received the English one, hashtags no
+longer saw the research, and the "high" sections ran at standard effort — with
+nothing on screen to say so. The export went through the same function, so a
+template file carried the same flattening to wherever it was imported.
+
+`DraftSection` now carries `tier` and `dependsOn` when it has them, and
+`fromDraft` writes them back; a section the builder created still gets the
+defaults. The export and the import round-trip both, and a test says so.
 
 ## The backend is a NestJS service, and the browser calls it directly
 

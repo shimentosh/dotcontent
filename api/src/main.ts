@@ -5,6 +5,7 @@ import type { NestExpressApplication } from "@nestjs/platform-express";
 import cookieParser from "cookie-parser";
 
 import { ready } from "@/lib/server/http";
+import { resumeOrphans } from "@/lib/server/services/runs";
 
 import { AppModule } from "./app.module";
 import { ErrorsFilter } from "./common/errors.filter";
@@ -54,6 +55,12 @@ async function main() {
    * database that has not got it yet.
    */
   await ready();
+
+  // Whatever the last process was writing when it stopped, this one finishes.
+  const resumed = await resumeOrphans();
+  if (resumed.length) {
+    console.log(`Resuming ${resumed.length} run(s) left mid-write: ${resumed.join(", ")}`);
+  }
 
   const port = Number(process.env.PORT ?? 4000);
   await app.listen(port);

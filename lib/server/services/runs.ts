@@ -10,6 +10,7 @@ import {
   createRun as insertRun,
   getRun,
   requeueFailed,
+  requeueOrphans,
   setSection,
   type Run,
 } from "@/lib/server/repos/runs";
@@ -195,6 +196,21 @@ export const isDriving = (runId: string) => inFlight().has(runId);
  * Returns immediately. Progress is read from the run itself, which is where
  * every section's state has always been recorded.
  */
+/**
+ * Pick up whatever a previous process left mid-write.
+ *
+ * Called once, as the API starts: every "writing" row belongs to a driver that
+ * died with the last process, so each goes back to queued and its run is
+ * driven again. A run that was being written when the server restarted
+ * carries on, which is what "carries on whether or not anybody is watching"
+ * has to mean across a deploy.
+ */
+export async function resumeOrphans() {
+  const runs = await requeueOrphans();
+  for (const id of runs) driveRun(id);
+  return runs;
+}
+
 export function driveRun(runId: string): { started: boolean } {
   if (isDriving(runId)) return { started: false };
   inFlight().add(runId);
@@ -211,6 +227,12 @@ export function driveRun(runId: string): { started: boolean } {
        * point somebody asks for the run again.
        */
       await requeueFailed(runId);
+      /*
+       * And anything left "writing" by a driver that is no longer here. This
+       * driver is the only one for this run — isDriving said so a moment ago —
+       * so a writing row is an orphan, not a colleague.
+       */
+      await requeueOrphans(runId);
 
       for (;;) {
         const run = await getRun(runId);
@@ -313,11 +335,13 @@ export async function writeSection(runId: string, sectionId: string): Promise<Ru
 
   await setSection(runId, sectionId, { state: "writing", error: "" });
 
-  // The topic stops being an idea the moment something is being written for it.
-  if (run.topicId) await updateTopic(run.topicId, { status: "generating" });
-
   const started = Date.now();
   try {
+    // The topic stops being an idea the moment something is being written for
+    // it. Inside the try: a topic that failed to update must not strand the
+    // section in "writing" with the failure recorded nowhere.
+    if (run.topicId) await updateTopic(run.topicId, { status: "generating" });
+
     /*
      * What the video showed, when there was one.
      *
