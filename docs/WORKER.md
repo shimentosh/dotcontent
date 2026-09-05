@@ -1,0 +1,660 @@
+# The worker
+
+Phase 1 design, not yet built. Nothing in this file exists in the tree — it is
+here to be argued with before anybody writes it.
+
+## What moves, and why
+
+Today one process does everything. The NestJS API holds `driveRun`, and
+`driveRun` calls `write()`, and `write()` spawns `claude` on the same machine
+through `run()` in `lib/server/tools.ts` — as does the ingest, with `yt-dlp`,
+`ffmpeg` and `whisper`. So the machine that answers HTTP must also have every
+binary installed and a signed-in CLI on it. On a laptop that is exactly right.
+On the VPS `docs/DEPLOYING.md` describes, it is why the model has to become an
+API key, at real money per run, on a box with no GPU.
+
+The split: the **server** keeps the UI, the API, Postgres, and the frames and
+transcripts — and keeps every decision. The **desktop app** (Tauri, one per
+teammate's Windows machine) is a webview onto the hosted UI plus a Node
+sidecar, the **worker**, which claims jobs over HTTPS and runs the local tools
+under that person's own login and their own GPU. The worker opens outbound
+connections only: no inbound port, no static IP, no hole in anyone's router.
+
+**The server builds the prompt and decides the order; the worker only
+executes.** A job carries finished text and a command to run, never a pack, a
+template, a rule or a dependency graph. That line is the whole point: business
+logic that shipped to fifteen desktops would need fifteen updates to change a
+prompt, and the prompt changes weekly. It also keeps `lib/server/prompt.ts`,
+`lib/packs/` and the brand voice off machines that only need to run a binary.
+
+## What this does to the run driver
+
+`driveRun` is a loop that holds a process for the length of a run: pick the
+next eligible section, `await writeSection`, repeat. `writeSection` blocks on
+the model. That shape only works when the model is a child process of the
+thing looping.
+
+It inverts. `driveRun` becomes **`advance(runId)`** — a short function that
+looks at the run, finds every section whose dependencies are written, enqueues
+a job for each that has none, and returns. It is called when Run is pressed and
+again every time a job result lands. No process holds a run any more, so
+nothing is lost when one restarts.
+
+Two consequences worth naming now:
+
+- `plan()` in `lib/server/prompt.ts` computes the dependency waves and has
+  never been called by anything. It becomes the real scheduler: everything in a
+  wave can be enqueued at once. Today's one-at-a-time was a property of the
+  model being one local process, not of the templates.
+- Parallelism comes from **more workers**, not from a worker doing more. One
+  worker is one machine with one CLI login, so `workers.max_concurrency`
+  defaults to 1 (2 for a machine whose owner says so). Twelve sections across
+  four laptops is the win; twelve `claude` processes on one laptop is not.
+
+## The tables
+
+Style follows `lib/server/db/schema.ts` — an appended migration, text ids from
+`id()`, `TIMESTAMPTZ ... DEFAULT now()`, jsonb where a join table would be
+three files of plumbing for something nothing queries by.
+
+```sql
+  {
+    name: "0015_workers",
+    sql: `
+    CREATE TABLE workers (
+      id           TEXT PRIMARY KEY,
+      -- Whose machine. Removing a person removes their sessions today; their
+      -- workers go the same way, because the CLI on that box is signed in as
+      -- them and the jobs it claims spend their subscription.
+      user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      -- What the person calls it. "Shakhawat's desktop", not a hostname —
+      -- the machine picker is read by a human choosing where a run happens.
+      name         TEXT NOT NULL,
+      -- sha256 of the enrolment token. The token itself is shown once, in the
+      -- desktop app, and is never in this table: a database dump must not be
+      -- a list of live credentials, the same reason API keys are encrypted.
+      token_hash   TEXT NOT NULL UNIQUE,
+      platform     TEXT NOT NULL DEFAULT '',
+      version      TEXT NOT NULL DEFAULT '',
+      -- What it can run: the ToolStatus array lib/server/tools.ts already
+      -- produces, whole. Probing is now the worker's job and this is the
+      -- report — the server has no machine to probe.
+      tools        JSONB NOT NULL DEFAULT '[]'::jsonb,
+      -- The subset of those the owner has switched on. settings.enabled is a
+      -- global singleton today and cannot be: "ffmpeg is off" is a fact about
+      -- one machine.
+      enabled      JSONB NOT NULL DEFAULT '[]'::jsonb,
+      -- Whether this machine's Claude CLI may be granted Read for frames.
+      -- The switch belongs to whoever owns the machine, not to the console.
+      can_read_frames BOOLEAN NOT NULL DEFAULT false,
+      max_concurrency INTEGER NOT NULL DEFAULT 1,
+      last_seen_at TIMESTAMPTZ,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX workers_user ON workers(user_id);
+    CREATE INDEX workers_live ON workers(last_seen_at);
+
+    CREATE TABLE jobs (
+      id           TEXT PRIMARY KEY,
+      kind         TEXT NOT NULL,             -- write_section | ingest_source | test_brain
+      -- queued -> claimed -> done | failed | unroutable | cancelled
+      state        TEXT NOT NULL DEFAULT 'queued',
+      workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
+      -- What this job is FOR, so a result can be written back without the
+      -- payload having to be re-read. Nulled, never cascaded to the job's
+      -- deletion: a finished run's jobs are the only record of where the work
+      -- ran and how long it took.
+      run_id       TEXT REFERENCES runs(id) ON DELETE CASCADE,
+      section_id   TEXT,
+      source_id    TEXT REFERENCES sources(id) ON DELETE CASCADE,
+      -- Tool ids, all of which a worker must advertise AND have enabled.
+      -- ["claude"] for a section; ["yt-dlp","ffmpeg","whisper"] for an ingest.
+      needs        JSONB NOT NULL DEFAULT '[]'::jsonb,
+      -- Pin to one machine when the person chose one. Null means any worker
+      -- that qualifies.
+      wants_worker TEXT REFERENCES workers(id) ON DELETE SET NULL,
+      -- Everything the worker is told. Built by the server, opaque to the
+      -- worker beyond its own kind's shape. See "Job types".
+      payload      JSONB NOT NULL DEFAULT '{}'::jsonb,
+      -- What came back, kept for the same reason sources.research is kept: a
+      -- result that only ever reached a browser did not survive a reload.
+      result       JSONB NOT NULL DEFAULT '{}'::jsonb,
+      error        TEXT NOT NULL DEFAULT '',
+      attempts     INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 2,
+      priority     INTEGER NOT NULL DEFAULT 0,
+      worker_id    TEXT REFERENCES workers(id) ON DELETE SET NULL,
+      -- The lease. A claimed job is this worker's until this passes, and the
+      -- reaper takes it back the moment it does. This column is what replaces
+      -- requeueOrphans.
+      lease_until  TIMESTAMPTZ,
+      -- Past this, with nobody able to run it, the job fails with a sentence
+      -- naming the tool. Set at enqueue when a capable worker exists but is
+      -- offline; see "Capability matching".
+      wait_until   TIMESTAMPTZ,
+      claimed_at   TIMESTAMPTZ,
+      finished_at  TIMESTAMPTZ,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    -- The claim query's index: state and priority, ordered by age.
+    CREATE INDEX jobs_claimable ON jobs(state, priority DESC, created_at)
+      WHERE state = 'queued';
+    CREATE INDEX jobs_lease ON jobs(lease_until) WHERE state = 'claimed';
+    CREATE INDEX jobs_run ON jobs(run_id);
+    -- One live job per section. A double Run, two tabs, or a stale poll must
+    -- not enqueue the same section twice and pay two subscriptions for it.
+    CREATE UNIQUE INDEX jobs_one_per_section ON jobs(run_id, section_id)
+      WHERE state IN ('queued', 'claimed');
+    `,
+  },
+```
+
+### The claim
+
+```sql
+WITH claimed AS (
+  SELECT id FROM jobs
+   WHERE state = 'queued'
+     AND (wants_worker IS NULL OR wants_worker = $1)
+     -- Everything this job needs, the worker has. $2 is the worker's enabled
+     -- tool ids as a jsonb array; ?& asks "are all of these keys present".
+     AND (SELECT bool_and(need IN (SELECT jsonb_array_elements_text($2::jsonb)))
+            FROM jsonb_array_elements_text(needs) AS need)
+   ORDER BY priority DESC, created_at
+   FOR UPDATE SKIP LOCKED
+   LIMIT $3
+)
+UPDATE jobs j
+   SET state       = 'claimed',
+       worker_id   = $1,
+       attempts    = attempts + 1,
+       claimed_at  = now(),
+       lease_until = now() + ($4 || ' seconds')::interval,
+       updated_at  = now()
+  FROM claimed c
+ WHERE j.id = c.id
+RETURNING j.*;
+```
+
+`FOR UPDATE SKIP LOCKED` is doing one specific thing: it lets four laptops run
+this query at the same millisecond and hand each of them different rows,
+because a row another transaction has locked is skipped rather than waited for.
+Without it, two workers select the same job and both write it.
+
+**What it replaces.** Two things in the current code, both of which are the
+same bug — coordination held in one process's memory:
+
+- The `globalThis` Set in `lib/server/services/runs.ts`. `isDriving(runId)` is
+  the only thing stopping two drivers writing the same run, and it can only see
+  what this Node process is doing. It was correct when the model was one local
+  child process; with two API replicas, or an API and a worker, it is a lock
+  that does not lock. The unique partial index above and the lease are the
+  database saying the same thing where every process can hear it.
+- `resumeOrphans()` in `api/src/main.ts`, which calls `requeueOrphans()` with
+  **no run id** — a global `UPDATE run_sections SET state = 'queued' WHERE
+  state = 'writing'`. Its comment reasons "every writing row belongs to a
+  driver that died with the last process", and today that is true, because
+  there is only ever one process. The moment work lives on somebody else's
+  machine it is false: restart the API — a deploy, a crash, `docker compose
+  up` — and it requeues a section a laptop is at that moment four minutes into
+  writing. The section gets written twice, the second result overwrites the
+  first, and both spent a subscription. With more than one API replica it is
+  worse: every boot steals every other replica's in-flight work. Boot must stop
+  touching `writing` rows at all. Expiry does it instead, per job, on evidence
+  (a lease that ran out) rather than on an assumption about processes.
+
+`requeueFailed` stays as it is. It answers a different question — "the person
+pressed Retry" — and is still the right thing.
+
+## Job types
+
+Every payload is built by the server. A worker never sees a pack, a rule, a
+brand voice or a dependency; it sees text and a command.
+
+### `write_section`
+
+The server has already done all of it: resolved the pack, checked the
+dependencies, gathered the finished upstream sections, fetched the website or
+the source brief through `evidenceFor()`, and run `systemPrompt()` and
+`userPrompt()`. What travels is their output.
+
+```jsonc
+// payload
+{
+  "brain": "claude-cli",       // which BrainDef, chosen by the server
+  "transport": "cli",          // decided by the server, not re-derived
+  "system": "…6–8k characters…",  // systemPrompt(pack, inputs, brandVoice)
+  "user": "…evidence, inputs, ALREADY GENERATED blocks, the task…",
+  "tier": "high",              // cheap | standard | high — drives effort
+  "timeoutMs": 600000,
+  "frames": [                  // absent unless the section reads stills
+    { "url": "/api/sources/src_x/frames/frame-01.jpg", "at": 3.4 }
+  ],
+  "allowFrameRead": true       // may Claude be granted Read for this call
+}
+```
+
+```jsonc
+// result
+{ "text": "## Section title\n…", "ms": 42311, "using": "claude-opus-5" }
+```
+
+The worker downloads any frames, calls exactly the `viaClaudeCli` /
+`viaCodexCli` / `viaGeminiCli` / `viaOllama` function that exists today —
+moved, not rewritten — and returns the text. The server writes it with
+`setSection`, then calls `advance(runId)`.
+
+Three things about that `transport` field, all of them load-bearing:
+
+- **The server decides, the worker obeys or refuses.** `write()` currently
+  re-derives the transport by calling `brainStatuses()`, which calls
+  `toolStatuses()`, which probes *this machine*. On the server that probe is
+  now meaningless. The worker reports its tools at registration; the server
+  picks from what it was told and says so in the payload.
+- **A worker that cannot honour the payload fails the job.** It must never
+  quietly answer some other way. `docs/DECISIONS.md` already names this outcome
+  the one worse than an error: a website "identified" from a transcript,
+  presented as though the frames had been read. A silent CLI-to-API downgrade
+  on a worker is the same failure wearing a different hat.
+- **`allowFrameRead` is policy, enforced at execution.** The server sends it
+  from `workers.can_read_frames`; the worker checks its own switch again before
+  granting Claude `Read`. Two checks because the grant happens on the worker's
+  filesystem and the person who owns that filesystem gets the last word.
+
+`ms` comes back from the worker. Today `writeSection` measures wall clock
+around the model call; measured on the server it would now include queue wait,
+so a section would report six minutes because a laptop was shut.
+
+### `ingest_source`
+
+```jsonc
+// payload
+{ "sourceId": "src_x", "url": "https://…", "refresh": false,
+  "frameCount": 8, "maxHeight": 720, "whisperModel": "base",
+  "uploadTo": "/api/workers/sources/src_x" }
+```
+
+```jsonc
+// result
+{ "title": "…", "uploader": "…", "description": "…", "duration": 41,
+  "thumbnail": "…", "meta": { /* yt-dlp's whole --dump-single-json */ },
+  "transcript": "…", "frames": [{ "at": 2.6, "file": "frame-01.jpg" }],
+  "error": "Metadata only — …" }
+```
+
+`needs` is `["yt-dlp","ffmpeg","ffprobe","whisper"]` minus whatever the ingest
+is willing to do without. The current ingest degrades rather than failing when
+a tool is missing, and that should survive: `needs: ["yt-dlp"]` with the rest
+as a soft preference, so a machine without whisper can still fetch a caption.
+The frame JPEGs and the video go up before the result is posted (see
+**Frames**); the result names files the server already has.
+
+An upload — `ingestFile` — is the one ingest that does **not** become a job in
+Phase 1. The bytes are already arriving at the server from the browser, and
+sending them back out to a laptop to cut frames doubles the transfer. It keeps
+needing `ffmpeg` on the server, or it becomes a job in Phase 2 by having the
+desktop app upload straight to a local worker. Say which; do not leave it
+implied.
+
+### `test_brain`
+
+The smallest job, and the one that makes the whole thing legible: it is how a
+person finds out whether *that machine* can write.
+
+```jsonc
+// payload
+{ "brain": "codex-cli", "transport": "cli",
+  "system": "You are a terse assistant. Answer in one short line, no preamble.",
+  "user": "Reply with exactly: BRAIN OK", "tier": "cheap", "timeoutMs": 150000 }
+```
+
+```jsonc
+// result
+{ "ok": true, "ms": 2140, "reply": "BRAIN OK", "error": "", "transport": "cli" }
+```
+
+`fixFor()` in the integrations controller stays on the server — it is a lookup
+from an error string to a sentence — but every sentence it returns now needs a
+machine in it. "Run `codex login` in a terminal" is still the right advice and
+is now advice about a terminal on a machine the reader may not be sitting at.
+
+## Capability matching
+
+A worker advertises `tools` (probed) and `enabled` (its owner's switches). A
+job declares `needs`. The claim query intersects them, so a job simply is not
+visible to a worker that cannot run it. That much is easy. The hard part is the
+job nobody can run, and it has three distinct cases which must not be one:
+
+1. **No worker has ever advertised this tool.** Fail the job at enqueue —
+   `state = 'unroutable'`, `error` naming the tool and what installs it (the
+   `install` string is already on `ToolStatus`). The section goes to `failed`
+   with that message, so it shows on the row as Failed and Retry is offered.
+   Not queued: a queue entry that can never be claimed is a run that reads
+   "Writing" forever, which is precisely the six-minutes-on-Writing-01 bug
+   `docs/DECISIONS.md` records, rebuilt at a larger scale.
+2. **A capable worker exists but is not live.** Queue it, set `wait_until =
+   now() + 15 minutes`, and say so on the page: *waiting for Shakhawat's
+   desktop*. Somebody opening their laptop is the normal resolution and it
+   should just start. Past `wait_until` the reaper fails it, naming the machine
+   it was waiting for.
+3. **A capable worker is live and busy.** Ordinary queueing. Nothing to say
+   beyond position.
+
+The rule underneath all three: **a job that cannot run must reach a terminal
+state, visibly, and must never look successful.** `statusOf` derives a run's
+status from its sections, so anything that leaves a section in `queued` forever
+is invisible by construction.
+
+## The worker HTTP protocol
+
+All under `/api/workers`, all outbound from the worker, all authenticated with
+`Authorization: Bearer <worker token>` and a `WorkerGuard` beside the existing
+`SessionGuard` in `api/src/common/session.guard.ts`. The guard hashes the
+bearer token, looks up the row, puts the worker on the request, and touches
+`last_seen_at`. `@Public()` does not apply; a third decorator, `@WorkerRoute()`,
+marks these and makes `SessionGuard` stand aside.
+
+**Why not the session cookie.** Four reasons, each on its own sufficient:
+
+- A cookie is a browser mechanism. The worker is a Node process; it would have
+  to scrape one out of the webview and forge a `Origin`/`SameSite` story that
+  the CORS config deliberately narrows to `WEB_ORIGIN`.
+- Sessions expire and are deleted. Settings → Team removes someone by deleting
+  their sessions — correct for a browser, wrong as the only lever for a machine
+  (and `workers.user_id ... ON DELETE CASCADE` is the machine's version of the
+  same act).
+- A session is a credential over the *entire console*: every run, every
+  template, every workspace, and the ability to spend model budget. A worker
+  needs six endpoints. A stolen worker token should not be able to read the
+  content library.
+- A worker is long-lived and headless. It cannot be sent to `/login?next=…`,
+  which is what `lib/api-json.ts` does with every 401.
+
+The token is minted once, in Settings → Machines, shown once, stored as a
+sha256 hash, and pasted into the desktop app on that machine. Revoking it is
+deleting the row.
+
+| | | |
+|---|---|---|
+| **Register** | `POST /api/workers/register` | `{ name, platform, version, tools: ToolStatus[], enabled: string[], canReadFrames, maxConcurrency }` → `{ workerId, heartbeatMs, claimMs }`. Idempotent on the token: the same machine re-registering after an update replaces its tool report rather than creating a second row. Re-registration is also how a newly installed `whisper` becomes visible — this is what replaces `toolStatuses(force)`. |
+| **Claim** | `POST /api/workers/claim` | `{ max: 1 }` → `{ jobs: [ { id, kind, payload, leaseUntil } ] }`. Long-polls: holds up to 25s if the queue is empty, then answers `{ jobs: [] }`. Long-poll rather than a socket because it is one code path, survives every proxy, and keeps latency to about a second without anything stateful in between. `202` with an empty list is not an error and must not be logged as one. |
+| **Heartbeat** | `POST /api/workers/heartbeat` | `{ jobIds: ["job_x"], progress?: "…" }` → `{ keep: ["job_x"], drop: ["job_y"] }`. Extends the lease on each job it still holds. `drop` is how a worker learns a job was cancelled or reaped: it kills the child process rather than finishing work nobody wants. Every 15s. |
+| **Result** | `POST /api/workers/jobs/:id/result` | `{ result }` → `{ ok: true }`. Refused with `409` if the job's `worker_id` is not this worker or its lease has expired — a laptop that wakes from sleep and posts a section that was reassigned twenty minutes ago must not overwrite the one that actually landed. |
+| **Fail** | `POST /api/workers/jobs/:id/fail` | `{ error, retryable }` → `{ ok: true }`. `retryable: false` for a refusal, a bad payload, a missing tool; the server does not spend another attempt on those. |
+| **Frames** | `POST /api/workers/sources/:id/frames` | `multipart`, one file per part, `file` field matching `FRAME_FILE`. Streamed to disk with the cap and the counter `writeCapped` already uses. `PUT /api/workers/sources/:id/transcript` takes the text. |
+| **Download** | `GET /api/sources/:id/frames/:file` | Unchanged, and reachable with a worker token as well as a session — this is how a `write_section` job fetches the stills it was handed. |
+
+## Liveness and recovery
+
+- **Lease.** A claim sets `lease_until = now() + 90s`. A heartbeat every 15s
+  extends it. Ninety seconds is six missed heartbeats: long enough that a
+  Windows machine paging in a large ffmpeg does not lose its job, short enough
+  that a closed laptop is noticed before anyone reloads the page twice.
+- **Reaper.** A `setInterval` in the API, every 15s:
+  `UPDATE jobs SET state = 'queued', worker_id = NULL, lease_until = NULL
+   WHERE state = 'claimed' AND lease_until < now()` — and the same pass fails
+  anything at `attempts >= max_attempts` or past `wait_until`. The query is
+  atomic and idempotent, so running it in two API replicas at once is harmless.
+  This is the only thing that ever moves a job out of `claimed`, and it does it
+  on evidence — a lease that ran out — rather than on the assumption `boot ⇒
+  nothing is running` that `resumeOrphans` currently makes.
+- **A laptop closed mid-section.** The heartbeat stops, the lease expires
+  inside 90 seconds, the job goes back to `queued`, another capable worker
+  claims it, `attempts` is now 2. The section stays `writing` throughout — it
+  is being written, just by somebody else now — and the page shows which
+  machine. Half a section is not saved; a `write_section` result arrives whole
+  or not at all.
+- **Attempts.** `max_attempts` 2 by default. One retry covers the closed
+  laptop and the dropped connection, which are the failures that recur; a
+  prompt the model refuses will refuse it again, and the third attempt is money
+  spent to learn nothing. On exhaustion the section goes `failed` with the last
+  error, exactly as today, and Retry — `requeueFailed` — is the way back.
+- **Boot.** `resumeOrphans()` is deleted from `api/src/main.ts`. Migration
+  `0015` should sweep existing `writing` rows to `queued` **once**, in the
+  migration, because those really are orphans of the old world. After that,
+  nothing at boot touches a section's state.
+
+## Frames
+
+The server is the single source of truth for frames and transcripts, and this
+is not negotiable. Four reasons:
+
+- The browser renders frames from `GET /api/sources/:id/frames/:file`. If they
+  live on a laptop, the picker is blank whenever that laptop is shut.
+- The worker that ingests and the worker that writes are usually different
+  machines, and the researcher's HISTORY panel re-opens an answer with the
+  frames it was read from already ticked — months later, from any machine.
+- Ingest is expensive on purpose. `sources` exists so a second look does not
+  pay yt-dlp, ffmpeg and whisper twice. Per-machine copies mean paying per
+  machine.
+- Desktops are not backed up. `sourcedata` on the server is.
+
+So: **ingest uploads, write downloads.**
+
+The ingesting worker runs the pipeline into a temp directory, posts each JPEG
+to `POST /api/workers/sources/:id/frames` and the transcript to its endpoint,
+then posts the result naming the files. The server re-checks every filename
+against `FRAME_FILE` — those names now arrive over the network, and the regex
+that was guarding a query string is now guarding a write.
+
+A `write_section` job whose payload carries `frames` downloads them, in order,
+to a temp directory of its own, then hands the CLI **local absolute paths**,
+because none of the three CLIs takes bytes and each takes a file differently:
+
+- **Claude** — the paths are listed in the prompt and `Read` is granted for
+  that one call, gated on `allowFrameRead`.
+- **Codex** — `-i <file>` repeated per frame, one flag per picture, never a
+  list (a list swallows the `-` that says the prompt is on stdin).
+- **Gemini** — `@<path>` references inside the `-p` prompt, plus
+  `--include-directories` naming the temp directory so a path outside the
+  CLI's cwd is allowed at all.
+
+The temp directory goes in a `finally`, whether the call worked or not, and it
+must not be `cliHome()` — that directory is deliberately empty so the CLI has
+nothing to find, and filling it with JPEGs after the run undoes the reasoning
+in `docs/DECISIONS.md`.
+
+**One thing to fix while doing this.** `sourceBrief()` ends the frames line
+with "They are on disk under `.data/sources/<id>/`." On a worker that sentence
+is false — the frames are in a temp directory under a different name, on a
+different machine — and it is also the server's filesystem layout being handed
+to a model on somebody's desktop. The prompt should say how many frames there
+are and at what seconds, and the paths should reach the CLI only through the
+per-transport mechanisms above, which already name them correctly.
+
+## What this breaks in the UI
+
+`IntegrationsView` and `api/src/integrations/integrations.controller.ts` are
+built on a premise that stops being true: that "this machine" is a machine the
+server can probe. `wiring()` calls `toolStatuses()` and `brainStatuses()`,
+which spawn `claude --version` and `yt-dlp --version` **in the API process**.
+On the server those return nothing installed, forever, and the page becomes a
+list of red rows about a box nobody uses.
+
+The change:
+
+- **A machine picker at the top of the page.** "This machine" becomes "which
+  machine?", and the answer is a row from `workers`, with its owner, its
+  platform, and how long ago it was seen. The desktop app can default it to the
+  worker running beside it, which is the common case and makes the page feel
+  local again.
+- **Tool status is read, not probed.** The rows render `workers.tools` — the
+  same `ToolStatus` shape, so the component barely changes — with a *last
+  seen* line instead of a live spinner. "Re-check" stops meaning "spawn five
+  processes" and starts meaning "ask that worker to probe again": enqueue a
+  probe, or simply have the worker re-register, which it does on a timer
+  anyway. `?recheck=1` and the 60s cache in `tools.ts` both belong to the
+  worker now.
+- **Test brain becomes a `test_brain` job.** The button already runs for up to
+  150 seconds and already renders "running"; what changes is that the result
+  arrives by polling the job rather than from the POST's own response, and the
+  panel names the machine that answered. A model that works on one teammate's
+  laptop and not another's is now a thing the page can say, and today it cannot
+  express the question.
+- **A worker that is offline is not a broken tool.** The distinction the page
+  has to draw, in its own words: *`whisper` is not installed on that machine*
+  versus *that machine has not been seen since Tuesday*. One is an install
+  command, the other is "open your laptop".
+
+### `settings.brain` is a singleton and must be scoped
+
+`lib/server/repos/settings.ts` is a key/value table with one row per key and no
+scope column at all. So `brain`, `enabled` and `cliCanReadFrames` are one value
+for the whole console. On a laptop that was right — one console, one person,
+one machine. On a server with four teammates it is three separate wrong things:
+
+- **`brain` → workspace.** Which model writes is an editorial decision about
+  the content, not about hardware: the workspace that writes Bangla scripts and
+  the one writing SEO copy may reasonably want different ones, and neither
+  should change under the other because somebody switched a global. Put it on
+  `workspaces` — it sits naturally beside `brand_voice`, which is scoped for
+  exactly this reason and read by `startRun` from the workspace rather than the
+  request.
+- **`enabled` → worker.** "yt-dlp is switched off" is a statement about a
+  machine. It is `workers.enabled` above, and `allowed()` in `ingest.ts` — which
+  today ANDs `toolStatus(id).present` with the global `settings.enabled` — is
+  evaluated by the worker against its own row.
+- **`cliCanReadFrames` → worker.** It grants the `Read` tool on one specific
+  filesystem. Whoever owns that filesystem owns the switch; a global that lets
+  a teammate grant file access on your desktop is not a setting, it is a hole.
+  Note it defaults **on** today, and `workers.can_read_frames` above defaults
+  **off**: enrolling a machine should not silently carry over a permission
+  granted on a different one.
+
+The rest of `Settings` — `quality`, `autoApprove`, `reduceMotion` — is fine
+where it is, or wants to be per-user, which is a separate argument.
+
+## Decisions
+
+The six questions above, answered. Each is settled unless somebody argues it
+down with a reason the answer does not already cover.
+
+### The API-key fallback does not happen by itself
+
+`viaAnthropic` / `viaOpenAI` / `viaGemini` stay on the server, and the server
+never reaches for them on its own. A workspace carries `api_fallback BOOLEAN
+NOT NULL DEFAULT false`; while it is false, a job with no capable worker takes
+the routing above — `unroutable`, or queued behind `wait_until` — and says so.
+
+The reason is the whole project. This split exists so a run costs a
+subscription somebody already pays for rather than money per token. A fallback
+that fires when nobody's laptop is open would spend that money precisely when
+nobody is watching, which is the failure `docs/DEPLOYING.md` warns about with
+"the reason to keep an eye on who runs what". Off by default is not caution
+here, it is the feature.
+
+It stays available because "everyone has gone home and this has to ship
+tonight" is a real evening. Turning it on is a deliberate act, per workspace,
+by someone who knows what it costs.
+
+`run_sections` gains `wrote_with TEXT NOT NULL DEFAULT ''` — the worker's name,
+or `server:api`. Without it "which sections did we pay for" is unanswerable,
+and `created_by` from migration `0014` only says who pressed the button.
+
+### Any worker may serve any workspace — but the column exists now
+
+`workers` gains `workspace_ids JSONB NOT NULL DEFAULT '[]'::jsonb`, where empty
+means every workspace. Today it will be empty on every row.
+
+Narrowing it now would contradict a decision that is already made and written
+down: there are no roles, and everyone who is in can read and change
+everything. Building a permission the console has nowhere else would be one
+team's answer imposed through a schema.
+
+But the question in the sketch is a real one — a client's unreleased footage
+reaching a contractor's laptop is a different kind of event from a teammate
+reading a template — and the day it matters the answer must not be a
+migration, a backfill and a claim-query rewrite under time pressure. An empty
+array costs nothing and turns that day into one UPDATE and one `AND` in the
+claim.
+
+### Cancellation ships with Phase 1, server-side
+
+`heartbeat` already returns `drop`; the worker already has to handle it. On the
+server a cancel is one `UPDATE jobs SET state = 'cancelled' WHERE run_id = $1
+AND state IN ('queued','claimed')`, and the next heartbeat tells whoever was
+running it to kill the child.
+
+It ships because the alternative is worse than the work. Deleting a run whose
+sections are queued would otherwise leave jobs pointing at a row that is gone,
+and a job waiting on an offline machine has no way to stop before `wait_until`.
+Both are states somebody hits in the first week.
+
+The UI is one Stop button on a run that is writing, and `deleteRun` cancels
+first. Anything richer — cancelling a single section — waits.
+
+### Jobs are kept; their prompts are not
+
+The row lives forever. A day after `finished_at`, a sweep clears `payload` and
+the bulky half of `result`, keeping `kind`, `worker_id`, `attempts`, the
+timings, `result.ms` and `result.using`.
+
+A `write_section` payload is six to eight thousand characters of system prompt
+that `systemPrompt()` will rebuild identically on demand, and its `result.text`
+is already the section — `run_sections` holds the copy that is read. Keeping
+both makes `jobs` several times the size of the content it describes, for no
+question it can answer that something else cannot.
+
+What only `jobs` can answer is where work ran, how long it took, how often it
+had to be retried and on whose machine — the operational record this console
+has never had. That part is small and it stays.
+
+The sweep runs in the reaper's interval. One more `UPDATE` in a pass that is
+already atomic and already idempotent.
+
+### The desktop app holds two credentials, on purpose
+
+The webview signs in as a person, with the session cookie, exactly as a browser
+does. The worker holds its own bearer token. They are not the same principal
+and must not be merged.
+
+Everything in **The worker HTTP protocol** above argues this: different
+lifetime, different blast radius, different revocation. A single credential
+that is both would be a session that survives Team → Remove, or a worker token
+that can read the whole content library — one of the two, depending on which
+side won.
+
+The confusion is a real cost and it is paid once. Settings → Machines mints the
+token, shows it once, and the desktop app stores it in the OS keychain
+(`tauri-plugin-stronghold`, or DPAPI on Windows). Nobody types it twice, and
+nobody keeps it in a file next to the app.
+
+### Uploads stay on the server, and whisper stops needing the video
+
+`ingestFile` keeps running where the bytes already are. `ffmpeg` is a real
+dependency of the API image — it already is, in `api/Dockerfile` — and cutting
+eight stills out of a file that is already on local disk is cheap.
+
+`whisper` does **not** become a server dependency, because transcription splits
+off into its own job:
+
+- **`ingest_source`** (worker): yt-dlp, the frames, and a 16 kHz mono WAV.
+  Uploads all three.
+- **`transcribe_audio`** (worker, `needs: ["whisper"]`): downloads **the WAV**,
+  transcribes it, returns text.
+
+For an upload the server does the ffmpeg half itself — frames and the WAV — and
+enqueues `transcribe_audio` like any other.
+
+This falls out of three things agreeing. Audio is roughly a thirtieth of the
+video, so the round trip the sketch rejected stops being a round trip worth
+rejecting: a megabyte a minute, not four hundred megabytes. Transcription is
+the one step that wants a GPU and is therefore the one step most worth sending
+to a desktop. And `whisper.cpp` — which is what a one-click installer can
+actually put on a non-developer's Windows machine, where
+`pip install openai-whisper` cannot — takes 16 kHz mono WAV as input anyway, so
+the conversion is not overhead invented here, it is a step that had to happen
+somewhere.
+
+It also means a machine with no whisper at all still ingests: `needs` on
+`ingest_source` never includes it.
+
+## Still open
+
+- **Which model a `test_brain` job uses when the workspace names one the
+  machine cannot reach.** Probably: test what was asked for and report the
+  refusal, since that is the question being asked. Not settled.
+- **Whether `quality`, `autoApprove` and `reduceMotion` become per-user.** A
+  separate argument from this one, and nothing here forces it.
