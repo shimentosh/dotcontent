@@ -140,6 +140,25 @@ that was being written when the server went down was meant to finish.
 same reason: a topic that fails to update must not strand the section in
 writing with the failure recorded nowhere.
 
+**Superseded by the worker split — the goal stands, the mechanism is gone.**
+The reasoning above rests on one premise: a `writing` row must be dead,
+because the only thing that could be writing it was this process. That was
+true while the model was a child of the API. It stopped being true the day
+the work moved to somebody's laptop, and it inverted — the boot sweep now
+requeues a section a machine is four minutes into, pays a second
+subscription for it, and lets the slower answer overwrite the one that
+landed. With two API replicas, every boot steals the other's work.
+
+`resumeOrphans`, `driveRun` and `isDriving` are deleted;
+`requeueOrphans(runId?)` lost its no-argument form, so the global sweep is
+not a thing the code can express any more rather than a thing nothing
+calls. A run still survives a restart, and survives more than it did — it
+now survives the API being down entirely, because no process holds it. What
+recovers it is the lease in `jobs`, expiring on evidence rather than on an
+assumption about processes: see `docs/WORKER.md`, "Liveness and recovery".
+`requeueFailed` is untouched; it answers "the person pressed Retry", which
+is a different question and still the right one.
+
 ## An unreachable API says so, in red, at the top
 
 With the backend on its own port, the console has a failure it never had
@@ -311,6 +330,22 @@ and these together.
 Do not grow this into component tests. The screens are checked by opening them
 (`docs/BROWSER.md`); what these are for is the logic that fails silently, on one
 row, days later.
+
+**One database test, and only one.** `tests/queue.test.ts` covers the claim
+query and the reaper. The "no database" rule holds everywhere it was written
+for — a repo function that reads a row back is checked by using the app — but
+the queue is a different kind of thing: it decides, across machines that cannot
+see each other, who writes which section, and it gets that wrong silently. Two
+laptops writing the same section pay two subscriptions for one answer, and a
+job no worker can see leaves a run reading "Writing" for ever, which is the
+same bug `statusOf` is up there for. Three real defects came out of writing it:
+`bool_and` over zero rows is NULL rather than true, so a job needing no tools
+was invisible to every machine; the reaper ended jobs that were still running;
+and the payload sweep rewrote every historical row on every tick.
+
+It builds and drops its own database, so it cannot reach the workspace the dev
+server is using, and it skips itself when no Postgres answers. Do not add a
+second one without an argument this strong.
 
 ## A template travels as a file, and arrives as a draft
 
