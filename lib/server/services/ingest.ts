@@ -61,7 +61,7 @@ const WHISPER_TIMEOUT_MS = 600_000;
  * ones cut at a time somebody asked for. Anything else is a path traversal
  * being tried on a query string.
  */
-const FRAME_FILE = /^frame-(\d{2}|at-\d+)\.jpg$/;
+export const FRAME_FILE = /^frame-(\d{2}|at-\d+)\.jpg$/;
 
 export class IngestError extends Error {
   constructor(

@@ -15,6 +15,8 @@ import { IntegrationsController } from "./integrations/integrations.controller";
 import { RunsController } from "./runs/runs.controller";
 import { SourcesController } from "./sources/sources.controller";
 import { ResearchController } from "./research/research.controller";
+import { WorkersController } from "./workers/workers.controller";
+import { Reaper } from "./workers/reaper";
 
 /**
  * One module, because there is one database and one set of rules.
@@ -43,7 +45,15 @@ import { ResearchController } from "./research/research.controller";
     RunsController,
     SourcesController,
     ResearchController,
+    WorkersController,
   ],
-  providers: [{ provide: APP_GUARD, useClass: SessionGuard }],
+  /*
+   * The reaper is a provider rather than something started in `main`, so that
+   * its interval is owned by the application: Nest constructs it once and,
+   * with shutdown hooks on, clears it on the way out. A `setInterval` in
+   * `main` would survive `app.close()` and hold a database pool open forever
+   * in tests and on a dev reload.
+   */
+  providers: [{ provide: APP_GUARD, useClass: SessionGuard }, Reaper],
 })
 export class AppModule {}
