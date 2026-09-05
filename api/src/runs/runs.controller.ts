@@ -26,6 +26,8 @@ import {
   startRun,
   writeSection,
 } from "@/lib/server/services/runs";
+import type { User } from "@/lib/server/auth";
+import { CurrentUser } from "../common/user.decorator";
 
 /**
  * Runs, and the sections written into them.
@@ -43,9 +45,17 @@ export class RunsController {
     return listRuns(workspaceId || undefined);
   }
 
-  /** Create a run with every section queued. It does not start writing. */
+  /**
+   * Create a run with every section queued. It does not start writing.
+   *
+   * The author comes off the session, never out of the body: the guard has
+   * already established who this is, and a `createdBy` a caller could type
+   * would let anyone charge a run to a colleague. Same rule as `brandVoice`,
+   * which the service reads from the workspace for the same reason.
+   */
   @Post()
   create(
+    @CurrentUser() user: User,
     @Body()
     body: {
       workspaceId?: string;
@@ -63,6 +73,7 @@ export class RunsController {
       packSlug: body.packSlug ?? "enbn-website-package",
       inputs: body.inputs ?? {},
       title: body.title,
+      userId: user.id,
     });
   }
 

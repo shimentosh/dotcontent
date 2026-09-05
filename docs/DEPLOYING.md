@@ -28,6 +28,16 @@ VPS — Hetzner, DigitalOcean, anything with 2GB of RAM — is the shape this wa
 the settings table. Move the database without moving that value and every saved
 key becomes unreadable, which looks like the keys vanished.
 
+In production it is now **required**: the API refuses to start without it,
+rather than falling back to a key derived from `DATABASE_URL`. That fallback
+was the quieter failure of the two — it works until the day somebody rotates
+the database password, and then every key saved under the old one decrypts to
+nothing and reads on the page as though it had never been pasted. An install
+that has been running on the fallback needs `CONTENTOS_SECRET` set before it
+will boot again, and the keys saved under the fallback have to be re-entered
+once; there is no way to recover them, because the value that encrypted them
+was never written down.
+
 ## First deploy
 
 On a machine with Docker, pointed at by a domain's A record:

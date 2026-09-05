@@ -39,6 +39,15 @@ export async function startRun(input: {
   inputs: Record<string, string>;
   title?: string;
   sourceId?: string | null;
+  /*
+   * Who is asking, taken from the session by the controller.
+   *
+   * Not part of `inputs` and not read off the body for the same reason
+   * `brandVoice` is not: a caller who can name the author can name somebody
+   * else, and the one question this column exists to answer — who spent the
+   * API budget — is worthless if the answer is whatever the request said.
+   */
+  userId?: string | null;
 }): Promise<Run> {
   const pack = await resolvePack(input.packSlug);
   if (!pack) throw new RunError(`No pack "${input.packSlug}"`, 400);
@@ -94,6 +103,7 @@ export async function startRun(input: {
     brandVoice: workspace.brandVoice,
     inputs: input.inputs,
     sourceId: input.sourceId ?? null,
+    createdBy: input.userId ?? null,
     sections: pack.sections.map((s) => ({ id: s.id, title: s.title })),
   });
 }
@@ -105,8 +115,32 @@ export async function startRun(input: {
  * the same page, which is rude to the site and slow for you. Keyed by run and
  * URL together so a re-run after the URL is corrected does not serve the old
  * page back. Process-lifetime only: this is a cache, not a record.
+ *
+ * And bounded, because process lifetime is now measured in weeks: the API is a
+ * long-lived service, every run with a website_url leaves a whole page of text
+ * in here, and nothing ever took one out. A Map keeps insertion order, so the
+ * oldest key is the first one it yields — dropping that when the cap is passed
+ * is the whole eviction policy. Not LRU: a run's sections are written back to
+ * back and then the run is over, so age is what "no longer wanted" looks like
+ * here, and an access-ordered cache would only buy complexity.
+ *
+ * 200 is a couple of hundred pages — comfortably more than any burst of runs
+ * in flight at once, which is all this has to cover, and a few megabytes at
+ * worst rather than an unbounded number of them.
  */
+const SITE_CACHE_MAX = 200;
 const siteCache = new Map<string, string>();
+
+const rememberSite = (key: string, block: string) => {
+  siteCache.set(key, block);
+  while (siteCache.size > SITE_CACHE_MAX) {
+    // `keys().next()` is the oldest insertion; a `while` rather than an `if`
+    // so a cap lowered in a later edit drains rather than leaking forever.
+    const oldest = siteCache.keys().next();
+    if (oldest.done) break;
+    siteCache.delete(oldest.value);
+  }
+};
 
 /**
  * What the model is allowed to answer from.
@@ -157,7 +191,7 @@ async function evidenceFor(run: Run): Promise<string> {
     ].join("\n\n");
   }
 
-  siteCache.set(key, block);
+  rememberSite(key, block);
   return block;
 }
 

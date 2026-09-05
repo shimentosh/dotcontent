@@ -47,6 +47,16 @@ const DATA = path.join(DATA_ROOT, "sources");
 const FRAME_COUNT = 8;
 
 /**
+ * How long whisper gets before it is killed.
+ *
+ * The base model on a CPU transcribes at roughly real time, so ten minutes
+ * covers a reel many times over and still ends rather than pinning a core all
+ * evening. Named rather than written at the call site because the sentence a
+ * person reads when it runs out has to quote the same number.
+ */
+const WHISPER_TIMEOUT_MS = 600_000;
+
+/**
  * The only shapes a frame filename may have — the evenly spaced ones, and the
  * ones cut at a time somebody asked for. Anything else is a path traversal
  * being tried on a query string.
@@ -102,12 +112,17 @@ export async function ingest(input: {
 
     const video = await download(url, dir);
     const frames = video.file ? await cutFrames(video.file, dir) : [];
-    const transcript = video.file ? await transcribe(video.file, dir) : "";
+    // Only when there is a file: with nothing downloaded there is no audio,
+    // and "whisper is switched off" underneath "the video is private" is a
+    // second sentence about a step that was never going to run.
+    const spoken = video.file
+      ? await transcribe(video.file, dir)
+      : { text: "", note: "", failed: false };
 
     return (await updateSource(source.id, {
       state: "ready",
       frames,
-      transcript,
+      transcript: spoken.text,
       /*
        * The reason, in yt-dlp's own words.
        *
@@ -115,8 +130,22 @@ export async function ingest(input: {
        * dead link and a platform refusing anonymous requests, and only one of
        * those is worth trying again. The tool already says which.
        */
+      /*
+       * Whichever step fell short, in its own words.
+       *
+       * The download's reason wins when there is one: it is the larger loss,
+       * and it is why whisper never ran. Otherwise a whisper that FAILED gets
+       * the line — this path said nothing at all about the transcript before,
+       * so a whisper killed at the ten minute mark produced a source marked
+       * ready, with an empty transcript, and no hint anywhere that anything
+       * had gone wrong. A whisper deliberately switched off says nothing here:
+       * a link fetched for its caption is doing what was asked of it, and an
+       * error on every one of them is a banner people learn to stop reading.
+       */
       error: video.file
-        ? ""
+        ? spoken.failed
+          ? spoken.note
+          : ""
         : `Metadata only — ${video.error}. The caption and title are still usable.`,
     }))!;
   } catch (e) {
@@ -179,15 +208,19 @@ export async function ingestFile(input: {
 
     const seconds = await durationOf(file);
     const frames = await cutFrames(file, dir);
-    const transcript = await transcribe(file, dir);
+    const spoken = await transcribe(file, dir);
 
     return (await updateSource(source.id, {
       state: "ready",
       title: name,
       duration: seconds || null,
       frames,
-      transcript,
-      error: transcript ? "" : "No transcript — whisper is off or not installed.",
+      transcript: spoken.text,
+      // What actually happened, rather than the guess this used to print. "Off
+      // or not installed" was shown to people whose whisper was installed,
+      // switched on, and killed by the timeout — the one case of the four
+      // where there is something to be done about it.
+      error: spoken.note,
     }))!;
   } catch (e) {
     const message = e instanceof Error ? e.message : "The upload failed";
@@ -475,16 +508,44 @@ async function durationOf(video: string) {
 }
 
 /**
+ * What came back from the attempt to transcribe — and, when nothing did, why.
+ *
+ * A bare "" said four different things at once: whisper is switched off,
+ * whisper is not installed, whisper ran for ten minutes and was killed, and
+ * whisper exited fine but wrote nothing. The first two are the fast path and
+ * the last two are failures, and the caller marked all four `state: "ready"`
+ * with an empty transcript — so a source whose transcription had timed out
+ * looked exactly like one nobody wanted transcribed, and the model later wrote
+ * a thinner section off the frames alone with nobody the wiser.
+ */
+type Transcribed = {
+  /** The spoken audio as text, or "" if there is none. */
+  text: string;
+  /**
+   * Why there is no text, as the sentence the source's `error` field carries
+   * to the screen. Empty when there IS text, and only then.
+   */
+  note: string;
+  /**
+   * Whether that note is a real failure or an expected absence. Switched off
+   * and not installed are decisions about this machine; timed out and crashed
+   * are things that went wrong and might go right on a retry.
+   */
+  failed: boolean;
+};
+
+/**
  * The spoken audio, as text.
  *
- * Whisper if it is installed. If it is not, this returns "" and the source is
- * still useful — the caption and description usually carry the domain too.
- * The alternative, failing the whole ingest over an optional tool, would make
- * the feature unavailable to anyone without a Python toolchain.
+ * Whisper if it is switched on and installed. If it is not, this returns no
+ * text and the source is still useful — the caption and description usually
+ * carry the domain too. The alternative, failing the whole ingest over an
+ * optional tool, would make the feature unavailable to anyone without a Python
+ * toolchain. A whisper that ran and failed degrades the same way, but says so:
+ * the transcript is the difference between a section written from what was
+ * said and one written from what could be seen.
  */
-async function transcribe(video: string, dir: string): Promise<string> {
-  if (!(await allowed("whisper"))) return "";
-
+async function transcribe(video: string, dir: string): Promise<Transcribed> {
   /*
    * However this machine can reach it.
    *
@@ -493,9 +554,32 @@ async function transcribe(video: string, dir: string): Promise<string> {
    * and records whichever answered. Running the recorded one means an install
    * the probe found is an install this can use.
    */
-  const tool = await toolStatus("whisper");
+  const [tool, settings] = await Promise.all([toolStatus("whisper"), getSettings()]);
 
-  const { code } = await run(
+  /*
+   * The two expected absences, told apart.
+   *
+   * `allowed()` collapses them into one boolean, which is the right answer for
+   * ffmpeg and the wrong one here: "switched off" is fixed by a toggle on the
+   * Integrations page and "not installed" by a pip install, and a person told
+   * the wrong one goes looking in the wrong place.
+   */
+  if (!settings.enabled.includes("whisper")) {
+    return {
+      text: "",
+      note: "No transcript — whisper is switched off in Integrations.",
+      failed: false,
+    };
+  }
+  if (!tool.present) {
+    return {
+      text: "",
+      note: `No transcript — whisper is not installed here. ${tool.install}`,
+      failed: false,
+    };
+  }
+
+  const { code, err } = await run(
     tool.command,
     [
       ...tool.lead,
@@ -509,14 +593,60 @@ async function transcribe(video: string, dir: string): Promise<string> {
       "--fp16",
       "False",
     ],
-    { env: tool.env, timeout: 600_000 },
+    { env: tool.env, timeout: WHISPER_TIMEOUT_MS },
   );
-  if (code !== 0) return "";
+
+  if (code !== 0) {
+    /*
+     * A timeout reads as its own thing, not as a crash.
+     *
+     * `run()` kills the child and returns -1 with "Timed out after ..." on
+     * stderr, and that is the likeliest real failure here: the base model on a
+     * CPU runs at roughly real time, so a long video on an ordinary laptop
+     * runs out of clock rather than crashing. The remedy is a shorter clip,
+     * not a reinstall, so the sentence must not say the same thing a crash
+     * would.
+     */
+    if (/Timed out after/.test(err)) {
+      return {
+        text: "",
+        note: `No transcript — whisper ran out of time after ${Math.round(
+          WHISPER_TIMEOUT_MS / 60_000,
+        )} minutes on this video. A shorter clip will finish.`,
+        failed: true,
+      };
+    }
+    return {
+      text: "",
+      note: `No transcript — whisper failed: ${firstUseful(err) || `exit ${code}`}`,
+      failed: true,
+    };
+  }
 
   const files = await fs.readdir(dir).catch(() => []);
   const txt = files.find((f) => f.endsWith(".txt"));
-  if (!txt) return "";
-  return (await fs.readFile(path.join(dir, txt), "utf8").catch(() => "")).trim();
+  /*
+   * Exited clean and left nothing behind: a directory it could not write into,
+   * or a build that wrote some other format. There is no transcript either
+   * way, and it is not the fast path, so it does not get to look like one.
+   */
+  if (!txt) {
+    return {
+      text: "",
+      note: "No transcript — whisper finished but wrote no text file.",
+      failed: true,
+    };
+  }
+
+  const text = (await fs.readFile(path.join(dir, txt), "utf8").catch(() => "")).trim();
+  if (!text) {
+    return {
+      text: "",
+      note: "No transcript — whisper wrote an empty text file.",
+      failed: true,
+    };
+  }
+  return { text, note: "", failed: false };
 }
 
 /** One frame's bytes, for the API route that serves them. */

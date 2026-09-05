@@ -139,6 +139,34 @@ const SECRET = createHash("sha256")
   )
   .digest();
 
+/**
+ * Refuses to run a server on the development fallback.
+ *
+ * Deriving the key from DATABASE_URL is fine on a laptop, where the
+ * connection string never changes. On a real deployment it is a trap: rotate
+ * the database password and every stored key is suddenly encrypted under a
+ * value nothing can reproduce. `decrypt` returns "" for anything it cannot
+ * open, so nothing errors — the keys simply stop being there, and it reads to
+ * whoever owns the box as "the console lost my keys" rather than "the secret
+ * changed". Better to refuse to boot while it is still one env var away from
+ * being right.
+ *
+ * Called from ready() in lib/server/http.ts, before the port opens. Only in
+ * production: `npm run dev` keeps the fallback and needs no configuration.
+ */
+export function assertSecret() {
+  if (process.env.NODE_ENV !== "production") return;
+  if (process.env.CONTENTOS_SECRET?.trim()) return;
+  throw new Error(
+    "CONTENTOS_SECRET is not set. Set it to a long random string and keep it " +
+      "constant for the life of this deployment — it is the key that encrypts " +
+      "stored API keys. Without it the key is derived from DATABASE_URL, so " +
+      "rotating the database password would make every saved key unreadable, " +
+      "silently. Note that keys saved under a different value cannot be read " +
+      "back with a new one and will have to be entered again.",
+  );
+}
+
 const SECRET_PREFIX = "secret:";
 
 function encrypt(plain: string) {

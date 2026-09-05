@@ -35,6 +35,11 @@ export type Run = {
   sourceId: string | null;
   /** What you decided about the content: used it, ready to, ignored it. */
   decision: Decision;
+  /**
+   * Who pressed Run. Null for the runs made before anyone was recorded, and
+   * for a run whose author has since been deleted — the work outlives them.
+   */
+  createdBy: string | null;
   sections: RunSection[];
   createdAt: string;
   updatedAt: string;
@@ -70,6 +75,7 @@ const mapRun = (r: Row, sections: RunSection[]): Run => ({
   brandVoice: String(r.brand_voice ?? ""),
   sourceId: r.source_id == null ? null : String(r.source_id),
   decision: asDecision(r.decision),
+  createdBy: r.created_by == null ? null : String(r.created_by),
   sections,
   createdAt: iso(r.created_at),
   updatedAt: iso(r.updated_at),
@@ -128,6 +134,8 @@ export async function createRun(patch: {
   inputs: Record<string, string>;
   brandVoice?: string;
   sourceId?: string | null;
+  /** Who asked for it. Omitted only where there is no session to ask. */
+  createdBy?: string | null;
   sections: { id: string; title: string }[];
 }): Promise<Run> {
   const rid = id("run");
@@ -136,8 +144,8 @@ export async function createRun(patch: {
     await c.query(
       `INSERT INTO runs
          (id, workspace_id, topic_id, pack_slug, title, inputs, brand_voice,
-          source_id)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)`,
+          source_id, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)`,
       [
         rid,
         patch.workspaceId,
@@ -147,6 +155,7 @@ export async function createRun(patch: {
         JSON.stringify(patch.inputs),
         patch.brandVoice ?? "",
         patch.sourceId ?? null,
+        patch.createdBy ?? null,
       ],
     );
     for (let i = 0; i < patch.sections.length; i += 1) {

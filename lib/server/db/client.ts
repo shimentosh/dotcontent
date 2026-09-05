@@ -56,35 +56,86 @@ export function ready(): Promise<void> {
   return store.__contentosReady;
 }
 
+/*
+ * The key the migration lock is taken on.
+ *
+ * Any fixed bigint works — Postgres advisory locks are just numbers, and this
+ * one only has to be a number nothing else in this database picks. Written as
+ * a literal in the SQL below rather than a parameter, because a bound
+ * parameter arrives as text and `pg_advisory_lock` would have to be told which
+ * of its two overloads (one bigint, or two ints) was meant.
+ */
+const MIGRATION_LOCK = 4021957301;
+
+/*
+ * Migrations, one process at a time.
+ *
+ * Two API workers booting together both read `migrations`, both see the same
+ * migration as un-applied, and both run it; the second one dies on the
+ * `migrations` primary key and takes the worker down at boot. With one replica
+ * that never happened, so the race was invisible until this was deployed with
+ * more than one.
+ *
+ * The lock is session-level and taken on `conn` — the client already checked
+ * out — on purpose. `pool().query` would hand the statement to whichever
+ * connection was free, so the lock would be held by a session that is not the
+ * one running the migrations, and released the moment that query returned.
+ *
+ * The second process blocks here rather than failing: by the time it gets the
+ * lock the first has committed, so its `SELECT name FROM migrations` sees the
+ * work as done and it applies nothing.
+ */
 async function migrate() {
   const conn = await pool().connect();
   try {
-    await conn.query(`
-      CREATE TABLE IF NOT EXISTS migrations (
-        name       TEXT PRIMARY KEY,
-        applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-      )`);
-
-    const done = new Set(
-      (await conn.query<{ name: string }>("SELECT name FROM migrations")).rows.map(
-        (r) => r.name,
-      ),
-    );
-
-    for (const m of MIGRATIONS) {
-      if (done.has(m.name)) continue;
-      await conn.query("BEGIN");
-      try {
-        await conn.query(m.sql);
-        await conn.query("INSERT INTO migrations (name) VALUES ($1)", [m.name]);
-        await conn.query("COMMIT");
-      } catch (e) {
-        await conn.query("ROLLBACK");
-        throw e;
-      }
+    await conn.query(`SELECT pg_advisory_lock(${MIGRATION_LOCK})`);
+    try {
+      await runMigrations(conn);
+    } finally {
+      /*
+       * A session-level lock is held until it is released or the connection
+       * ends, and this connection goes back into the pool rather than ending —
+       * so skipping the unlock would wedge every later boot against a lock
+       * nothing is going to give up.
+       *
+       * Its own failure is swallowed: it can only fail if the connection is
+       * already broken (in which case Postgres has dropped the lock with the
+       * session), and throwing here would replace the migration error that
+       * actually explains what went wrong.
+       */
+      await conn
+        .query(`SELECT pg_advisory_unlock(${MIGRATION_LOCK})`)
+        .catch(() => {});
     }
   } finally {
     conn.release();
+  }
+}
+
+async function runMigrations(conn: PoolClient) {
+  await conn.query(`
+    CREATE TABLE IF NOT EXISTS migrations (
+      name       TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`);
+
+  const done = new Set(
+    (await conn.query<{ name: string }>("SELECT name FROM migrations")).rows.map(
+      (r) => r.name,
+    ),
+  );
+
+  for (const m of MIGRATIONS) {
+    if (done.has(m.name)) continue;
+    await conn.query("BEGIN");
+    try {
+      await conn.query(m.sql);
+      await conn.query("INSERT INTO migrations (name) VALUES ($1)", [m.name]);
+      await conn.query("COMMIT");
+    } catch (e) {
+      await conn.query("ROLLBACK");
+      throw e;
+    }
   }
 }
 

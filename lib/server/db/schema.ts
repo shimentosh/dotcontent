@@ -463,4 +463,31 @@ export const MIGRATIONS: { name: string; sql: string }[] = [
     ALTER TABLE sources ADD COLUMN researched_at TIMESTAMPTZ;
     `,
   },
+
+  {
+    /*
+     * Who started a run.
+     *
+     * Nothing recorded it. On one laptop that was the same person every time,
+     * so the column would have been a joke; on a server it is the only way to
+     * answer the question DEPLOYING.md poses — a run against an API key costs
+     * real money, and "who ran what" had no answer anywhere in the database.
+     * It is also the groundwork for several people on several machines driving
+     * runs against one of these.
+     *
+     * Nulled rather than cascaded, for the reason `topic_id` above is: the
+     * content outlives the person who asked for it, and an employee leaving
+     * must not take a month of scripts with them. `invites.created_by` is the
+     * same pattern for the same reason.
+     *
+     * Nullable with no backfill: every run that already exists was started by
+     * somebody the database cannot name, and guessing — the owner, the first
+     * user — would put a name on work as if it were known.
+     */
+    name: "0014_run_author",
+    sql: `
+    ALTER TABLE runs ADD COLUMN created_by TEXT REFERENCES users(id) ON DELETE SET NULL;
+    CREATE INDEX runs_created_by ON runs(created_by);
+    `,
+  },
 ];

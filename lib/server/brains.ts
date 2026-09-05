@@ -140,17 +140,30 @@ export async function brainStatuses(): Promise<BrainStatus[]> {
       const tool = def.command
         ? tools.find((t) => t.id === (def.command as never))
         : undefined;
-      // Ollama has no CLI probe here — it is an HTTP server, and a reachable
-      // port is the only thing that means anything about it.
-      const cli = def.id === "ollama" ? await ollamaUp() : Boolean(tool?.present);
       const { key, from } = await keyFor(def);
+      /*
+       * Ollama's address, resolved once for this whole row.
+       *
+       * `keyFor` has already fetched the `ollama-url` secret — that is what the
+       * key IS for this brand — so the base comes off it rather than out of a
+       * second `getSecret`. This function runs on every Integrations poll and
+       * again inside `write()`; one round-trip is enough.
+       */
+      const base = def.id === "ollama" ? ollamaBase(key) : "";
+      // Ollama has no CLI probe here — it is an HTTP server, and a reachable
+      // port is the only thing that means anything about it. It is probed at
+      // the configured address, not at localhost: an Ollama on another box was
+      // marked unavailable and `write()` refused it before `viaOllama` — which
+      // reads the very same secret — was ever given the chance to reach it.
+      const cli = def.id === "ollama" ? await ollamaUp(base) : Boolean(tool?.present);
       const api = def.id === "ollama" ? false : Boolean(key);
       const available = cli || api;
 
       return {
         ...def,
         cli,
-        cliVersion: def.id === "ollama" ? (cli ? "localhost:11434" : "") : (tool?.version ?? ""),
+        cliVersion:
+          def.id === "ollama" ? (cli ? hostOf(base) : "") : (tool?.version ?? ""),
         // What will actually be asked for, which is not always `model`: a CLI
         // with no override uses whatever the signed-in account defaults to.
         using:
@@ -164,16 +177,66 @@ export async function brainStatuses(): Promise<BrainStatus[]> {
         reason: available
           ? ""
           : def.id === "ollama"
-            ? "Nothing is listening on localhost:11434"
+            ? // The address that was actually tried, never a hard-coded
+              // localhost: someone pointing this at Ollama on another machine
+              // has to be able to see WHICH host did not answer.
+              `Nothing is listening on ${hostOf(base)}`
             : `Install the ${def.command} CLI, or paste a key in Settings → API keys`,
       };
     }),
   );
 }
 
-async function ollamaUp() {
+/** Where Ollama is when nobody has said otherwise. */
+const OLLAMA_DEFAULT = "http://localhost:11434";
+
+/**
+ * The one place that decides where Ollama is.
+ *
+ * There used to be two: the probe went to a hard-coded localhost while the
+ * transport read the `ollama-url` secret. Point the secret at another box and
+ * the probe found nothing at home, `available` came back false, and `write()`
+ * threw "Nothing is listening on localhost:11434" before the configured
+ * address was tried even once. Everything that needs the address takes it from
+ * here, so the two can no longer disagree.
+ *
+ * The trailing slash is stripped here and nowhere else: a stored
+ * `http://box:11434/` and a path joined with `/api/tags` make
+ * `http://box:11434//api/tags`, which some proxies in front of Ollama answer
+ * with a 404 that reads exactly like Ollama being absent.
+ */
+const ollamaBase = (stored: string) =>
+  (stored.trim() || OLLAMA_DEFAULT).replace(/\/+$/, "");
+
+/** The same secret, for the paths that have not already read it. */
+const ollamaUrl = async () => ollamaBase(await getSecret("ollama-url"));
+
+/**
+ * Host and port, for saying which address answered or did not.
+ *
+ * A URL is what is stored and what is fetched; a person reading the
+ * Integrations page wants the machine, not the scheme. A base that will not
+ * parse is shown whole rather than swallowed — a typo in the setting is
+ * exactly what someone reading this line is trying to find.
+ */
+function hostOf(base: string) {
   try {
-    const res = await fetch("http://localhost:11434/api/tags", {
+    return new URL(base).host;
+  } catch {
+    return base;
+  }
+}
+
+/**
+ * A reachable Ollama, at the address it is actually configured at.
+ *
+ * The 1500ms cap stays: this runs on the Integrations page, which polls, and a
+ * host that is switched off does not refuse a connection — it drops it, and
+ * the fetch would sit there until the OS gave up and the whole page with it.
+ */
+async function ollamaUp(base: string) {
+  try {
+    const res = await fetch(`${base}/api/tags`, {
       signal: AbortSignal.timeout(1500),
     });
     return res.ok;
@@ -613,7 +676,7 @@ async function viaGemini(def: BrainDef, req: WriteRequest, key: string) {
 }
 
 async function viaOllama(def: BrainDef, req: WriteRequest) {
-  const base = (await getSecret("ollama-url")) || "http://localhost:11434";
+  const base = await ollamaUrl();
   const res = await fetch(`${base}/api/chat`, {
     method: "POST",
     headers: { "content-type": "application/json" },
