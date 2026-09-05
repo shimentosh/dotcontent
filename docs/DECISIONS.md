@@ -687,3 +687,34 @@ Three parts of that are load-bearing and are the ones to protect:
 The API key did not go away; it stopped being automatic.
 `workspaces.api_fallback` is off by default, because a fallback that fired by
 itself would spend money at exactly the moment nobody was watching.
+
+## The desktop app is unsigned and does not update itself
+
+Both were considered and both were declined, on 2026-09-05, because this
+console is an internal tool for one team.
+
+**No code-signing certificate.** An OV or EV certificate costs money every
+year and a verified legal identity, to remove a warning that a handful of
+people see once each. The installer is handed over in person or through a link
+the team already trusts. What they see is SmartScreen's *"Windows protected
+your PC"* with Run hidden behind **More info**, and whoever sends the file
+should say so in the same message — otherwise somebody decides on their own
+that it is unsafe.
+
+**No update endpoint.** Updating is being handed a new installer, which for
+five people is a message with a file in it. An endpoint, a signing key and an
+honest `latest.json` is real infrastructure to save that message.
+
+Both are wired anyway and neither is pretended-finished. `sign.ps1` takes a
+real certificate through the environment and prints one line per file saying
+it is unsigned when there is none; a build with a certificate configured and
+signing failing fails deliberately. The updater plugin is registered and its
+tray item is built **only** when an endpoint is configured, so today it does
+not appear rather than being a button that does nothing.
+
+That is the part worth protecting. Do not delete the hooks to tidy up: the
+answer changes the day this reaches somebody outside the team — a client, a
+contractor, a download page — and on that day it should be configuration, not
+a rewrite. Do not generate a self-signed certificate either. It removes no
+warning, nothing trusts it, and calling the result "signed" is worse than
+being plainly unsigned.

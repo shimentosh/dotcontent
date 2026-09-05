@@ -1143,7 +1143,7 @@ left alone: `.data/` beside `worker/` is what `npm run worker` uses and what
 `npm run worker:setup` fills, and an app quietly preferring somewhere else
 would make a bug seen here impossible to reproduce there.
 
-### Signing, and what it costs not to
+### Signing: decided against, deliberately
 
 **The installer this repository produces is unsigned**, and every build says so
 once per file:
@@ -1152,12 +1152,21 @@ once per file:
 sign.ps1: no certificate configured, so Content OS_0.1.0_x64-setup.exe is unsigned.
 ```
 
-What that means for whoever installs it: SmartScreen shows *"Windows protected
-your PC"* and hides the Run button behind **More info**. For an internal team
-of a handful of people that is a decision rather than a blocker — somebody says
-"click More info, then Run anyway" once. For anything wider it is not, because
-that is also exactly what malware looks like, and teaching people to click
-through the warning is teaching them the wrong reflex.
+**That is the call, and it has been made.** This console is an internal tool
+for one team, handed over in person or through a link they already trust, and a
+certificate costs money and a verified legal identity to remove a warning that
+five people will see once each.
+
+What they will see: SmartScreen shows *"Windows protected your PC"* and hides
+the Run button behind **More info**. Whoever hands the installer over should
+say so in the same message, because the alternative is somebody deciding on
+their own that the file is unsafe.
+
+The moment this stops being right is the moment it leaves the team — a client,
+a contractor, anyone downloading it from a page. That is exactly what malware
+looks like, and teaching people to click through the warning is teaching them
+the wrong reflex. The hook below is what makes changing the answer a
+configuration change rather than a rewrite.
 
 Fixing it costs money and identity rather than code: an **OV or EV code signing
 certificate** from a certificate authority, issued to a verified legal entity,
@@ -1188,13 +1197,21 @@ A self-signed certificate is not an option and is not offered here. It signs
 nothing anybody's computer trusts, it does not remove the SmartScreen warning,
 and calling the result "signed" is worse than being plainly unsigned.
 
-### Auto-update: wired, and switched off until there is somewhere to look
+### Auto-update: decided against too, and switched off in a way that shows
 
-`tauri-plugin-updater` is registered, `src-tauri/src/updates.rs` does the check
-and the install, and the tray grows a **Check for updates…** item when there is
-an endpoint. **None of it has been run end to end**, for the plain reason that
-there is nothing to run it against — and the two things missing are
-configuration rather than code:
+The team updates by being handed a new installer, which for a handful of people
+in one company is a message with a file in it. Hosting an update endpoint,
+holding a signing key and keeping a `latest.json` honest is real infrastructure
+to save that message.
+
+`tauri-plugin-updater` is registered and `src-tauri/src/updates.rs` does the
+check and the install, because the code costs nothing to keep and the answer
+changes the day the team is spread across offices. **None of it has been run
+end to end** — there is nothing to run it against. The tray item is built only
+when an endpoint is configured, so today it does not appear at all rather than
+sitting there as a button that does nothing.
+
+Turning it on is two configuration values, not code:
 
 ```json
 "plugins": { "updater": {
