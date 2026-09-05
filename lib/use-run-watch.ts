@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { getRun, isWriting, type Run } from "@/lib/runs-client";
+import { getRun, listRunJobs, type Run, type RunJob } from "@/lib/runs-client";
 
 /**
  * How often to ask, for each of the three things a run can be doing.
@@ -41,17 +41,34 @@ const PATIENCE_MS = 120_000;
 const RETRY_FLOOR = 4000;
 const RETRY_CEILING = 30_000;
 
+/**
+ * One empty list, shared.
+ *
+ * Handed back for a page with no run to follow, and it has to be the SAME
+ * array every time: callers put it in `useMemo` dependencies, and a fresh `[]`
+ * per render is a new identity per render, which rebuilds every placement on
+ * the page forever.
+ */
+const NO_JOBS: RunJob[] = [];
+
 export type RunWatch = {
   fetched: Run | null;
   setFetched: (run: Run | null) => void;
+  /**
+   * This run's queue, oldest job first, with the machine on each.
+   *
+   * The half of the run's state that is not in `run_sections`: which machine
+   * holds a section right now, whether a job is `unroutable` rather than
+   * merely failed, and whether one is queued behind a laptop that is shut.
+   */
+  jobs: RunJob[];
   /** Anything on the queue for this run, on any machine. */
   serverWriting: boolean;
   setServerWriting: (running: boolean) => void;
   /**
-   * Jobs exist but no section says `writing`: the work is queued and no
-   * machine has picked it up. The page says something different for this than
-   * for "a model is typing", because the answer is usually to switch a
-   * computer on.
+   * Jobs exist and no machine is holding one: the work is queued and nothing
+   * has picked it up. The page says something different for this than for "a
+   * model is typing", because the answer is usually to switch a computer on.
    */
   waitingForMachine: boolean;
 };
@@ -69,6 +86,14 @@ export type RunWatch = {
  * be seconds old and not in any list yet), then follow it — at whichever of the
  * three speeds above matches what the run is actually doing.
  *
+ * Two requests per tick, and still two: the queue read REPLACED the boolean
+ * one. `GET /runs/:id/start` answered `jobsForRun(id).some(live)` — the same
+ * query, reduced to a yes or no on the way out — so asking for the jobs
+ * themselves is that answer plus the machine names, at one round trip rather
+ * than a second timer racing the first. A separate poll would also have put
+ * the two halves a beat apart, which on a 1.5s cadence is a section that says
+ * WRITING with no machine and then a machine with no section.
+ *
  * It never gives up. A run can legitimately sit queued for a day waiting for a
  * machine, and it can resume on a different machine than the one it started
  * on, so there is no point at which "nothing has happened lately" means
@@ -77,6 +102,7 @@ export type RunWatch = {
  */
 export function useRunWatch(runId: string | null | undefined): RunWatch {
   const [fetched, setFetched] = useState<Run | null>(null);
+  const [jobs, setJobs] = useState<RunJob[]>(NO_JOBS);
   const [serverWriting, setServerWriting] = useState(false);
   const [waitingForMachine, setWaitingForMachine] = useState(false);
 
@@ -103,9 +129,9 @@ export function useRunWatch(runId: string | null | undefined): RunWatch {
 
     /** One poll. Returns how long to wait before the next one. */
     const tick = async (): Promise<number> => {
-      let answer: [{ running: boolean }, Run | null];
+      let answer: [RunJob[], Run | null];
       try {
-        answer = await Promise.all([isWriting(runId), getRun(runId)]);
+        answer = await Promise.all([listRunJobs(runId), getRun(runId)]);
       } catch {
         /*
          * A failed poll is not an answer about the run.
@@ -120,9 +146,35 @@ export function useRunWatch(runId: string | null | undefined): RunWatch {
       }
       failures.current = 0;
       if (stop) return PACE.settled;
-      const [{ running }, fresh] = answer;
+      const [queue, fresh] = answer;
 
-      const writing = Boolean(fresh?.sections.some((s) => s.state === "writing"));
+      /*
+       * "Running" worked out here rather than asked for.
+       *
+       * Exactly the predicate the server applied behind `GET :id/start`, on
+       * exactly the rows it applied it to, so nothing moved except which side
+       * of the wire it happens on.
+       */
+      const running = queue.some(
+        (j) => j.state === "queued" || j.state === "claimed",
+      );
+
+      /*
+       * Something is genuinely being written.
+       *
+       * A claimed job means a machine has the section in hand — the fact that
+       * did not exist before. The section rows are still consulted alongside
+       * it for two cases a job cannot cover: the second between `advance`
+       * marking a row `writing` and a worker's long poll claiming it (without
+       * this the whole page would flash amber between every section), and a
+       * section the server is writing itself on the workspace's API key,
+       * which has no job row at all by design.
+       */
+      const claimed = queue.some((j) => j.state === "claimed");
+      const writing =
+        claimed || Boolean(fresh?.sections.some((s) => s.state === "writing"));
+
+      setJobs(queue);
       setServerWriting(running);
       setWaitingForMachine(running && !writing);
       if (fresh) setFetched(fresh);
@@ -194,6 +246,7 @@ export function useRunWatch(runId: string | null | undefined): RunWatch {
     return {
       fetched: null,
       setFetched,
+      jobs: NO_JOBS,
       serverWriting: false,
       setServerWriting,
       waitingForMachine: false,
@@ -203,6 +256,7 @@ export function useRunWatch(runId: string | null | undefined): RunWatch {
   return {
     fetched,
     setFetched,
+    jobs,
     serverWriting,
     setServerWriting,
     waitingForMachine,

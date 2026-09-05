@@ -122,6 +122,45 @@ export async function registerWorker(patch: {
   enabled?: string[];
 }): Promise<Worker> {
   const hash = hashToken(patch.token);
+  const reported = (patch.tools ?? []).map((t) => t.id as string);
+
+  /*
+   * What stays switched on, when a machine reports itself again.
+   *
+   * A worker re-registers every few minutes — that is how a newly installed
+   * whisper becomes visible at all. Two obvious rules are both wrong:
+   *
+   *  - Take the report's `enabled` wholesale, and the switch in Settings →
+   *    Machines is a lie. Turn a tool off, and the machine turns it back on by
+   *    itself within the tick.
+   *  - Keep the stored value wholesale, and a tool installed after enrolment
+   *    is reported, listed, and never used, because nothing ever adds it.
+   *
+   * So the owner's set is kept, and only ids this report knows about that the
+   * previous one did not are added. Something in neither was switched off on
+   * purpose, and stays off. On the first insert everything reported is on,
+   * because enrolling a machine to then go and switch its tools on one at a
+   * time is not a decision anybody wants to be asked for.
+   *
+   * Read-then-write rather than one statement: the merge is a set operation
+   * with a rule worth reading, and this runs on a five-minute timer, not in
+   * the claim path. Two registrations of the SAME token racing would settle on
+   * one of two nearly identical sets, which is not worth a lock.
+   */
+  const before = await one<{ tools: ToolStatus[]; enabled: string[] }>(
+    "SELECT tools, enabled FROM workers WHERE token_hash = $1",
+    [hash],
+  );
+
+  const enabled = before
+    ? (() => {
+        const known = new Set((before.tools ?? []).map((t) => t.id as string));
+        const on = new Set(before.enabled ?? []);
+        for (const t of reported) if (!known.has(t)) on.add(t);
+        return [...on];
+      })()
+    : (patch.enabled?.length ? patch.enabled : reported);
+
   const row = await one<Row>(
     `INSERT INTO workers
        (id, user_id, name, token_hash, platform, version, tools, enabled,
@@ -144,7 +183,7 @@ export async function registerWorker(patch: {
       patch.platform ?? "",
       patch.version ?? "",
       JSON.stringify(patch.tools ?? []),
-      JSON.stringify(patch.enabled ?? []),
+      JSON.stringify(enabled),
     ],
   );
   return mapWorker(row!);

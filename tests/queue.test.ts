@@ -171,6 +171,47 @@ describe.skipIf(!up)("the queue", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it("keeps an owner's switch off when a machine reports itself again", async () => {
+    /*
+     * A worker re-registers every few minutes. The switch in Settings →
+     * Machines has to survive that, or it is a lie: turn ffmpeg off and the
+     * machine turns it back on by itself within the tick. A tool installed
+     * AFTER enrolment still has to arrive switched on, or it is reported,
+     * listed, and never used.
+     */
+    const { registerWorker, updateWorker, getWorker } = await workersMod();
+    const tool = (tid: string) => ({
+      id: tid, command: tid, env: {}, lead: [], present: true,
+      version: "1", error: "", install: "",
+    });
+    const tok = token();
+
+    const first = await registerWorker({
+      userId: uid, name: "re-reg", token: tok,
+      tools: [tool("claude"), tool("ffmpeg")] as never,
+    });
+    expect([...first.enabled].sort()).toEqual(["claude", "ffmpeg"]);
+
+    // The owner switches ffmpeg off.
+    await updateWorker(first.id, { enabled: ["claude"] });
+
+    // The machine reports again, unchanged, and must not undo that.
+    await registerWorker({
+      userId: uid, name: "re-reg", token: tok,
+      tools: [tool("claude"), tool("ffmpeg")] as never,
+    });
+    expect((await getWorker(first.id))!.enabled).toEqual(["claude"]);
+
+    // Now whisper is installed on that machine. It is new, so it arrives on —
+    // and ffmpeg is still off, because that was a decision.
+    await registerWorker({
+      userId: uid, name: "re-reg", token: tok,
+      tools: [tool("claude"), tool("ffmpeg"), tool("whisper")] as never,
+    });
+    const after = (await getWorker(first.id))!.enabled;
+    expect([...after].sort()).toEqual(["claude", "whisper"]);
+  });
+
   it("refuses a result from a machine that no longer holds the job", async () => {
     // The laptop that wakes from sleep and posts a section reassigned twenty
     // minutes ago. It must not overwrite the one that actually landed.

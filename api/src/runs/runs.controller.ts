@@ -18,6 +18,7 @@ import {
   requeueFailed,
   setRunDecision,
 } from "@/lib/server/repos/runs";
+import { jobsForRun, type JobWithWorker } from "@/lib/server/repos/jobs";
 import {
   advance,
   editSection,
@@ -29,6 +30,45 @@ import {
 } from "@/lib/server/services/runs";
 import type { User } from "@/lib/server/auth";
 import { CurrentUser } from "../common/user.decorator";
+
+/**
+ * What a job looks like from the browser: an allowlist, not a row.
+ *
+ * A `Pick` of the repo's own type rather than a fresh interface, for the same
+ * reason lib/runs-client.ts imports `Run` instead of redeclaring it — two ends
+ * of a JSON boundary that describe a field separately are two things that can
+ * disagree, and the disagreement shows up as a blank chip rather than an
+ * error. The client picks the same keys off the same type, so renaming one in
+ * repos/jobs.ts breaks both compiles instead of quietly emptying the page.
+ *
+ * What is deliberately NOT here:
+ *
+ * - `payload`. A `write_section` job carries six to eight thousand characters
+ *   of system prompt. The browser has no use for a single one of them, and a
+ *   twelve-section run polled every second and a half would ship more prompt
+ *   per minute than the run has content in it.
+ * - `result`. Its `text` IS the section, and `run_sections` already holds the
+ *   copy every screen reads; sending it again doubles the page for nothing.
+ * - the ids of machines and workspaces. The page names a machine, it never
+ *   addresses one.
+ *
+ * An allowlist rather than an omit-these because a column added to `jobs` next
+ * month must not start reaching browsers because nobody remembered this route.
+ */
+export type RunJob = Pick<
+  JobWithWorker,
+  | "id"
+  | "kind"
+  | "state"
+  | "sectionId"
+  | "workerName"
+  | "workerLive"
+  | "error"
+  | "attempts"
+  | "maxAttempts"
+  | "waitUntil"
+  | "createdAt"
+>;
 
 /**
  * Runs, and the sections written into them.
@@ -139,6 +179,52 @@ export class RunsController {
   @Get(":id/start")
   async running(@Param("id") id: string) {
     return { running: await isRunning(id) };
+  }
+
+  /**
+   * The queue's own record of this run, one entry per job, with the machine.
+   *
+   * Three things the page had to fake because none of this was reachable:
+   *
+   * - "no machine here has the tool" was a regex against the section's error
+   *   text, matching a sentence `advance()` writes. Rewording that sentence
+   *   silently downgraded a NO MACHINE chip to a plain FAILED one and nothing
+   *   failed anywhere. `state` says `unroutable` here, as a state.
+   * - the name of a machine that is asleep survived only in the answer to
+   *   `POST :id/start`, so it appeared only in the tab that pressed the
+   *   button, never for a colleague and never for a single-section write.
+   * - "being written on Shakhawat's desktop" could not be said at all:
+   *   `run_sections.wrote_with` is set on success, so while a section is in
+   *   flight there is no name anywhere the browser can see. `worker_id` is
+   *   joined to a name here from the moment the job is claimed.
+   *
+   * Session-authenticated, like every other route on this controller — the
+   * global `SessionGuard` covers it. It is NOT a worker route: a worker talks
+   * to /api/workers with its own credential, and deliberately cannot read the
+   * content library. Nothing here could reconstruct that credential either;
+   * the token is a sha256 in `workers` and never leaves the database at all.
+   *
+   * This is also what `GET :id/start` above answers, in full rather than
+   * reduced to a boolean: `isRunning` IS `jobsForRun(...).some(live)`. The
+   * page's poll therefore swaps one call for the other rather than adding a
+   * second timer to the tick.
+   */
+  @Get(":id/jobs")
+  async jobs(@Param("id") id: string): Promise<RunJob[]> {
+    if (!(await getRun(id))) throw new NotFoundException("No such run");
+    return (await jobsForRun(id)).map((j) => ({
+      id: j.id,
+      kind: j.kind,
+      state: j.state,
+      sectionId: j.sectionId,
+      workerName: j.workerName,
+      workerLive: j.workerLive,
+      error: j.error,
+      attempts: j.attempts,
+      maxAttempts: j.maxAttempts,
+      waitUntil: j.waitUntil,
+      createdAt: j.createdAt,
+    }));
   }
 
   /**

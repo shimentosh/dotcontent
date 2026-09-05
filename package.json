@@ -21,6 +21,7 @@
     "api:typecheck": "npm run typecheck --prefix api",
     "api:smoke": "node scripts/api-smoke.mjs",
     "start": "next start",
+    "worker": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./worker/register.mjs worker/index.ts",
     "lint": "eslint"
   },
   "dependencies": {

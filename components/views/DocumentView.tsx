@@ -258,10 +258,26 @@ function placementNote(at: Placement | undefined): string {
   switch (at.kind) {
     case "blocked":
       return `Needs ${at.on.join(" and ")} first.`;
+    case "writing":
+      /*
+       * Whose machine is typing it. The page could not say this at all until
+       * the queue became readable: `run_sections` records `wroteWith` on
+       * success, so mid-flight there was no name anywhere, and a run spread
+       * across four laptops looked exactly like a run on one.
+       */
+      return at.machine ? `Being written on ${at.machine}.` : "";
     case "waiting":
-      return at.machine
-        ? `Waiting for ${at.machine}, which has not been seen recently — opening it starts this.`
-        : "On the queue. No machine has picked it up yet.";
+      /*
+       * The server's own sentence first, because it names every machine the
+       * job could go to and the browser has no list of machines to rebuild
+       * that from. The fallbacks cover a job pinned to one machine — a name
+       * and no sentence — and a section the poll has not caught up with yet.
+       */
+      return at.message
+        ? `${at.message} Opening it starts this.`
+        : at.machine
+          ? `Waiting for ${at.machine}, which has not been seen recently — opening it starts this.`
+          : "On the queue. No machine has picked it up yet.";
     case "unroutable":
     case "failed":
       return at.message;
@@ -298,7 +314,6 @@ export function DocumentView({
     setServerWriting,
     waitingForMachine,
     placements,
-    noteAdvance,
   } = useRunDocument({ slug, runId });
 
   const [openSections, setOpenSections] = useState<Set<string>>(
@@ -375,6 +390,10 @@ export function DocumentView({
     if (writing || queuing.size) {
       const now = doc?.sections.find((x) => x.id === writing?.row.id);
       const next = doc?.sections.find((x) => x.state === "queued");
+      // Which machine, once one has claimed it. This said "a worker machine"
+      // to everybody, always, because nothing named one until the section had
+      // already landed and `wroteWith` was written.
+      const on = writing?.at?.kind === "writing" ? writing.at.machine : "";
       return {
         tone: "busy" as const,
         pulse: true,
@@ -383,7 +402,9 @@ export function DocumentView({
           : next
             ? `Starting ${next.n} · ${next.name}…`
             : "Writing…",
-        note: "On a worker machine — you can close this tab",
+        note: on
+          ? `On ${on} — you can close this tab`
+          : "On a worker machine — you can close this tab",
       };
     }
 
@@ -396,17 +417,17 @@ export function DocumentView({
      * server told us which turns it into an errand somebody can run.
      */
     const asleep = placed.find(
-      (x) => x.at?.kind === "waiting" && x.at.machine,
+      (x) => x.at?.kind === "waiting" && (x.at.machine || x.at.message),
     )?.at;
     if (waitingForMachine || asleep) {
-      const machine = asleep?.kind === "waiting" ? asleep.machine : "";
       return {
         tone: "idle" as const,
         pulse: false,
         text: "Queued — waiting for a machine",
-        note: machine
-          ? `${machine} has not been seen recently. Open it and this starts.`
-          : "No machine has picked this up yet.",
+        // The row's own sentence rather than a second wording of it: two
+        // copies of one fact, written in two places, drift apart — and this
+        // one already names the machines and says what opening one does.
+        note: placementNote(asleep) || "No machine has picked this up yet.",
       };
     }
 
@@ -525,25 +546,26 @@ export function DocumentView({
   );
 
   /**
-   * Write the lot, and keep what the server said about routing.
+   * Write the lot.
    *
-   * The answer carries the only machine names the browser ever sees: which
-   * sections went on the queue, which are queued behind a machine that is
-   * asleep and what it is called, and which nothing on the estate can run.
-   * Dropping it — as a bare `await` would — throws away the difference between
-   * "open your laptop" and "install whisper".
+   * The answer used to be held onto: its `waiting` list carried the only
+   * machine names the browser ever saw, so it was kept in a hook and drawn
+   * under sections it may already have stopped describing — and only ever in
+   * the tab that pressed this button, never for a colleague opening the same
+   * run and never for a single-section write. `GET /runs/:id/jobs` says all of
+   * that for every section, to everybody, however the run was started, so this
+   * is back to what it looks like: start it, and let the watcher follow.
    */
   const writeEverything = useCallback(async () => {
     if (!run) return;
     setServerWriting(true);
     try {
       const answer = await startWriting(run.id);
-      noteAdvance(answer);
       setServerWriting(answer.running);
     } catch {
       setServerWriting(false);
     }
-  }, [run, setServerWriting, noteAdvance]);
+  }, [run, setServerWriting]);
 
   /**
    * Stop a run that is writing.
@@ -558,7 +580,6 @@ export function DocumentView({
     setStopping(true);
     try {
       await stopRun(run.id);
-      noteAdvance(null);
       setServerWriting(false);
       await reloadRuns();
     } catch {
@@ -566,7 +587,7 @@ export function DocumentView({
     } finally {
       setStopping(false);
     }
-  }, [run, stopping, setServerWriting, reloadRuns, noteAdvance]);
+  }, [run, stopping, setServerWriting, reloadRuns]);
 
   /*
    * Auto-approve: carry on without being asked.
@@ -705,6 +726,14 @@ export function DocumentView({
 
   /** The one being written this second, if any, and how many gave up. */
   const nowWriting = doc.sections.find((s) => stateOf(s) === "writing") ?? null;
+  /*
+   * And on which machine, once one has claimed it. Empty for the second
+   * between the row being marked and a worker's long poll taking it, and for
+   * a section the server is writing itself on the workspace's API key.
+   */
+  const nowWritingAt = nowWriting ? placeOf(nowWriting) : undefined;
+  const nowWritingOn =
+    nowWritingAt?.kind === "writing" ? nowWritingAt.machine : "";
   const failedCount = doc.sections.filter((s) => stateOf(s) === "failed").length;
 
   const rollUp = (sections: DocSection[]): SectionState => {
@@ -1137,6 +1166,7 @@ export function DocumentView({
             {nowWriting ? (
               <span style={{ color: "#6a9dff", fontWeight: 600 }}>
                 writing {nowWriting.n} · {nowWriting.name}
+                {nowWritingOn ? ` on ${nowWritingOn}` : ""}
               </span>
             ) : queuing.size ? (
               <span style={{ color: "#6a9dff", fontWeight: 600 }}>

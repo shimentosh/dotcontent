@@ -594,6 +594,24 @@ export async function advance(runId: string): Promise<{
       ...(asleep
         ? {
             waitUntil: new Date(Date.now() + WAIT_FOR_MACHINE_MS),
+            /*
+             * Pinned when exactly one machine could take it, so the page can
+             * NAME the machine it is waiting for.
+             *
+             * `jobsForRun` reads `workerName` off this join. Without it the
+             * name existed only inside the sentence below, and the screen had
+             * to either render that sentence or match it with a regex — a
+             * client matching a server's prose is a UI that breaks silently
+             * the day somebody rewords an error.
+             *
+             * Only with one candidate. With two, pinning would pick a machine
+             * for no reason and leave the job waiting on that one while the
+             * other came online — the queue's job is to hand work to whoever
+             * asks first, and a pin is a promise not to.
+             */
+            ...(route.capable.length === 1
+              ? { wantsWorker: route.capable[0].id }
+              : {}),
             error: `Waiting for ${route.capable
               .map((w) => w.name)
               .join(" or ")}, which has not been seen recently.`,

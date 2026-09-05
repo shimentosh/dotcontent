@@ -2,6 +2,7 @@
 
 import { apiFetch } from "@/lib/api-base";
 import type { Run, RunSection } from "@/lib/server/repos/runs";
+import type { JobWithWorker } from "@/lib/server/repos/jobs";
 import { json } from "@/lib/api-json";
 
 /**
@@ -13,6 +14,35 @@ import { json } from "@/lib/api-json";
  * than an error.
  */
 export type { Run, RunSection };
+
+/**
+ * One entry from a run's queue, as `GET /runs/:id/jobs` sends it.
+ *
+ * The same `Pick` the controller maps to, off the same repo type, so a field
+ * renamed in repos/jobs.ts breaks both ends' compile rather than emptying a
+ * chip. The bulky halves — `payload`, six to eight thousand characters of
+ * system prompt, and `result`, whose text is already the section — do not
+ * travel; see the note beside `RunJob` in api/src/runs/runs.controller.ts.
+ *
+ * `workerName` is the machine holding the job, or the one it is pinned to,
+ * and "" for neither. `waitUntil` is set only on a job queued behind a
+ * machine that was not awake when it was enqueued, which is the one fact that
+ * tells "nobody has picked this up yet" from "somebody's laptop is shut".
+ */
+export type RunJob = Pick<
+  JobWithWorker,
+  | "id"
+  | "kind"
+  | "state"
+  | "sectionId"
+  | "workerName"
+  | "workerLive"
+  | "error"
+  | "attempts"
+  | "maxAttempts"
+  | "waitUntil"
+  | "createdAt"
+>;
 
 export const createRun = (body: {
   workspaceId: string;
@@ -52,11 +82,16 @@ export const deleteRun = (id: string) =>
 /**
  * What `advance` did on the server, section by section.
  *
- * The three outcomes are genuinely different sentences on the page, and the
- * only place two of them reach the browser at all: a job queued behind a
- * machine that is asleep carries the machine's NAME here and nowhere in the
- * run row, and an unroutable section is a missing install rather than a model
- * that refused. Keep the shapes as the service returns them.
+ * This is the immediate answer to one press of one button, and nothing more:
+ * it says what that press did, right then, in this tab. It used to be more
+ * than that — the machine names in `waiting` were held in a hook because they
+ * were the ONLY place a machine's name reached the browser, which meant a name
+ * appeared solely for whoever pressed "Write the rest" and never for a
+ * colleague opening the same run, or for a single-section write. `RunJob`
+ * carries that now, for every section, however the run was started. Nothing
+ * needs to hold this any more.
+ *
+ * Kept as the service returns it so the shapes cannot drift apart.
  */
 export type AdvanceReport = {
   /** Sections that now have a job a live machine can claim. */
@@ -65,6 +100,8 @@ export type AdvanceReport = {
   waiting: { sectionId: string; machine: string }[];
   /** Sections no machine on this estate can ever write. Already failed. */
   unroutable: string[];
+  /** Sections the server is writing itself, on the workspace's API key. */
+  onApi: string[];
 };
 
 /**
@@ -86,15 +123,22 @@ export const startWriting = (runId: string) =>
   );
 
 /**
- * Is anything on the queue for this run — anywhere, on anyone's machine?
+ * This run's queue: every job it has ever had, oldest first, with its machine.
  *
- * True for a job that is merely queued as well as one a machine is holding, so
- * it is "this run is not finished with" rather than "a model is talking right
- * now". The two are told apart by looking at which sections say `writing`.
+ * It answers everything `GET /runs/:id/start` did and then the questions that
+ * had no answer at all. "Is anything on the queue for this run, anywhere?" is
+ * `state` being `queued` or `claimed` on any entry here — which is literally
+ * how the server computed that boolean — so the run page's poll swaps one
+ * request for the other rather than growing a second timer.
+ *
+ * What it adds: which machine is holding a section right now (`run_sections`
+ * records `wroteWith` only on success, so mid-flight there was no name to
+ * show), and `unroutable` as a state rather than as a sentence the page had to
+ * match with a regex.
  */
-export const isWriting = (runId: string) =>
-  apiFetch(`/api/runs/${runId}/start`, { cache: "no-store" }).then((r) =>
-    json<{ running: boolean }>(r),
+export const listRunJobs = (runId: string) =>
+  apiFetch(`/api/runs/${runId}/jobs`, { cache: "no-store" }).then((r) =>
+    json<RunJob[]>(r),
   );
 
 /**

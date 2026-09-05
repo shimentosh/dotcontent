@@ -1,7 +1,18 @@
 # The worker
 
-Phase 1 design, not yet built. Nothing in this file exists in the tree — it is
-here to be argued with before anybody writes it.
+Built. This was written as a design to be argued with before anybody wrote it,
+and it is kept as one — the reasoning is the point, and every section still
+says why a thing is the shape it is rather than only what shape it has.
+
+Three things in it did not survive contact with the code, and are corrected in
+place: `bool_and` over zero rows is NULL rather than true, so the claim query
+needed a `COALESCE` or a job needing no tools would have been invisible to
+every machine; the reaper's passes had to be ordered, because failing
+everything at `attempts >= max_attempts` in one pass ends a job a machine is
+still running; and the payload sweep needed `swept_at`, or it rewrote every
+historical row on every tick. `tests/queue.test.ts` covers all three.
+
+Where the tree and this file disagree, the tree is right and this is a bug.
 
 ## What moves, and why
 
@@ -736,3 +747,47 @@ It also means a machine with no whisper at all still ingests: `needs` on
   refusal, since that is the question being asked. Not settled.
 - **Whether `quality`, `autoApprove` and `reduceMotion` become per-user.** A
   separate argument from this one, and nothing here forces it.
+
+## Running the worker
+
+It lives in `worker/`, and it runs today as a plain `node` process — no build
+step, no bundler, no ts-node. Node strips the types out of the `.ts` files
+itself; `worker/register.mjs` is a five-line resolve hook that lets those files
+import `lib/server/tools.ts` by its plain path, which Node's ESM resolver
+otherwise refuses and `tsc` otherwise insists on.
+
+```
+CONTENTOS_API_URL=http://localhost:4000 \
+CONTENTOS_WORKER_TOKEN=<the token from Settings → Machines> \
+npm run worker
+```
+
+| Variable | |
+|---|---|
+| `CONTENTOS_API_URL` | **Required.** The console this machine works for. |
+| `CONTENTOS_WORKER_TOKEN` | **Required.** Minted in Settings → Machines and shown once. |
+| `CONTENTOS_WORKER_NAME` | What the machine picker calls it. Defaults to the hostname; "Shakhawat's desktop" reads better than `DESKTOP-7F2K1`. |
+| `CONTENTOS_WORKER_ALLOW_FRAME_READ` | `1` to let Claude's CLI be granted `Read` for frame files **on this machine**. Off by default, and checked in addition to `workers.can_read_frames` — the grant lands on this filesystem, so whoever owns it gets the last word. |
+| `CONTENTOS_WORKER_TOOLS_OFF` | Comma-separated tool ids to switch off here, whatever the probe found. |
+| `CONTENTOS_WORKER_MAX_JOBS` | How many jobs to hold at once. 1, and the server's `max_concurrency` caps it again. |
+| `CONTENTOS_OLLAMA_URL` | Where Ollama is, for the one brain that is an HTTP server rather than a CLI. Defaults to `http://localhost:11434`. |
+| `CONTENTOS_DATA_DIR` | Only used for `cliHome()` — the empty directory the model CLIs are started in. Frames and downloads go to the system temp directory, never here. |
+
+Neither required variable has a default that could be right: an API URL guessed
+as localhost makes a worker that serves nobody, and a blank token authenticates
+as nothing. A missing one is reported as the sentence naming what to set, and
+the process exits 1 — nobody reading a console window on their own laptop needs
+a stack trace to be told they have not pasted the token yet.
+
+Two things worth knowing about how it behaves:
+
+- **Each job runs in a process of its own.** That is what makes `drop` mean
+  anything: `run()` in `lib/server/tools.ts` hands back a promise and keeps its
+  `ChildProcess`, so the only thing a worker can actually kill is a whole
+  process, and the heartbeat's `drop` list has to kill something. It also means
+  a CLI that wedges takes one job down rather than the machine.
+- **Stopping it is Ctrl-C.** It stops claiming immediately, kills whatever is
+  running, and *fails those jobs explicitly* rather than leaving them to their
+  leases. Both put the job back in the queue; the explicit one does it now
+  instead of ninety seconds later, which is ninety seconds of somebody watching
+  a row that says "Writing" on a machine that is already closed.
