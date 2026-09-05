@@ -647,3 +647,43 @@ compose runs it before the server takes traffic.
 
 `npm run build:check` → `.next-check`, never the dev server's `.next`. See
 `docs/DEVELOPING.md`; this one has bitten a session already.
+
+## The heavy work runs on the team's own machines, not on the server
+
+The full argument is `docs/WORKER.md`; this is the entry that says the call
+was made, so nobody re-derives it or quietly undoes half of it.
+
+Everything used to happen in one process: the API held the run driver, the
+driver called the model, and the model was `claude` spawned on the same box —
+as were `yt-dlp`, `ffmpeg` and `whisper`. That is exactly right on one
+person's laptop and impossible on a server, which has no signed-in CLI and no
+GPU. It is why deploying meant an `ANTHROPIC_API_KEY` and real money per run.
+
+So: the **server** keeps the UI, the API, Postgres, the frames and every
+decision. A **worker** on each teammate's own computer claims jobs over HTTPS
+and runs the CLIs under that person's own login. Outbound connections only —
+no inbound port, no static IP, nothing opened on anybody's router.
+
+Three parts of that are load-bearing and are the ones to protect:
+
+- **The server decides; the worker executes.** A job carries finished text and
+  a command, never a pack, a rule, a brand voice or a dependency graph. Put
+  business logic on the worker and changing a prompt becomes fifteen desktop
+  updates — and the prompt changes weekly. It is also why `worker/` may import
+  only `tools.ts`, `brain-defs.ts` and `brain-transports.ts` from `lib/server`:
+  an import of a repo puts Postgres on a teammate's laptop.
+- **Coordination lives in the database, not in a process.** The claim is
+  `FOR UPDATE SKIP LOCKED` and a lease; that is what replaced a `globalThis`
+  Set, which could only ever see one process and was a lock that did not lock
+  the moment the model ran somewhere else. Nothing at boot may touch a
+  section's state again — recovery is a lease expiring on evidence, not a
+  process assuming nothing else is running.
+- **A job that cannot run must reach a terminal state, visibly.** No machine
+  has the tool → fail at enqueue, naming the tool and its install command. A
+  capable machine is asleep → queue it, name the machine, and fail it if
+  nobody opens the laptop. Anything that leaves a section queued for ever is
+  the "Writing for five days" row this console already fixed once.
+
+The API key did not go away; it stopped being automatic.
+`workspaces.api_fallback` is off by default, because a fallback that fired by
+itself would spend money at exactly the moment nobody was watching.

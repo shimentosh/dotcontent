@@ -989,3 +989,115 @@ else. Every other outcome stays its own sentence, because it took a bug to
 separate them: switched off, not installed, no model, timed out, crashed, wrote
 no file, and wrote an empty file — the last of which is a success, since a reel
 with music and no speech genuinely has no words in it.
+
+## The desktop app
+
+Built, and small on purpose. It lives in `src-tauri/` — Tauri 2, Windows
+first — and it is two things in one process: **a window onto the console the
+team already runs**, and **the worker running beside it**. A teammate who is
+not a developer installs one app, gives it two answers, and their machine
+starts taking jobs. Nobody opens a terminal.
+
+**What it is not**, and this is the part worth defending:
+
+- **Not a second frontend.** There is no copy of the console's UI in
+  `src-tauri`, and there must not be. The console is served by the server, so a
+  template change or a fix reaches every teammate the moment it is deployed
+  instead of needing fifteen desktops updated. The one screen this app draws
+  itself is `src-tauri/ui/setup.html`, and it exists only because the console
+  address and this machine's token have to be given *before* there is a console
+  to ask, and because a worker that cannot start needs somewhere to say so that
+  is not a console window.
+- **Not a second identity system.** The webview signs in as a person, with the
+  console's own cookie, exactly as a browser does. The worker holds the machine
+  token. Two credentials, for the reasons in "The desktop app holds two
+  credentials, on purpose" above.
+- **Not a rewrite of the worker.** It spawns `worker/index.ts` with the same
+  flag, the same loader hook and the same relative path `npm run worker` uses.
+  If the two ever drift, this app is running a worker nobody can reproduce from
+  a terminal, which is the one thing that would make a bug report useless.
+
+### Where the two settings live
+
+| | |
+|---|---|
+| Console address | `%APPDATA%\com.contentos.desktop\settings.json`. Not a secret — it is the URL a browser would show — and a person debugging their own machine should be able to read it. |
+| Worker token | The **OS credential store**: Windows Credential Manager, under the target `worker-token.com.contentos.desktop`. The console keeps only its sha256 so that a database dump is not a list of live credentials; writing the plaintext into `%APPDATA%` would undo that at the other end, where anything running as that user can read it and the first backup of the profile carries it off the machine. |
+| Session cookie | The webview's own data directory, which is WebView2's business and not this app's. |
+
+The token is passed to the worker as `CONTENTOS_WORKER_TOKEN` in its
+environment and nowhere else — never a file next to the binary, never an
+argument, which is why `worker/config.ts` reads it from the environment in the
+first place.
+
+### Running it in development
+
+```
+npm run desktop          # cargo run --manifest-path src-tauri/Cargo.toml
+npm run desktop:build    # a release binary
+```
+
+It needs the Rust MSVC toolchain and the WebView2 runtime, which every Windows
+11 machine already has. There is deliberately **no `@tauri-apps/cli` in
+`package.json`**: nothing else in this repository needs a Rust toolchain, and
+`cargo run` is the whole dev loop. Producing an installer does need it —
+`npm i -D @tauri-apps/cli && npx tauri build` — and that is the point at which
+adding the dependency will be worth it.
+
+First run has no console address, so it opens the setup window. After that it
+opens the console and starts the worker. It finds `worker/` by looking upwards
+from its own executable, so a debug build inside the checkout simply works;
+`CONTENTOS_WORKER_DIR` names the folder when it is somewhere else.
+
+The status is in the tray menu and in the setup window, in these words:
+*Connected*, *Cannot reach the console*, *Node is not installed*, *Node is too
+old*, *This machine's token was refused*, *The worker's files are missing*,
+*Not set up yet*, *The worker is not running*. They are separate states because
+they are separate actions — one is wifi, one is a download, one is a trip to
+Settings → Machines — and a single "error" would hide all three behind the same
+shrug. Anything the worker prints that this app does not recognise is still
+shown verbatim, under "What the worker is saying".
+
+**Closing the window does not stop the worker; Quit does.** A machine that
+stops taking jobs because somebody closed a browser window would only ever work
+while it was being watched. That is only honest because of the tray: what
+carries on running is visible, says what it is doing, and can be stopped from
+the same menu. Quit kills the worker's whole process tree — `taskkill /T`, the
+same reasoning as `killTree` in `worker/index.ts`, because each job is its own
+process and the model CLIs are grandchildren.
+
+**The app restarts a worker that ends on its own**, after ten seconds. That is
+not belt-and-braces: `sleep()` in `worker/index.ts` unrefs its timer, so when
+the console cannot be reached during the *first* registration there is nothing
+ref'd left in Node's event loop and the process exits 0 — having just printed
+"Trying again in 10s", which it then does not do. After registration the
+heartbeat and re-register intervals hold the loop open and the retry works
+properly. Until that is fixed in the worker, this app is what makes a laptop
+whose wifi arrives thirty seconds after the login screen start working anyway.
+
+### What is still missing
+
+- **Node is not bundled.** The app spawns whatever `node` is on the machine and
+  says so plainly when there is none, or when it is too old to strip types
+  (22.18 is the floor; see `worker/resolve-ts.mjs`). Bundling it as a Tauri
+  sidecar means shipping `node.exe` (~50 MB) plus `worker/` and the `lib/server`
+  files it imports as bundle resources, pointing the spawn at
+  `resource_dir()`, and re-pinning the Node version in the same catalogue
+  `worker/setup.ts` uses for everything else. The worker imports nothing from
+  `node_modules`, so it is genuinely those files and no install step.
+- **The tools installer is not wired to a button.** `npm run worker:setup` is
+  still a terminal command, and the audience for this app is exactly the
+  audience that should not have to run it.
+- **No auto-update and no start-at-login.** Both are the difference between a
+  machine that is available and a machine that is available when somebody
+  remembers.
+- **`workers.max_concurrency`, the per-machine tool switches and the machine's
+  name are not exposed.** They are environment variables the worker already
+  reads, and they belong in the setup window next to the token.
+- **A forced kill still orphans the worker.** Quit and window-close are handled;
+  End Task on the app, or a machine shutting down, leaves the Node process to
+  its lease. A Windows Job Object would close that hole.
+- **Only Windows has been built and run.** The credential store is wired per
+  platform in `Cargo.toml` (Keychain on macOS, Secret Service on Linux) so that
+  neither silently falls back to keyring's non-persisting mock, but nothing on
+  either has been compiled, let alone used.

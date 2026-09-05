@@ -376,11 +376,22 @@ function killTree(child: ChildProcess) {
   }
 }
 
-const sleep = (ms: number) =>
-  new Promise<void>((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    timer.unref?.();
-  });
+/**
+ * A wait that keeps the process alive while it waits.
+ *
+ * This timer used to be `unref`ed, and that is the difference between a worker
+ * that retries and one that quietly gives up. Before the first successful
+ * registration nothing else is holding Node's event loop open — the heartbeat
+ * and re-register intervals do not exist yet — so an unref'd timer left
+ * NOTHING ref'd, and the process printed "Trying again in 10s" and exited 0 on
+ * the spot. The one case it broke is the ordinary one: a laptop opened before
+ * its wifi is up.
+ *
+ * It stays ref'd on purpose. Shutdown is not this function's job: the signal
+ * handlers stop the loop and clear the intervals, which is what actually ends
+ * the process.
+ */
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const say = (e: unknown) => (e instanceof Error ? e.message : String(e));
 

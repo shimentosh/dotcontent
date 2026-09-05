@@ -1,0 +1,45 @@
+[package]
+name = "contentos-desktop"
+version = "0.1.0"
+description = "The Content OS console, plus a worker running beside it"
+edition = "2021"
+rust-version = "1.82"
+publish = false
+
+# One binary, no library. The Tauri template splits main.rs from lib.rs so the
+# same code can be built for iOS and Android; this app spawns a Node process
+# and lives in a system tray, so neither of those is ever going to be a target.
+[[bin]]
+name = "contentos-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# `tray-icon` is the whole point of the fourth requirement: a person who never
+# opens a terminal has to be able to see whether their machine is taking work.
+tauri = { version = "2", features = ["tray-icon"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# The worker token is a credential, so it goes in the OS credential store
+# rather than beside the settings file. Windows-first, deliberately: this is
+# what the team runs, and the per-target features mean a macOS or Linux build
+# gets that platform's real store instead of keyring's silently non-persisting
+# mock.
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", default-features = false, features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", default-features = false, features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", default-features = false, features = ["sync-secret-service"] }
+
+[profile.release]
+# A desktop app people install: smaller and faster matters more than a fast
+# release build on a machine that only makes one.
+codegen-units = 1
+lto = true
+strip = true

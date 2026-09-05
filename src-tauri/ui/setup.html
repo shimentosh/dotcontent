@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Content OS — this machine</title>
+    <!--
+      The one screen this app draws itself.
+
+      Everything else in Content OS is served by the team's console and shown in
+      a webview, deliberately: a second copy of the UI here would be a second
+      thing to keep in step, and it would be the copy nobody remembered to
+      update. But the two answers below have to be given before there IS a
+      console to load, so they cannot come from one — and a person who has to
+      open a terminal to fix their own machine is the failure this whole app
+      exists to prevent, so the worker's status is on this page too.
+
+      Plain HTML and CSS on purpose. The colours are the console's own tokens
+      from lib/theme.ts, copied rather than imported, because importing would
+      mean a build step for a single page.
+    -->
+    <style>
+      :root {
+        --bg: #06060a;
+        --panel: #0d0d13;
+        --text: #f0f0f4;
+        --mute: rgba(240, 240, 244, 0.5);
+        --accent: #0057fc;
+        --accent-text: #6a9dff;
+        --good: #4bb07a;
+        --warn: #c99a3f;
+        --bad: #d1656b;
+        --hair: 1px solid rgba(255, 255, 255, 0.07);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 24px;
+        background: var(--bg);
+        color: var(--text);
+        font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      h1 { font-size: 15px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
+      p.sub { color: var(--mute); margin: 0 0 24px; }
+      .panel {
+        background: var(--panel);
+        border: var(--hair);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .status { display: flex; align-items: center; gap: 8px; }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mute); flex: none; }
+      .dot.connected { background: var(--good); }
+      .dot.starting { background: var(--warn); }
+      .dot.offline, .dot.stopped { background: var(--warn); }
+      .dot.bad-token, .dot.node-missing, .dot.worker-missing { background: var(--bad); }
+      .dot.not-configured { background: var(--mute); }
+      #state { font-weight: 600; }
+      #message { color: var(--mute); margin: 8px 0 0; }
+      label { display: block; margin-bottom: 4px; font-weight: 500; }
+      .hint { color: var(--mute); margin: 4px 0 16px; }
+      input {
+        width: 100%;
+        padding: 8px 10px;
+        background: rgba(255, 255, 255, 0.04);
+        border: var(--hair);
+        border-radius: 6px;
+        color: var(--text);
+        font: inherit;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      input:focus { outline: none; border-color: rgba(0, 87, 252, 0.5); box-shadow: 0 0 0 3px rgba(0, 87, 252, 0.25); }
+      .row { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+      button {
+        padding: 8px 14px;
+        border-radius: 6px;
+        border: var(--hair);
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--text);
+        font: inherit;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 140ms cubic-bezier(0.32, 0.72, 0, 1);
+      }
+      button:hover { background: rgba(255, 255, 255, 0.09); }
+      button.primary { background: var(--accent); border-color: transparent; }
+      button.primary:hover { background: #1a68ff; }
+      .spacer { flex: 1; }
+      #error { color: var(--bad); margin: 12px 0 0; min-height: 0; }
+      #error:empty { display: none; }
+      details { margin-top: 4px; }
+      summary { color: var(--mute); cursor: pointer; }
+      pre {
+        margin: 12px 0 0;
+        padding: 12px;
+        max-height: 180px;
+        overflow: auto;
+        background: rgba(0, 0, 0, 0.35);
+        border-radius: 6px;
+        font: 11px/1.6 ui-monospace, "Cascadia Mono", Consolas, monospace;
+        color: var(--mute);
+        white-space: pre-wrap;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>This machine</h1>
+    <p class="sub">
+      The console runs on your team's server. This app opens it, and runs the
+      worker that does the writing and the video work here, on this computer.
+    </p>
+
+    <div class="panel">
+      <div class="status"><span class="dot" id="dot"></span><span id="state">Starting…</span></div>
+      <p id="message"></p>
+      <details>
+        <summary>What the worker is saying</summary>
+        <pre id="log"></pre>
+      </details>
+    </div>
+
+    <div class="panel">
+      <label for="url">Console address</label>
+      <input id="url" type="url" spellcheck="false" placeholder="https://contentos.yourteam.com" />
+      <p class="hint">Where your team's Content OS is. Ask whoever set up the server.</p>
+
+      <label for="token">This machine's token</label>
+      <input id="token" type="password" spellcheck="false" placeholder="Paste the token you were shown" />
+      <p class="hint">
+        On the console: Settings → Machines → add this machine. The token is
+        shown once. It is kept in Windows Credential Manager, not in a file.
+      </p>
+
+      <div class="row">
+        <button class="primary" id="save">Save and start</button>
+        <button id="console">Open the console</button>
+        <div class="spacer"></div>
+        <button id="restart">Restart the worker</button>
+      </div>
+      <p id="error"></p>
+    </div>
+
+    <script>
+      const { invoke } = window.__TAURI__.core;
+      const { listen } = window.__TAURI__.event;
+
+      const el = (id) => document.getElementById(id);
+      const said = { state: "", message: "" };
+
+      function render(view) {
+        el("dot").className = "dot " + view.state;
+        el("state").textContent = view.title;
+        el("message").textContent = view.message;
+        el("log").textContent = view.log.join("\n") || "Nothing yet.";
+        // Only ever fill a field the person is not currently typing in: a live
+        // status push must not overwrite a half-pasted token.
+        if (document.activeElement !== el("url") && !el("url").dataset.dirty) {
+          el("url").value = view.consoleUrl;
+        }
+        if (view.hasToken && !el("token").value) {
+          el("token").placeholder = "Saved — leave blank to keep it";
+        }
+      }
+
+      el("url").addEventListener("input", () => (el("url").dataset.dirty = "1"));
+
+      el("save").addEventListener("click", async () => {
+        el("error").textContent = "";
+        try {
+          render(
+            await invoke("save", { consoleUrl: el("url").value, token: el("token").value }),
+          );
+          el("token").value = "";
+          delete el("url").dataset.dirty;
+        } catch (e) {
+          // Every failure here is something the person can act on — a typo in
+          // the address, a credential store that said no — so it is shown as a
+          // sentence rather than swallowed.
+          el("error").textContent = String(e);
+        }
+      });
+
+      el("restart").addEventListener("click", () => invoke("restart"));
+      el("console").addEventListener("click", () => invoke("open_console"));
+
+      listen("worker-status", (event) => render(event.payload));
+      invoke("status").then(render);
+    </script>
+  </body>
+</html>

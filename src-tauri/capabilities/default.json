@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the local setup page may ask this app to do. It names one window on purpose: the console window shows a remote origin, and remote origins reach no command here at all — a page served by the team's server must never be able to read this machine's worker token or start processes on it.",
+  "windows": ["setup"],
+  "permissions": ["core:default"]
+}
