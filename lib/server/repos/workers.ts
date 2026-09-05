@@ -122,7 +122,21 @@ export async function registerWorker(patch: {
   enabled?: string[];
 }): Promise<Worker> {
   const hash = hashToken(patch.token);
-  const reported = (patch.tools ?? []).map((t) => t.id as string);
+  /*
+   * Only what is actually THERE counts as reportable.
+   *
+   * A machine reports every tool it probed, present or missing, because the
+   * Machines page has to be able to say "whisper is not installed on that
+   * computer". `enabled` is a different question — what may be USED — and
+   * seeding it from the whole report switched on tools the machine does not
+   * have. `routeFor` checks presence before it routes, so nothing was
+   * misrouted; but the claim query matches `needs` against `enabled` alone, so
+   * the guard was one function thinner than it looked, and the page showed a
+   * tool as switched on that could not run.
+   */
+  const reported = (patch.tools ?? [])
+    .filter((t) => t.present)
+    .map((t) => t.id as string);
 
   /*
    * What stays switched on, when a machine reports itself again.

@@ -186,9 +186,15 @@ describe.skipIf(!up)("the queue", () => {
     });
     const tok = token();
 
+    // A probed-but-absent tool is reported (the page has to be able to say
+    // "not installed on that computer") and must NOT be switched on: `enabled`
+    // answers "may be used", and the claim query matches `needs` against it
+    // alone.
+    const missing = (tid: string) => ({ ...tool(tid), present: false });
+
     const first = await registerWorker({
       userId: uid, name: "re-reg", token: tok,
-      tools: [tool("claude"), tool("ffmpeg")] as never,
+      tools: [tool("claude"), tool("ffmpeg"), missing("codex")] as never,
     });
     expect([...first.enabled].sort()).toEqual(["claude", "ffmpeg"]);
 
