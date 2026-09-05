@@ -361,8 +361,10 @@ so a section would report six minutes because a laptop was shut.
 ```jsonc
 // payload
 { "sourceId": "src_x", "url": "https://…", "refresh": false,
-  "frameCount": 8, "maxHeight": 720, "whisperModel": "base",
-  "uploadTo": "/api/workers/sources/src_x" }
+  "frameCount": 8, "maxHeight": 720,
+  "audioRate": 16000, "audioFile": "audio.wav", "timeoutMs": 900000,
+  "uploadFrames": "/api/workers/sources/src_x/frames",
+  "uploadAudio":  "/api/workers/sources/src_x/audio" }
 ```
 
 ```jsonc
@@ -456,7 +458,7 @@ marks these and makes `SessionGuard` stand aside.
   same act).
 - A session is a credential over the *entire console*: every run, every
   template, every workspace, and the ability to spend model budget. A worker
-  needs six endpoints. A stolen worker token should not be able to read the
+  needs nine, all of them about the queue. A stolen worker token should not read the
   content library.
 - A worker is long-lived and headless. It cannot be sent to `/login?next=…`,
   which is what `lib/api-json.ts` does with every 401.
@@ -472,8 +474,9 @@ deleting the row.
 | **Heartbeat** | `POST /api/workers/heartbeat` | `{ jobIds: ["job_x"], progress?: "…" }` → `{ keep: ["job_x"], drop: ["job_y"] }`. Extends the lease on each job it still holds. `drop` is how a worker learns a job was cancelled or reaped: it kills the child process rather than finishing work nobody wants. Every 15s. |
 | **Result** | `POST /api/workers/jobs/:id/result` | `{ result }` → `{ ok: true }`. Refused with `409` if the job's `worker_id` is not this worker or its lease has expired — a laptop that wakes from sleep and posts a section that was reassigned twenty minutes ago must not overwrite the one that actually landed. |
 | **Fail** | `POST /api/workers/jobs/:id/fail` | `{ error, retryable }` → `{ ok: true }`. `retryable: false` for a refusal, a bad payload, a missing tool; the server does not spend another attempt on those. |
-| **Frames** | `POST /api/workers/sources/:id/frames` | `multipart`, one file per part, `file` field matching `FRAME_FILE`. Streamed to disk with the cap and the counter `writeCapped` already uses. `PUT /api/workers/sources/:id/transcript` takes the text. |
-| **Download** | `GET /api/sources/:id/frames/:file` | Unchanged, and reachable with a worker token as well as a session — this is how a `write_section` job fetches the stills it was handed. |
+| **Frames** | `POST /api/workers/sources/:id/frames` | `multipart`, one file per part, `file` field matching `FRAME_FILE`. Streamed to disk with the cap and the counter `writeCapped` already uses. |
+| **Audio** | `POST /api/workers/sources/:id/audio` | The 16 kHz WAV, same streaming and cap. `GET` on the same path streams it back — that is how `transcribe_audio` gets its input without the video. The filename is the server's, not the sender's: a source has one audio track. |
+| **Download** | `GET /api/workers/sources/:id/frames/:file` | How a `write_section` job fetches the stills it was handed. A SECOND door rather than a widened one: the browser's `GET /api/sources/:id/frames/:file` keeps its session and is untouched. Making that one accept either credential would have let a stolen worker token walk the content library through the same handler, which is the opposite of why the token exists. |
 
 ## Liveness and recovery
 
@@ -791,3 +794,198 @@ Two things worth knowing about how it behaves:
   leases. Both put the job back in the queue; the explicit one does it now
   instead of ninety seconds later, which is ninety seconds of somebody watching
   a row that says "Writing" on a machine that is already closed.
+
+## Installing the tools
+
+`npm run worker:setup` fetches the tools this machine is missing into a folder
+the app owns, and the worker looks there before it looks at PATH.
+
+It exists because of who the worker is for. The team running it are not
+developers and they are on Windows, and every ordinary instruction fails that
+audience: `pip install openai-whisper` needs a Python, then PyTorch, then
+gigabytes, and then usually a conversation about CUDA; `winget install
+Gyan.FFmpeg` needs an admin prompt and a PATH nobody will ever look at again.
+This is a script, not an application — a desktop app would only put a button on
+top of it — and its whole mechanism is: download four pinned files into one
+folder, and teach the probe to look in that folder.
+
+```
+npm run worker:setup                 # ask, then fetch what is missing
+npm run worker:setup -- --models     # what the whisper models cost
+npm run worker:setup -- --yes --model small
+npm run worker:setup -- --only whisper --whisper cublas   # the GPU build
+npm run worker:setup -- --dry-run    # print the plan and stop
+```
+
+### What it downloads, and from where
+
+Every version is a constant in `worker/setup.ts` with its URL and its sha256
+beside it. **Nothing here ever resolves "latest".** A script that silently
+pulls whatever a server feels like handing over today is not a thing to run on
+a colleague's laptop, and a pinned version is also the only reason "it worked
+last week" is a question with an answer.
+
+| | Pinned | From |
+|---|---|---|
+| **yt-dlp** | `2026.08.19` | `github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp.exe` (and `yt-dlp_linux` / `yt-dlp_macos`) |
+| **ffmpeg + ffprobe** | `9.0.1` essentials | `gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.1-essentials_build.zip` — the Windows build ffmpeg.org itself links to, static, so the two executables carry no DLLs |
+| **whisper.cpp** | `b4938` (v1.9.3) | `github.com/ggml-org/whisper.cpp/releases/download/b4938/whisper-bin-x64.zip`, or `whisper-cublas-12.4.0-bin-x64.zip` for `--whisper cublas` |
+| **a whisper model** | `base` by default | `huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-<name>.bin` |
+
+The plan — what, from whose server, how big, pinned to which version, and the
+digest — is printed **before** anything is fetched, and then it asks. With no
+terminal to ask in, it refuses and says to pass `--yes`; "nobody was there" is
+not consent.
+
+`--models` prints what each model costs in disk and in accuracy, because
+choosing one is a trade between disk, time and how many words come back wrong,
+and nobody can make that choice from a list of names:
+
+| | Disk | |
+|---|---|---|
+| `tiny` | 74 MB | roughest. Clear English only; mangles names and accents. |
+| `base` | 141 MB | the default. Fine on clean speech, roughly real time on a CPU. |
+| `small` | 465 MB | clearly better on accents, noise and non-English; ~3× slower. |
+| `medium` | 1.4 GB | close to the best, slow enough on a CPU to outlast a job's timeout. |
+| `large-v3-turbo` | 1.5 GB | near-large accuracy at roughly medium speed — the best trade with a GPU. |
+| `large-v3` | 2.9 GB | the best there is. Hours per hour of audio without a GPU. |
+
+The `.en` variants are deliberately not offered: this console is used for
+Bangla as well, and an English-only model would quietly transcribe it wrong.
+
+**What it deliberately does not install.** `claude`, `codex` and `gemini` each
+sign in as a particular person with that person's own subscription, so the
+app's job is to detect them, which it already does — the script prints the
+`npm i -g` line for whichever are missing and stops there. Ollama is optional,
+is roughly 700 MB with its own installer, and is one brain out of four: the
+script asks `localhost:11434` whether it is running and points at
+`https://ollama.com/download` if it is not, rather than pulling it down
+uninvited. Both appear in the report at the end, so one command still answers
+"is this machine ready".
+
+### How an arrival is checked
+
+Bytes stream into `.data/tools/downloads/<name>.part` while their sha256 and
+their length are computed on the way past. Only a file that matches **both**
+the digest and, where the publisher states one, the exact byte count is
+`rename`d into `bin/` or `models/`. A mismatch deletes the file and says which
+host it came from.
+
+The staging is the point. A dropped wifi connection, a captive portal that
+answers with a login page and a `200`, a proxy that gives up at two gigabytes —
+each of those would otherwise leave a half-written `yt-dlp.exe` sitting in
+`bin/`, where the probe reports it as an installed tool and the failure
+resurfaces a week later as an ingest that cannot read any link. A partial
+download must never end up under the name the probe looks for.
+
+Where the checksums come from: GitHub publishes a `digest` on every release
+asset (and yt-dlp additionally ships `SHA2-256SUMS`); gyan.dev publishes a
+`.sha256` next to each package; Hugging Face stores the sha256 of an LFS file
+as its object id, which is what the model digests are. They are copied into the
+catalogue rather than fetched at install time, so the value being checked
+against is the one in this repository and reviewed with it. gyan.dev states no
+byte count, so ffmpeg is the one entry verified by digest alone.
+
+Re-running is normal and cheap: what is already present is reported and
+skipped, and `--force` fetches again. A file of the wrong size — half-copied
+off a USB stick, left by an interrupted older script — does not count as
+present, which is the same rule as above from the other side.
+
+### Where it lands, and how to undo it
+
+```
+.data/tools/
+  bin/       yt-dlp.exe  ffmpeg.exe  ffprobe.exe  whisper-cli.exe + its DLLs
+  models/    ggml-base.bin
+  installed.json     what was pinned, from where, with which digest, when
+```
+
+One flat `bin/` because whisper.cpp loads `whisper.dll`, `ggml.dll` and the
+`ggml-cpu-*` variants out of its own executable's directory — copying the exe
+without them yields a program the probe finds and Windows refuses to start —
+and because the probe then has one place to look instead of a list that has to
+be kept in step with the catalogue.
+
+**Nothing is written outside that folder.** No PATH edit, no registry key, no
+admin prompt, no `%APPDATA%`, nothing installed for all users. Undoing the
+whole thing is deleting `.data/tools`. It sits under `.data/` specifically
+because `.gitignore` already ignores that directory; anywhere else and the
+first person to run the installer finds two hundred megabytes of executables in
+`git status`.
+
+`CONTENTOS_TOOLS_DIR` (or `--dir`) puts the folder somewhere else — another
+drive, for the three-gigabyte model. It is read by `lib/server/tools.ts` and
+set for it by `toolsRoot()` in `worker/config.ts`, which resolves it from the
+worker's own file rather than from the working directory, so a sidecar started
+from anywhere still finds its tools. It is deliberately not `CONTENTOS_DATA_DIR`,
+which still belongs to `cliHome()` and to nothing else.
+`CONTENTOS_WHISPER_MODEL` names one `.bin` outright, for a machine that already
+has a models folder from something else.
+
+**Keeping yt-dlp fresh.** It is the one tool here that goes stale on a schedule
+nobody controls: it breaks when a platform changes its player, which happens
+without warning and roughly monthly, and the symptom is an ingest that worked
+last month and now cannot read a link. It updates itself, in place, with no
+admin, because the file is ours:
+
+```
+.data\tools\bin\yt-dlp.exe -U
+```
+
+Or `npm run worker:setup -- --force --only yt-dlp` to go back to the pinned
+version. Restart the worker afterwards so it re-registers and the Integrations
+page shows the new version.
+
+### Windows first, honest elsewhere
+
+ffmpeg and whisper.cpp are fetched as Windows x64 builds, because that is what
+the team runs. On macOS and Linux the script says so in as many words and
+prints that platform's own one-liner — `brew install ffmpeg`, `brew install
+whisper-cpp`, `sudo apt install ffmpeg` — rather than downloading a binary that
+cannot execute. yt-dlp ships a single file per platform and is fetched on all
+three; a whisper model is a data file and is fetched on all three too, since a
+`brew`-installed whisper.cpp arrives without one.
+
+### What the probe does with all this
+
+`lib/server/tools.ts` resolves every command in `.data/tools/bin` **first** and
+falls back to PATH. Both halves of that order matter: a machine that has just
+run the installer has everything in the app folder and nothing on PATH — that
+is the whole point of not editing PATH — and where both exist, ours is the one
+whose version is pinned, checksummed and updatable, rather than a yt-dlp
+somebody pip-installed in 2021. `installed.json` is read back for the version
+column, because whisper.cpp's CLI has no `--version` flag to ask.
+
+`whisper` now names two entirely different programs, and the probe tries them
+in this order:
+
+1. `whisper-cli` — whisper.cpp, preferred, because it is the one this installer
+   can produce, the one with a GPU path, and the one that takes the 16 kHz mono
+   WAV the ingest already uploads.
+2. `main` — whisper.cpp under the name it used before v1.7.4. That is also the
+   most ordinary name anybody has ever given an executable, so this attempt
+   only counts if the output looks like whisper's usage.
+3. `whisper`, then `python -m whisper`, `python3 -m whisper`, `py -3 -m
+   whisper` — openai-whisper, still supported, still with `PYTHONIOENCODING`
+   set for the reason recorded in that file.
+
+`ToolStatus` gained `flavor`, which says which of the two answered, and
+`transcribe-audio.ts` reads it and speaks whichever program's arguments apply.
+They agree on nothing: one takes the audio as a bare argument with a model
+*name* it downloads for itself, the other takes `-f` for the audio and `-m` for
+a model *file* that has to already exist. whisper.cpp is also given `-l auto`,
+because it defaults to `-l en` where openai-whisper defaults to detecting — a
+Bangla source would otherwise come back as English-shaped nonsense with nothing
+anywhere saying why.
+
+**A missing model is not a missing program.** whisper.cpp with no `.bin` cannot
+transcribe anything, so the probe does not report it as present: it falls
+through to openai-whisper, and if that is not here either the row reads
+`whisper.cpp is installed here, but there is no model file in …` with
+`npm run worker:setup -- --only whisper` as the fix. Reporting it as present
+would route transcription jobs to that machine and fail every one of them,
+which is the "queued forever" failure this document argues against everywhere
+else. Every other outcome stays its own sentence, because it took a bug to
+separate them: switched off, not installed, no model, timed out, crashed, wrote
+no file, and wrote an empty file — the last of which is a success, since a reel
+with music and no speech genuinely has no words in it.

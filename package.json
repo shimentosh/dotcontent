@@ -22,6 +22,7 @@
     "api:smoke": "node scripts/api-smoke.mjs",
     "start": "next start",
     "worker": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./worker/register.mjs worker/index.ts",
+    "worker:setup": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./worker/register.mjs worker/setup.ts",
     "lint": "eslint"
   },
   "dependencies": {

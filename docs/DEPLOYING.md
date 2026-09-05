@@ -104,7 +104,7 @@ One machine is enough to start. A second is how a run gets faster: sections in
 the same dependency wave go to different computers, which is why
 `max_concurrency` defaults to 1 — one machine is one CLI login.
 
-Then, from your laptop, ask the API the six questions that matter:
+Then, from your laptop, ask the API the questions that matter:
 
 ```bash
 API_URL=https://API_HOST WEB_ORIGIN=https://APP_HOST SESSION=<your cookie value> npm run api:smoke
@@ -113,6 +113,16 @@ API_URL=https://API_HOST WEB_ORIGIN=https://APP_HOST SESSION=<your cookie value>
 It says whether the API is up, refuses a missing and a forged cookie, answers
 for yours, and allows the web origin through CORS. The cookie value is in your
 browser's devtools under Application → Cookies → `contentos_session`.
+
+Four of its lines are about the second credential, and they are the ones worth
+reading twice. A worker holds a bearer token rather than a cookie, and the
+entire reason it has its own credential is that neither reaches the other's
+routes: a **session must not be able to claim jobs**, and a **stolen worker
+token must not read the content library**. Both are one decorator away from
+being wrong, neither shows up on any screen, so both are asserted here.
+
+It also prints how many machines are enrolled. Zero is not a failed deploy,
+but it is the reason nothing runs.
 
 ## Bringing your existing work across
 

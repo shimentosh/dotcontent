@@ -60,7 +60,7 @@ const CLAIM_POLL_MS = 1_000;
 const HEARTBEAT_MS = 15_000;
 
 /**
- * The six endpoints a machine speaks, and nothing else.
+ * The nine endpoints a machine speaks, and nothing else.
  *
  * Every route here is `@WorkerRoute()`: a bearer token, no session, no cookie.
  * The server decides and the worker executes — a job carries finished text and
@@ -494,7 +494,7 @@ export class WorkersController {
    * one: making the existing route accept either credential would mean a
    * stolen worker token could walk the content library through the same
    * handler, and the whole argument for a separate token is that it reaches
-   * six endpoints and no more.
+   * nine endpoints and no more.
    *
    * `write_section` payloads name frames by this path. None of the three CLIs
    * takes bytes and each takes a file differently, so the worker writes them

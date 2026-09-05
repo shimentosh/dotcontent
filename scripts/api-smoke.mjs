@@ -74,6 +74,67 @@ if (cookie) {
   await check("signed in: workspaces", "/workspaces", { headers: cookie }, 200);
 }
 
+/*
+ * The worker's door, and the console's, tried with each other's key.
+ *
+ * `POST /api/workers/claim` is the cheapest worker route to probe: refused,
+ * it writes nothing, and it is the one every machine calls constantly.
+ */
+const claim = {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ max: 1 }),
+};
+
+await check("refused: worker route, no token", "/workers/claim", claim, 401);
+await check(
+  "refused: worker route, forged token",
+  "/workers/claim",
+  { ...claim, headers: { ...claim.headers, authorization: "Bearer forged" } },
+  401,
+);
+if (cookie) {
+  // The crossing that matters most. A session is a credential over the whole
+  // console; if it also satisfied a worker route, every signed-in browser
+  // could claim and answer jobs.
+  await check(
+    "refused: worker route, session cookie",
+    "/workers/claim",
+    { ...claim, headers: { ...claim.headers, ...cookie } },
+    401,
+  );
+}
+// And the other way: a bearer token, however good, is not a way into the
+// library. Forged here because a real one is not this script's to have — a
+// valid one must fail the same way, for the same reason.
+await check(
+  "refused: console route, worker token",
+  "/packs",
+  { headers: { authorization: "Bearer forged" } },
+  401,
+);
+
+/*
+ * Whether anything can actually run.
+ *
+ * The server writes nothing itself: with no machine enrolled every run ends
+ * `unroutable`. That is not a broken deploy, so it is a note rather than a
+ * failure — but it is the first thing to know after one.
+ */
+if (cookie) {
+  const machines = await fetch(`${API}/api/machines`, { headers: cookie })
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+  if (Array.isArray(machines)) {
+    const live = machines.filter((m) => m.live).length;
+    console.log(
+      machines.length
+        ? `  note  ${machines.length} machine(s) enrolled, ${live} reachable now`
+        : "  note  no machines enrolled — nothing can run until one is (Settings → Machines)",
+    );
+  }
+}
+
 const pre = await fetch(`${API}/api/packs`, {
   method: "OPTIONS",
   headers: { origin: WEB, "access-control-request-method": "GET" },
@@ -87,4 +148,14 @@ line(
 );
 
 console.log(failed ? `\n${failed} wrong` : "\nall good");
-process.exit(failed ? 1 : 0);
+/*
+ * The code is set, not forced.
+ *
+ * `process.exit()` here tore the process down while fetch's keep-alive
+ * sockets were still open, and libuv asserted on the way out — after the
+ * report had printed, so the run looked fine while the exit code was a
+ * crash's. A script whose whole job is to end a deploy with a truthful
+ * status must not be the thing reporting a false one. Setting `exitCode`
+ * lets Node close what it opened and leave with the number this earned.
+ */
+process.exitCode = failed ? 1 : 0;

@@ -37,42 +37,21 @@ fi
 
 # Whisper, if this machine has not got it.
 #
-# The other tools are single binaries a person already has or does not need;
-# whisper is a Python package, and it is the one thing standing between a
-# source video and a transcript. Installing it here means a fresh clone can
-# read a reel without first finding the Integrations page and being told to
-# run something.
+# No tools are installed here any more.
 #
-# It is a big download the first time — torch is most of a gigabyte — so it
-# says so, and SKIP_WHISPER=1 turns it off for anyone who does not want it.
-if [ "${SKIP_WHISPER:-0}" != "1" ] && ! command -v whisper >/dev/null 2>&1; then
-  # The first Python that can actually install something.
-  #
-  # Not simply the first one on PATH: `python` is often a virtualenv with no
-  # pip in it — this machine's is — and picking that one fails with "No module
-  # named pip" while a perfectly good `py` sits next to it. `pip` itself is
-  # frequently not on PATH at all, so the module form is what gets asked.
-  PY=""
-  for candidate in python python3 py; do
-    if command -v "$candidate" >/dev/null 2>&1 &&
-       "$candidate" -m pip --version >/dev/null 2>&1; then
-      PY="$candidate"
-      break
-    fi
-  done
-
-  if [ -z "$PY" ]; then
-    echo "  whisper needs Python with pip, which is not on PATH. Transcripts will be skipped."
-  elif "$PY" -m whisper --help >/dev/null 2>&1; then
-    : # Installed, just not as a command on PATH. The app finds it either way.
-  else
-    echo "→ installing whisper (one time, ~1GB — SKIP_WHISPER=1 to skip)"
-    if ! "$PY" -m pip install -q -U openai-whisper; then
-      echo "  whisper did not install. Transcripts will be skipped until it does:"
-      echo "    $PY -m pip install -U openai-whisper"
-    fi
-  fi
-fi
+# This used to pip-install openai-whisper, because whisper was the one thing
+# standing between a source video and a transcript AND it ran in this process.
+# Neither half is true now: transcription is a job, it runs on a worker's
+# machine, and the server never needs whisper at all. Installing a gigabyte of
+# torch to start a web app would be a gigabyte spent on nothing.
+#
+# The tools a WORKER needs — yt-dlp, ffmpeg, whisper.cpp and a model — come
+# from `npm run worker:setup`, pinned and checksummed, into .data/tools. That
+# is a different machine's concern even when it happens to be this one, and it
+# is the only route somebody who is not a developer has.
+#
+# This script does NOT start a worker either. Nothing writes a section until
+# one is running — see docs/DEVELOPING.md.
 
 # The API is its own process now, on API_PORT (4000). It is started here so
 # that one command still brings the whole thing up; stopping this script

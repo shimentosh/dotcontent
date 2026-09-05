@@ -28,12 +28,22 @@ ENV TS_NODE_BASEURL=./dist
 # Downloads and frames live here; mount a volume on it.
 ENV CONTENTOS_DATA_DIR=/app/.data
 
-# The tools the ingest runs. Without them the API still starts; source-video
-# features report the binary as missing, which is the truth.
+# ffmpeg, and only ffmpeg.
+#
+# This image used to carry python3 and a downloaded yt-dlp as well, because
+# fetching a link ran here. It does not any more: an `ingest_source` job goes
+# to a machine that has yt-dlp, the download happens there, and what comes
+# back is the stills and a 16 kHz WAV. Nothing on this side touches a URL's
+# media.
+#
+# ffmpeg stays for the one ingest that is still local — a BROWSER UPLOAD,
+# whose bytes already arrived here, and where posting them back out to a
+# laptop to cut eight stills would double the transfer to learn nothing.
+# `ffprobe` ships in the same package. Whisper is deliberately absent:
+# transcription is a job over that WAV, aimed at a desktop with a GPU, and a
+# CPU transcriber on a 2GB VPS is the slowest way to get the worst answer.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg python3 ca-certificates curl \
- && curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
- && chmod a+rx /usr/local/bin/yt-dlp \
+ && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/node_modules ./node_modules

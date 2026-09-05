@@ -44,6 +44,8 @@ export type Config = {
   toolsOff: Set<string>;
   /** Where Ollama is, for the one brain that is an HTTP server rather than a CLI. */
   ollamaUrl: string;
+  /** Where `npm run worker:setup` put yt-dlp, ffmpeg and whisper.cpp. */
+  toolsDir: string;
   /** How often to re-report the tool probe. */
   registerEveryMs: number;
 };
@@ -51,6 +53,39 @@ export type Config = {
 class ConfigError extends Error {}
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Where the installed tools live, decided once and put in the environment.
+ *
+ * Resolved from THIS FILE's location rather than from the working directory,
+ * because a sidecar is started by whatever launched it and a desktop app
+ * launches it from wherever Windows felt like — while the tools sit in the app
+ * folder, next to `worker/`, always.
+ *
+ * It goes into the environment because `lib/server/tools.ts` cannot work this
+ * out for itself: that file is also type-checked by `api/tsconfig.json` as
+ * CommonJS, where `import.meta.url` is a compile error (TS1343), so it reads
+ * `CONTENTOS_TOOLS_DIR` and this is what sets it. An explicit value always
+ * wins, which is how somebody puts a three-gigabyte whisper model on the drive
+ * that has room for it.
+ *
+ * `.data/tools`, not `.tools`, and for one flat reason: `.gitignore` already
+ * ignores `.data/`. A tools folder anywhere else would put two hundred
+ * megabytes of downloaded executables into `git status` for every teammate who
+ * ran the installer. It is deliberately NOT under `CONTENTOS_DATA_DIR` — that
+ * variable belongs to `cliHome()` and to nothing else, and quietly widening it
+ * would make the sentence in docs/WORKER.md about it false.
+ *
+ * Called by the executor as well as by the supervisor, because each job runs
+ * in a process of its own and an environment variable does not survive a
+ * `spawn` of a fresh node.
+ */
+export function toolsRoot() {
+  const set = (process.env.CONTENTOS_TOOLS_DIR ?? "").trim();
+  const dir = set ? path.resolve(set) : path.resolve(here, "..", ".data", "tools");
+  process.env.CONTENTOS_TOOLS_DIR = dir;
+  return dir;
+}
 
 /**
  * The version, off the repo's package.json.
@@ -120,6 +155,10 @@ export function loadConfig(): Config {
     ollamaUrl:
       (process.env.CONTENTOS_OLLAMA_URL ?? "").trim().replace(/\/+$/, "") ||
       "http://localhost:11434",
+    // Called for its side effect as much as for its value: from here on,
+    // every probe in this process — and in the executor processes it spawns —
+    // looks in the app's own tools folder before it looks at PATH.
+    toolsDir: toolsRoot(),
     registerEveryMs: 5 * 60_000,
   };
 }

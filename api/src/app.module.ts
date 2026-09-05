@@ -25,8 +25,8 @@ import { Reaper } from "./workers/reaper";
  * Nest's usual shape is a module per feature, each with its own providers.
  * Here the "providers" are the functions in `lib/server` — repos and services
  * shared with the repo root — and a controller is a thin translation from HTTP
- * to those. Ten controllers in one module is honest about that; ten modules
- * each importing nothing would be ceremony.
+ * to those. Thirteen controllers in one module is honest about that;
+ * thirteen modules each importing nothing would be ceremony.
  *
  * The session guard is global. Every route is behind it unless the handler
  * says otherwise with `@Public()` — the auth gap that the audit found was

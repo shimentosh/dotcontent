@@ -6,7 +6,8 @@
 ./start.sh          # Postgres, the NestJS API on :4000, then Next on :3333
 ./start.sh prod     # production builds of both, then serve both
 npm run api:dev     # just the API (from the root; or `cd api && npm run dev`)
-npm run api:smoke   # six requests at the API: up, locked, answering, CORS
+npm run api:smoke   # up, locked to both principals, answering, CORS
+npm run worker      # a worker on THIS machine — see below; nothing runs without one
 npm run db:up       # just the database (docker compose, port 5437)
 npm run db:shell    # psql, inside the container
 ```
@@ -19,6 +20,28 @@ the API's ts-node on the next request, no restart needed.
 
 `npm run dev` is plain `next dev` on port 3000 — the app is normally on **3333**
 because `start.sh` puts it there. Assume 3333 unless told otherwise.
+
+## A run needs a worker, and `start.sh` does not start one
+
+This is the thing that will waste your afternoon otherwise. The API no longer
+writes sections: `advance()` queues a job and returns, and a **worker** claims
+it. With no worker running, pressing Run leaves every section sitting there —
+correctly, and the page says which machine it is waiting for — and nothing is
+broken except that nobody is listening.
+
+So, once per machine: **Settings → Machines → Enrol**, take the token, then
+
+```bash
+CONTENTOS_API_URL=http://localhost:4000 CONTENTOS_WORKER_TOKEN=<token> npm run worker
+```
+
+It registers, reports the tools it found on this computer, and starts asking
+for work. Leave it running in its own terminal beside `start.sh`. It needs no
+build step — Node runs the TypeScript directly — and it picks up an edit under
+`worker/` on restart, not on the next job.
+
+`docs/WORKER.md` is the whole design, including what each job kind carries and
+why the worker may not import anything that touches the database.
 
 ## Check it
 
@@ -59,19 +82,34 @@ applies what is pending without restarting anything.
 workspace between machines; both work whether Postgres is in the container or
 somewhere online.
 
-## Whisper
+## Whisper, and the other binaries
 
-`./start.sh` installs it when it is missing — it is the one tool that is a
-Python package rather than a binary, and the one thing between a source video
-and a transcript. `SKIP_WHISPER=1 ./start.sh` leaves it alone; the first
-install is around a gigabyte because of torch.
+They belong to the **worker's** machine now, not to the server, and there are
+two whispers. `npm run worker:setup` fetches pinned yt-dlp, ffmpeg and
+**whisper.cpp** plus a model into `.data/tools`, checks a sha256 on each, and
+touches nothing outside that folder — no PATH, no registry, no admin. It is
+the only route a teammate who is not a developer has, which is the whole
+reason it exists. `docs/WORKER.md` has the sizes and the undo.
 
-Two Windows traps are handled rather than documented-around: `pip` puts the
-`whisper` script somewhere not on PATH, so the probe also tries
-`python -m whisper` and records whichever answered; and its `--help` contains a
-Japanese character that a cp1252 console cannot print, so the probe and the
-transcript run both set `PYTHONIOENCODING=utf-8`. Without those two, an
-installed whisper reported itself as missing.
+whisper.cpp is preferred over `openai-whisper` when both are installed. It is
+one executable and a `.bin` rather than Python plus PyTorch and a CUDA story,
+it has the GPU path, and it takes 16 kHz mono WAV — which is exactly what the
+ingest already uploads, because transcription is its own job over the audio
+rather than the video.
+
+Probes resolve `.data/tools/bin` before PATH, so an installed tool is found
+whether or not anything was added to the system. Three traps are handled
+rather than documented-around, each of which made an installed tool report
+itself missing: `pip` puts the `whisper` script somewhere off PATH, so the
+probe also tries `python -m whisper`; openai-whisper's `--help` contains a
+Japanese character a cp1252 console cannot print, so both the probe and the
+run set `PYTHONIOENCODING=utf-8`; and whisper.cpp's CLI was called `main`
+before v1.7.4 — the most ordinary name an executable has ever had — so that
+attempt only counts if the output also looks like whisper's usage.
+
+A machine with whisper.cpp and no model is **not** a machine that can
+transcribe, and says so with the command that fixes it. Reporting it present
+would route every transcription job to it and fail all of them.
 
 ## Hot reload
 
