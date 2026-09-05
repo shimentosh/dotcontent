@@ -11,7 +11,12 @@ import {
   Query,
 } from "@nestjs/common";
 
-import { BRAINS, findBrain, type BrainDef, type Transport } from "@/lib/server/brains";
+import {
+  BRAINS,
+  findBrain,
+  type BrainDef,
+  type Transport,
+} from "@/lib/server/brain-defs";
 import { enqueue, getJob } from "@/lib/server/repos/jobs";
 import { getSettings, listSecrets } from "@/lib/server/repos/settings";
 import {

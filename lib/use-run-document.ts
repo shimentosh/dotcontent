@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import { latestRunFor, runToDoc, topicSlug } from "@/lib/run-doc";
 import { getPack, type ApiPack } from "@/lib/packs-client";
-import { getSource, type Source } from "@/lib/sources-client";
+import { followSource, getSource, isMoving, type Source } from "@/lib/sources-client";
 import { useRunWatch } from "@/lib/use-run-watch";
 import type { RunJob } from "@/lib/runs-client";
 
@@ -180,18 +180,34 @@ export function useRunDocument({
   /** The reel this run was given, when it was given one. */
   const [source, setSource] = useState<Source | null>(null);
 
+  /*
+   * Read once, then follow it if it has not landed yet.
+   *
+   * An ingest is a job now: opening a run seconds after Fetch means a source
+   * that is still `fetching`, with no stills and no transcript on it. Read
+   * once and the strip says "no stills" for ever — the row DID fill in, on a
+   * machine, and this page was the only thing still holding the version from
+   * before. `followSource` is the same loop the researcher uses, and it stops
+   * on its own the moment the row settles.
+   */
   useEffect(() => {
     const sid = run?.sourceId;
     if (!sid) return;
-    let cancelled = false;
+    const stop = new AbortController();
+
     void getSource(sid)
-      .then((x) => {
-        if (!cancelled) setSource(x);
+      .then(async (first) => {
+        if (stop.signal.aborted) return;
+        setSource(first);
+        if (!isMoving(first)) return;
+        await followSource(first, (step) => setSource(step), stop.signal);
       })
+      // A source that cannot be read is not news the document page can act on:
+      // the run and its sections are what this screen is for, and they are
+      // already on it. Abort on navigation lands here too.
       .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+
+    return () => stop.abort();
   }, [run?.sourceId]);
 
   /*

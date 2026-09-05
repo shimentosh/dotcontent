@@ -7,7 +7,6 @@ import {
   NotFoundException,
   Param,
   Post,
-  Put,
   Req,
   Res,
 } from "@nestjs/common";
@@ -28,7 +27,7 @@ import {
   succeed,
 } from "@/lib/server/repos/jobs";
 import { registerWorker } from "@/lib/server/repos/workers";
-import { getSource, updateSource } from "@/lib/server/repos/sources";
+import { getSource } from "@/lib/server/repos/sources";
 import {
   AUDIO_FILE,
   FRAME_FILE,
@@ -475,24 +474,17 @@ export class WorkersController {
     createReadStream(file).pipe(res);
   }
 
-  /**
-   * The transcript, as text.
+  /*
+   * There is deliberately no PUT for a transcript here.
    *
-   * A PUT because it is the whole transcript or none of it — a transcriber
-   * either finished or it did not, and half a transcript on the row would be
-   * read by a prompt as if it were the video.
+   * One existed, and nothing ever called it: a transcript comes back inside
+   * the `transcribe_audio` result, where `succeed()` has already checked that
+   * this worker holds that job and its lease is live. The PUT had no such
+   * check — it took a source id and a string, so ANY valid worker token could
+   * overwrite ANY source's transcript without holding a job for it. Dead code
+   * would be reason enough; dead code that is also the one write on this
+   * controller with no ownership test is reason twice over.
    */
-  @Put("sources/:id/transcript")
-  @WorkerRoute()
-  async transcript(
-    @Param("id") sourceId: string,
-    @Body() body: { text?: string } | string,
-  ) {
-    const text = typeof body === "string" ? body : String(body?.text ?? "");
-    const source = await updateSource(sourceId, { transcript: text });
-    if (!source) throw new NotFoundException("No such source");
-    return { ok: true, length: text.length };
-  }
 
   /**
    * A frame, back down to the machine that is about to look at it.

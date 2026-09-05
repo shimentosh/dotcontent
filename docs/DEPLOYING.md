@@ -8,11 +8,25 @@ because it is one database, not because a copy was handed out.
 
 ## What changes on a server
 
-**The model.** Your laptop writes with the `claude` CLI, billed to your Claude
-subscription. A server has no CLI and no login, so it needs an
-`ANTHROPIC_API_KEY` — the app already falls back to the API when the command is
-missing. That is a real cost per run, and the reason to keep an eye on who runs
-what.
+**The model stays on your machines.** This used to say a server has no CLI and
+no login, so it needs an `ANTHROPIC_API_KEY` at real money per run. That is no
+longer the shape. The server holds the UI, the API, Postgres and the frames,
+and makes every decision; the writing happens on a **worker** — a process on
+each teammate's own computer, signed in under their own CLI, using their own
+GPU. See `docs/WORKER.md`.
+
+So the server needs no key, no `claude`, no ffmpeg for a link, and no GPU.
+What it needs is at least one enrolled machine, or nothing can run: **Settings
+→ Machines**, mint a token, paste it into that computer's worker. A run with
+no capable machine says so by name and by install command rather than quietly
+spending money.
+
+`ANTHROPIC_API_KEY` still works, and is still off by default. A workspace can
+switch on **API fallback**, which lets the server write a section itself when
+no machine is awake. It is per workspace and opt-in on purpose: a fallback
+that fired by itself would spend real money at exactly the moment nobody was
+watching. `run_sections.wrote_with` records which machine — or `server:api` —
+wrote each section, and `runs.created_by` who pressed the button.
 
 **Two hostnames.** The web app answers on `APP_HOST` and the NestJS API on
 `API_HOST`; the browser calls the API directly, cross-origin. The session
@@ -20,9 +34,18 @@ cookie is set by the API and read by both, which works because both hosts sit
 under `COOKIE_DOMAIN` (`.content.yourcompany.com`). Put them on unrelated
 domains and you need `COOKIE_SAMESITE=none` — and you should not.
 
-**Not Vercel.** A run is a loop inside the API process (`driveRun`) that
-takes minutes and shells out to local binaries. Serverless kills both. A small
-VPS — Hetzner, DigitalOcean, anything with 2GB of RAM — is the shape this wants.
+**Not Vercel, and now for a smaller reason.** A run is no longer a loop inside
+the API: `advance()` enqueues jobs and returns, and a worker claims them. But
+the API still holds long-poll connections for workers claiming work, runs a
+reaper on a timer, and serves frame uploads — none of which survives a
+function that is frozen between requests.
+
+The box is much cheaper than it was, though. It no longer downloads video,
+cuts frames for a link, or runs a model; it serves pages and holds rows. A
+small VPS — Hetzner, DigitalOcean, 2GB of RAM — is comfortable rather than
+tight. `ffmpeg` is still in the API image because a **browser upload** is cut
+on the server, where its bytes already are; whisper is not, because
+transcription is a job over a 16 kHz WAV that goes to a machine with a GPU.
 
 **Secrets travel with the data.** `CONTENTOS_SECRET` encrypts the API keys in
 the settings table. Move the database without moving that value and every saved
@@ -58,6 +81,28 @@ is a build arg in the compose file), so changing `API_HOST` means rebuilding
 the `app` image, not restarting it.
 
 Open `https://APP_HOST`. The first account you make is the owner.
+
+### Then enrol a machine, or nothing can run
+
+The server writes nothing by itself. Until one computer is enrolled, every run
+ends `unroutable` with a sentence naming the tool nobody has.
+
+**Settings → Machines → Enrol.** The token is shown once and kept only as a
+sha256 — losing it means revoking and enrolling again. On that computer:
+
+```bash
+CONTENTOS_API_URL=https://API_HOST CONTENTOS_WORKER_TOKEN=<the token> npm run worker
+```
+
+It registers, reports what it has (`claude`, `yt-dlp`, `ffmpeg`, `whisper`, …),
+and starts asking for work. Integrations then shows that machine's tools, and
+the row goes green. Anything missing is an install command on **that**
+computer, not on the server — which is the distinction the page is built to
+draw. Full options are in `docs/WORKER.md`.
+
+One machine is enough to start. A second is how a run gets faster: sections in
+the same dependency wave go to different computers, which is why
+`max_concurrency` defaults to 1 — one machine is one CLI login.
 
 Then, from your laptop, ask the API the six questions that matter:
 
@@ -107,9 +152,15 @@ read, that is a feature to build, not a setting to find.
 
 ## Keeping it
 
-The workspace is the `pgdata` volume. Videos and the stills cut from them are
-in `sourcedata` — big, and re-fetchable from the links they came from, which is
-why it is a second volume rather than something in the dump below.
+The workspace is the `pgdata` volume. `sourcedata` holds what a source left
+behind, and it is smaller than it used to be: a **fetched link** downloads its
+video on the worker and sends back only the stills and a 16 kHz WAV, so the
+server never stores the video at all. An **upload** is the exception — those
+bytes arrived here and stay here.
+
+Either way it is a second volume rather than part of the dump below, because
+it is bulk that a re-fetch can rebuild while the database is the part that
+cannot be.
 
 ```bash
 docker compose -f docker-compose.prod.yml exec -T postgres \
@@ -130,10 +181,22 @@ The app runs pending migrations as it starts. If you would rather run them
 first — before anything serves — `npm run db:migrate` does exactly that against
 whatever `DATABASE_URL` points at.
 
-## The alternative, if the API cost is the problem
+## What used to be here
 
-Keep the app on each person's machine and put **only the database** online
-(Neon, Supabase, Railway): every laptop sets the same `DATABASE_URL`, everyone
-sees the same data live, and each person writes with their own `claude` login,
-so there is no API bill. The cost is that everyone needs the repo, Node and the
-CLI installed, and everyone holds a database URL that can drop every table.
+This section offered an alternative for when the API bill was the problem: put
+only the database online, keep the app on every laptop, and let each person
+write with their own `claude` login. It is gone because the worker split is
+that idea done properly.
+
+It bought no API bill at the price of handing everyone the repo, a Node
+toolchain, and a `DATABASE_URL` that can drop every table. The worker gets the
+same thing — each person's own subscription, their own GPU — while the
+database stays behind the API, the UI is one URL nobody has to install, and a
+teammate holds a token that reaches six endpoints instead of credentials that
+reach everything.
+
+If the server itself is the objection rather than its cost, the honest small
+setup is one always-on computer running the whole thing behind a tunnel
+(Cloudflare Tunnel, Tailscale), with the worker beside it. Same code, same
+enrolment, no VPS. The trade is that when that computer sleeps, so does the
+console.

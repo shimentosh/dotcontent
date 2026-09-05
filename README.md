@@ -259,16 +259,28 @@ gone, so an old run can still be rewritten.
 
 ### Running one
 
-**No API key needed.** The default brain shells out to the `claude` CLI already
-installed on this machine, which is what the old system called its local brain.
-Set `ANTHROPIC_API_KEY` and it uses the Anthropic SDK instead.
+**No API key needed.** The brain shells out to the `claude` CLI already signed
+in on a machine, billed to that subscription rather than per token. Which model
+writes is a property of the **workspace**, not of the console.
 
-Sections run **one request each**, driven from the browser in dependency order.
-That is deliberate: you watch it happen, and a failure costs one section rather
-than the run. Rewriting a section is the same request again. The server checks
-the dependencies rather than trusting the caller — asking for the Bangla script
-first would otherwise hand the model an empty "already generated" block, and it
-would invent the English script it was meant to be translating.
+Pressing Run does not write anything itself. `advance()` looks at the template's
+dependency waves, and for every section whose inputs are written it queues a
+**job**; a worker — a process on somebody's own computer, with the CLIs and the
+GPU on it — claims the job, writes the section, and posts it back, at which
+point `advance()` runs again. So a run survives the tab closing, the API
+restarting, and the machine that started it going to sleep: another one picks
+it up. `docs/WORKER.md` is the whole design.
+
+A failure still costs one section rather than the run, and rewriting one is
+still a single request. The server checks the dependencies rather than trusting
+the caller — asking for the Bangla script first would otherwise hand the model
+an empty "already generated" block, and it would invent the English script it
+was meant to be translating.
+
+`ANTHROPIC_API_KEY` still works and is **off by default**. A workspace can turn
+on API fallback, which lets the server write a section when no machine is
+awake; it is opt-in because a fallback that fired by itself would spend money
+at the moment nobody was watching.
 
 ### First run
 

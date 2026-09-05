@@ -966,7 +966,23 @@ export async function stopRun(runId: string): Promise<{
  */
 export async function isRunning(runId: string): Promise<boolean> {
   const jobs = await jobsForRun(runId);
-  return jobs.some((j) => j.state === "queued" || j.state === "claimed");
+  if (jobs.some((j) => j.state === "queued" || j.state === "claimed")) return true;
+
+  /*
+   * The API fallback has no job row, and is still work in flight.
+   *
+   * `writeOnServer` runs in this process rather than being handed to a
+   * machine, so the queue knows nothing about it. Answering "not running"
+   * while the server is four minutes into writing a section made the page drop
+   * to its settled cadence and sit there, which reads as a run that stopped —
+   * the one thing every part of this design is arranged to prevent.
+   *
+   * A `writing` row with no live job behind it is that case: a cancel requeues
+   * such rows, and a reaped job marks its section failed, so neither leaves
+   * one behind.
+   */
+  const run = await getRun(runId);
+  return Boolean(run?.sections.some((x) => x.state === "writing"));
 }
 
 /**

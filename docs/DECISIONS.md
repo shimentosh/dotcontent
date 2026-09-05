@@ -424,10 +424,14 @@ something carries it, like Used and Ignored.
 Retry is one press, on the row. It calls the same `startWriting` the document
 page does, and `POST /api/runs/[id]/start` clears the run's failures —
 `requeueFailed`, which was written for this and had never been called — before
-`driveRun` picks the run up. Within one drive a failed section is still
+the run is picked up again. Within one drive a failed section is still
 skipped, otherwise the loop spends the model's time forever on the one thing
 that does not work; but carrying that skip into the NEXT drive made Retry do
 nothing at all on exactly the run you would press it for.
+
+The mechanism moved with the worker split — `driveRun` is now `advance()` and
+the skip is a job's `max_attempts` rather than a loop's memory — but Retry is
+unchanged, and `requeueFailed` is still exactly what it does.
 
 ## Run is one press, wherever the topic is
 
@@ -493,6 +497,18 @@ is.
 A failed section is skipped rather than retried: it has had its turn, and
 anything depending on it never becomes eligible, so the run ends with those
 still queued — which is the truth, and visible.
+
+**Superseded by the worker split — and this decision is the reason it works.**
+"Driven by the server, not by the tab" was the right call and it is what made
+the next step possible: once the driving was off the tab, moving it off the
+API process too was a change of address rather than a rewrite. What is gone is
+the loop and the `globalThis` set. `driveRun` is `advance(runId)`, which
+enqueues a job per ready section and returns; a worker on somebody's own
+machine claims it. The set could only ever see one process, which was correct
+while the model was that process's own child and is a lock that does not lock
+the moment the model runs somewhere else — the queue's unique index and lease
+say the same thing where every process can hear it. A run now survives more
+than a closed tab: it survives the API being down. See `docs/WORKER.md`.
 
 ## The spawned Claude CLI is granted exactly two tools
 

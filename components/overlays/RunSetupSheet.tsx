@@ -5,12 +5,22 @@ import { useEffect, useRef, useState } from "react";
 import { QUALITIES } from "@/lib/data";
 import { PACKS } from "@/lib/packs/enbn-website";
 import { startTopicRun } from "@/lib/start-run";
-import { fetchSource, frameUrl, type Source } from "@/lib/sources-client";
+import {
+  fetchSourceToEnd,
+  fetchingLine,
+  frameUrl,
+  isStopped,
+  sourceProblem,
+  transcriptNote,
+  transcriptState,
+  type Source,
+} from "@/lib/sources-client";
 import { useStore } from "@/lib/store";
 import { themesOf } from "@/lib/topics";
 import { font, ghost, ghostHover, layer, primary, primaryActive, primaryHover, t, w } from "@/lib/theme";
 import { Hov } from "@/components/ui/Hov";
 import { Popover } from "@/components/ui/Popover";
+import { Button, Chip } from "@/components/ui";
 import { ChevronDown, PlayIcon } from "@/components/ui/Icons";
 
 export function RunSetupSheet() {
@@ -129,6 +139,19 @@ export function RunSetupSheet() {
   const [source, setSource] = useState<Source | null>(null);
   const [fetching, setFetching] = useState(false);
   const [sourceError, setSourceError] = useState("");
+  /**
+   * The row of a link still being fetched, as the server last told it.
+   *
+   * Held apart from `source` on purpose: a row in `fetching` has no frames and
+   * no transcript on it, so putting it in `source` would draw the card that
+   * says what the run has been handed over a video that has not been fetched —
+   * and worse, hand its id to `startTopicRun`.
+   */
+  const [pending, setPending] = useState<Source | null>(null);
+  /** Said quietly when a wait was let go of, which is not an error. */
+  const [sourceNote, setSourceNote] = useState("");
+  /** Calls off the poll: Stop waiting, or the sheet going away. */
+  const waiting = useRef<AbortController | null>(null);
 
   /*
    * Nothing is written against a workspace the server has not confirmed.
@@ -140,6 +163,23 @@ export function RunSetupSheet() {
    */
   const ready = projectsLoaded && Boolean(project.id);
 
+  /*
+   * The sheet going away stops the poll.
+   *
+   * Cleanup only. Without it a fetch left behind by a closed sheet keeps asking
+   * the API every few seconds until the give-up window runs out. The job itself
+   * is on the server and carries on; pressing Fetch again picks it up.
+   */
+  useEffect(() => () => waiting.current?.abort(), []);
+
+  /** Let go of a fetch without cancelling it. */
+  const stopWaiting = () => {
+    waiting.current?.abort();
+    setSourceNote(
+      "Stopped waiting. The fetch is still on the queue — press Fetch again to pick it up, or run without it.",
+    );
+  };
+
   const pullSource = async () => {
     const url = sourceUrl.trim();
     if (!url || fetching) return;
@@ -147,17 +187,47 @@ export function RunSetupSheet() {
       setSourceError("Still loading the workspace — try again in a second.");
       return;
     }
+    const stop = new AbortController();
+    waiting.current = stop;
     setFetching(true);
     setSourceError("");
+    setSourceNote("");
+    setSource(null);
     try {
-      setSource(await fetchSource({ url, workspaceId: project.id }));
+      /*
+       * Follow the job; do not believe the POST.
+       *
+       * `POST /api/sources` writes an `ingest_source` job and answers at once
+       * with a row in `fetching` — empty frames, empty transcript. This sheet
+       * used to show that as the fetched video, so the run was handed a source
+       * with nothing on it and the first two sections were asked to describe
+       * stills that did not exist. `fetchSourceToEnd` waits for the real thing.
+       */
+      const settled = await fetchSourceToEnd(
+        { url, workspaceId: project.id },
+        setPending,
+        stop.signal,
+      );
+      /*
+       * Failed is an answer, and its sentence is the useful part — which tool
+       * no machine here has and what installs it, or which machine it waited
+       * for. It goes in the red block; the run can still start without a reel.
+       */
+      if (settled.state === "failed") {
+        setSourceError(settled.error || "Could not fetch that link");
+        return;
+      }
+      setSource(settled);
     } catch (e) {
-      setSource(null);
+      // Letting go of the wait is something the person did, not a failure.
+      if (isStopped(e)) return;
       setSourceError(
         e instanceof Error ? e.message : "Could not fetch that link",
       );
     } finally {
       setFetching(false);
+      setPending(null);
+      waiting.current = null;
     }
   };
 
@@ -172,6 +242,20 @@ export function RunSetupSheet() {
     if (starting) return;
     if (!ready) {
       setStartError("Still loading the workspace — try again in a second.");
+      return;
+    }
+    /*
+     * Do not start a run that quietly loses the reel.
+     *
+     * `sourceId` is `source?.id`, and `source` is only set once the fetch has
+     * landed — so pressing Run mid-fetch would start the whole template against
+     * no video at all, minutes of model time after you pasted the link that was
+     * the entire reason for this run. Say so, and offer the two ways out.
+     */
+    if (fetching) {
+      setStartError(
+        "The reel is still coming. Wait for it, or press Stop waiting to run without it.",
+      );
       return;
     }
     setStarting(true);
@@ -571,10 +655,70 @@ export function RunSetupSheet() {
             </Hov>
           </div>
 
-          {fetching ? (
+          {/*
+            What the wait is doing, in the row's own words.
+
+            A link is a job on somebody else's machine now, and "a machine is
+            downloading it" and "waiting for a laptop that is switched off" are
+            different evenings. `ingest()` writes the sentence for each onto the
+            source; a spinner would hide both.
+          */}
+          {pending ? (
+            <div
+              style={{
+                marginBottom: 16,
+                padding: "10px 12px",
+                borderRadius: 12,
+                background: w(0.05),
+                borderWidth: 1,
+                borderStyle: "solid",
+                borderColor: w(0.09),
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Chip tone="accent" mono pulse>
+                  FETCHING
+                </Chip>
+                <span
+                  title={pending.title || pending.url}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {pending.title || pending.url}
+                </span>
+                <Button variant="quiet" onClick={stopWaiting}>
+                  Stop waiting
+                </Button>
+              </div>
+              <div
+                style={{
+                  marginTop: 7,
+                  fontSize: 11.5,
+                  color: t(0.45),
+                  lineHeight: 1.5,
+                  textWrap: "pretty",
+                }}
+              >
+                {fetchingLine(pending)}
+              </div>
+            </div>
+          ) : fetching ? (
             <div style={{ fontSize: 11.5, color: t(0.42), marginBottom: 16 }}>
-              Downloading, cutting stills and transcribing. This takes a minute
-              or two — leave the sheet open.
+              Asking the server to queue it…
+            </div>
+          ) : null}
+
+          {/* Letting go of a wait is not a failure, so it is not in red. */}
+          {sourceNote && !fetching ? (
+            <div style={{ fontSize: 11.5, color: t(0.42), marginBottom: 16 }}>
+              {sourceNote}
             </div>
           ) : null}
 
@@ -620,7 +764,19 @@ export function RunSetupSheet() {
                   source.frames.length
                     ? `${source.frames.length} stills`
                     : "no stills",
-                  source.transcript ? "transcript" : "no transcript",
+                  /*
+                    Three answers, not two. The words are transcribed by a
+                    separate job on a separate machine, so a reel is routinely
+                    fetched, framed and ready with its transcript still queued —
+                    and "no transcript" for that reports a loss that has not
+                    happened. The run can start either way; a section that reads
+                    the stills has everything it needs.
+                  */
+                  transcriptState(source) === "here"
+                    ? "transcript"
+                    : transcriptState(source) === "coming"
+                      ? "transcript on the way"
+                      : "no transcript",
                 ]
                   .filter(Boolean)
                   .join(" · ")}
@@ -652,9 +808,20 @@ export function RunSetupSheet() {
                   ))}
                 </div>
               ) : null}
-              {source.error ? (
+              {/* The video's own bad news — "Metadata only — this video is
+                  private" — which is worth seeing before spending a run on it. */}
+              {sourceProblem(source) ? (
                 <div style={{ marginTop: 8, fontSize: 11, color: "#e0a83c" }}>
-                  {source.error}
+                  {sourceProblem(source)}
+                </div>
+              ) : null}
+
+              {/* The transcript's news, quieter and separate. Both share one
+                  `error` column, and amber over a card with eight stills on it
+                  says the fetch went wrong when it went fine. */}
+              {transcriptNote(source) ? (
+                <div style={{ marginTop: 8, fontSize: 11, color: t(0.4) }}>
+                  {transcriptNote(source)}
                 </div>
               ) : null}
             </div>
@@ -760,7 +927,10 @@ export function RunSetupSheet() {
           <Hov
             as="span"
             onClick={start}
-            aria-disabled={!ready || undefined}
+            // Dimmed while a reel is still coming, but still clickable: the
+            // press is what produces the sentence saying why, and a button that
+            // does nothing at all is the thing this sheet keeps being fixed for.
+            aria-disabled={!ready || fetching || undefined}
             style={{
               marginLeft: "auto",
               height: 34,
@@ -771,7 +941,7 @@ export function RunSetupSheet() {
               borderRadius: 10,
               fontSize: 12.5,
               fontWeight: 600,
-              opacity: ready ? 1 : 0.55,
+              opacity: ready && !fetching ? 1 : 0.55,
               ...primary,
             }}
             hover={primaryHover}

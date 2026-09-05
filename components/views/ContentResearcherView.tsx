@@ -5,10 +5,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findTool } from "@/lib/tools";
 import { ago } from "@/lib/packs-client";
 import {
-  fetchSource,
+  fetchSourceToEnd,
+  fetchingLine,
   frameUrl,
+  isStopped,
   listSources,
   removeSource,
+  sourceProblem,
+  transcriptNote,
+  transcriptState,
   type Source,
 } from "@/lib/sources-client";
 import {
@@ -117,12 +122,30 @@ export function ContentResearcherView() {
   const [at, setAt] = useState("");
 
   const [fetching, setFetching] = useState(false);
+  /**
+   * The row of a link that is still being fetched, as the server last told it.
+   *
+   * Deliberately not `source`: a source in `fetching` has no frames on it, and
+   * putting it there would draw step 2 with an empty picker — the very bug this
+   * screen had when it treated the POST's answer as the finished video. This is
+   * only what the wait is allowed to say about itself, and it says the source's
+   * own sentence: "Waiting for Shakhawat's desktop…".
+   */
+  const [pending, setPending] = useState<Source | null>(null);
+  /** Calls off the poll: Stop waiting, or leaving the tool. */
+  const waiting = useRef<AbortController | null>(null);
   const [reading, setReading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<ResearchResult | null>(null);
 
   /** Said out loud when something worked but not the way you asked. */
   const [notice, setNotice] = useState("");
+  /**
+   * The same, for the fetch box — which needs its own line because `notice` is
+   * rendered inside step 2, and step 2 does not exist until a video has landed.
+   * "Stopped waiting" is said precisely when one has not.
+   */
+  const [fetchNote, setFetchNote] = useState("");
   const [series, setSeries] = useState(NO_SERIES);
   const [saved, setSaved] = useState<string[]>([]);
   const fileBox = useRef<HTMLInputElement>(null);
@@ -138,6 +161,14 @@ export function ContentResearcherView() {
 
   const frames = source?.frames ?? [];
   const chosen = picked.length ? picked : frames.map((f) => f.file);
+  /**
+   * Where this video's words are — here, still coming, or not coming at all.
+   *
+   * Read from the row rather than from `transcript` being empty, because those
+   * are different facts: transcription is a separate job on a separate machine,
+   * and an empty string means "not yet" at least as often as it means "never".
+   */
+  const words = source ? transcriptState(source) : "none";
 
   const seriesOptions = useMemo(
     () => [
@@ -236,20 +267,70 @@ export function ContentResearcherView() {
    */
   const workspaceReady = projectsLoaded && Boolean(project?.id);
 
+  /*
+   * Leaving the tool stops the poll.
+   *
+   * Cleanup only — a fetch that is still queued would otherwise go on asking
+   * the API every few seconds from a screen nobody is looking at, for up to the
+   * give-up window. The job is unaffected: it is on the server, and pressing
+   * Fetch again picks it up where it got to.
+   */
+  useEffect(() => () => waiting.current?.abort(), []);
+
+  /** Let go of a fetch without cancelling it. */
+  const stopWaiting = () => {
+    waiting.current?.abort();
+    setFetchNote(
+      "Stopped waiting. The fetch is still on the queue — press Fetch again to pick it up.",
+    );
+  };
+
   const fetchUrl = async () => {
     if (!url.trim() || fetching) return;
     if (!workspaceReady) {
       setError("Still loading the workspace — try again in a second.");
       return;
     }
+    const stop = new AbortController();
+    waiting.current = stop;
     setFetching(true);
     setError("");
+    setNotice("");
+    setFetchNote("");
     try {
-      start(await fetchSource({ url: url.trim(), workspaceId: project?.id }));
+      /*
+       * Follow the job; do not believe the POST.
+       *
+       * `POST /api/sources` only writes an `ingest_source` job now and answers
+       * with a row in `fetching` — no frames, no transcript. Handing that
+       * straight to `start()` is what drew an empty frame picker for every
+       * link, every time. `fetchSourceToEnd` polls until the row is ready or
+       * failed, and `setPending` shows what it is doing meanwhile.
+       */
+      const settled = await fetchSourceToEnd(
+        { url: url.trim(), workspaceId: project?.id },
+        setPending,
+        stop.signal,
+      );
+      /*
+       * Failed is an answer, not an exception — and its sentence is the useful
+       * part: which tool no machine here has and what installs it, or which
+       * machine it waited for and never got.
+       */
+      if (settled.state === "failed") {
+        setError(settled.error || "That link could not be fetched");
+        return;
+      }
+      start(settled);
     } catch (e) {
+      // Stopping the wait is something the person did; a banner about it would
+      // be the screen complaining about being obeyed.
+      if (isStopped(e)) return;
       setError(e instanceof Error ? e.message : "That link could not be fetched");
     } finally {
       setFetching(false);
+      setPending(null);
+      waiting.current = null;
     }
   };
 
@@ -260,7 +341,16 @@ export function ContentResearcherView() {
     }
     setFetching(true);
     setError("");
+    setFetchNote("");
     try {
+      /*
+       * Uploads are not a job, so there is nothing to follow.
+       *
+       * The bytes arrive here and ffmpeg cuts the stills in the API process, so
+       * this answer really is the finished video — polling it would be a round
+       * trip to be told what we were just handed. Only the transcript leaves,
+       * as its own job, and the row says so itself.
+       */
       const { uploadSource } = await import("@/lib/tools-client");
       start(await uploadSource(file, project?.id));
     } catch (e) {
@@ -451,14 +541,86 @@ export function ContentResearcherView() {
           }}
         />
 
-        {fetching ? (
+        {/*
+          What the wait is actually doing, in the row's own words.
+
+          A link is a job on somebody else's machine now, and the three things
+          that can be true of it — running, queued behind a laptop that is shut,
+          or already failed because nothing here has yt-dlp — read completely
+          differently to the person waiting. `ingest()` writes the sentence for
+          each onto the source; a spinner would throw all three away.
+
+          An upload has no such row to show: the bytes are still going up and
+          the stills are cut on the server, so it gets its own line.
+        */}
+        {pending ? (
+          <div
+            style={{
+              marginTop: 2,
+              padding: "11px 12px",
+              borderRadius: 12,
+              background: w(0.04),
+              border: `1px solid ${w(0.08)}`,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              <Chip tone="accent" mono pulse>
+                FETCHING
+              </Chip>
+              <span
+                title={nameOf(pending)}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {nameOf(pending)}
+              </span>
+              <Button variant="quiet" onClick={stopWaiting}>
+                Stop waiting
+              </Button>
+            </div>
+            <div
+              style={{
+                marginTop: 7,
+                fontSize: 12.5,
+                color: t(0.5),
+                lineHeight: 1.55,
+                textWrap: "pretty",
+              }}
+            >
+              {fetchingLine(pending)}
+            </div>
+          </div>
+        ) : fetching ? (
           <div style={{ fontSize: 12.5, color: t(0.5) }}>
-            Downloading, cutting stills and transcribing. Minutes, not seconds —
-            most of it is the download.
+            Uploading, and cutting the stills here on the server. The transcript
+            follows on whichever machine has whisper.
           </div>
         ) : null}
 
-        {source ? (
+        {/* Letting go of a wait is not a failure, so it is not in the red
+            banner at the top of the screen. */}
+        {fetchNote && !fetching ? (
+          <div style={{ fontSize: 12.5, color: t(0.45), textWrap: "pretty" }}>
+            {fetchNote}
+          </div>
+        ) : null}
+
+        {/*
+          The video this screen is on — hidden while another one is being
+          fetched, because the two lines sit one under the other and "0:41 ·
+          transcript · 8 frames" directly beneath "FETCHING <other reel>" reads
+          as a description of the thing that is still coming. The steps below
+          keep the old video, which stays perfectly readable until the new one
+          lands and `start()` replaces it.
+        */}
+        {source && !pending ? (
           <div
             style={{
               display: "flex",
@@ -475,15 +637,38 @@ export function ContentResearcherView() {
             </span>
             <span style={{ color: t(0.4) }}>
               {source.duration ? clock(source.duration) : ""}
-              {source.transcript ? " · transcript" : " · no transcript"}
+              {/*
+                Three words, not two. `transcribe_audio` is its own job on its
+                own machine, so a video is routinely ready and worth reading
+                with the words still on their way — and "no transcript" for
+                that is a failure being reported before it has happened.
+              */}
+              {words === "here"
+                ? " · transcript"
+                : words === "coming"
+                  ? " · transcript on the way"
+                  : " · no transcript"}
               {` · ${frames.length} frames`}
             </span>
           </div>
         ) : null}
 
-        {source?.error ? (
+        {/* The source's own bad news: amber, because it is about the video. */}
+        {source && !pending && sourceProblem(source) ? (
           <div style={{ marginTop: 6, fontSize: 12, color: "#c99a3f" }}>
-            {source.error}
+            {sourceProblem(source)}
+          </div>
+        ) : null}
+
+        {/*
+          The transcript's news, kept quieter and kept separate. One `error`
+          column carries both, and painting "a machine is working on it" in
+          warning amber next to eight perfectly good frames says the video is
+          broken when nothing is.
+        */}
+        {source && !pending && transcriptNote(source) ? (
+          <div style={{ marginTop: 6, fontSize: 12, color: t(0.42) }}>
+            {transcriptNote(source)}
           </div>
         ) : null}
       </section>
@@ -541,6 +726,21 @@ export function ContentResearcherView() {
             <PlayIcon size={12} fill="#fff" />
             {reading ? "Watching…" : "Watch it and give me ideas"}
           </Hov>
+
+          {/*
+            Said, not enforced. The frames are the evidence this tool is built
+            on — an address bar in frame four names the site that a transcript
+            only gestures at — so a video whose words are still queued behind
+            somebody's GPU is entirely readable now. Blocking the button until
+            whisper landed would stall the tool on an estate that may have no
+            whisper at all.
+          */}
+          {words === "coming" ? (
+            <div style={{ marginTop: 8, fontSize: 12, color: t(0.42) }}>
+              The transcript is still coming. This reads the frames either way —
+              or wait for it and press again.
+            </div>
+          ) : null}
         </section>
       ) : null}
 
