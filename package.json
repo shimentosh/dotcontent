@@ -25,6 +25,8 @@
     "worker:setup": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./worker/register.mjs worker/setup.ts",
     "desktop": "cargo run --manifest-path src-tauri/Cargo.toml",
     "desktop:build": "cargo build --release --manifest-path src-tauri/Cargo.toml",
+    "desktop:node": "node src-tauri/scripts/fetch-node.mjs",
+    "desktop:installer": "npm run desktop:node && tauri build",
     "lint": "eslint"
   },
   "dependencies": {

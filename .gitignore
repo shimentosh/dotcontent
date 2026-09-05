@@ -67,3 +67,8 @@ api/dist
 # is an application, so the exact versions it was built against are part of it.
 src-tauri/target
 src-tauri/gen/schemas
+
+# The Node the desktop app ships. ~90 MB, fetched and checksummed by
+# src-tauri/scripts/fetch-node.mjs at build time — a runtime is not a thing to
+# keep in a repository.
+src-tauri/binaries

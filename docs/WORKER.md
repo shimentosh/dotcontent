@@ -1038,59 +1038,212 @@ npm run desktop:build    # a release binary
 ```
 
 It needs the Rust MSVC toolchain and the WebView2 runtime, which every Windows
-11 machine already has. There is deliberately **no `@tauri-apps/cli` in
-`package.json`**: nothing else in this repository needs a Rust toolchain, and
-`cargo run` is the whole dev loop. Producing an installer does need it —
-`npm i -D @tauri-apps/cli && npx tauri build` — and that is the point at which
-adding the dependency will be worth it.
+11 machine already has. `cargo run` is the whole dev loop; `@tauri-apps/cli` is
+a devDependency and is needed only to produce an installer, which is the next
+section.
 
 First run has no console address, so it opens the setup window. After that it
-opens the console and starts the worker. It finds `worker/` by looking upwards
-from its own executable, so a debug build inside the checkout simply works;
-`CONTENTOS_WORKER_DIR` names the folder when it is somewhere else.
+opens the console and starts the worker.
+
+**A checkout runs the checkout's worker.** The app looks for `worker/index.ts`
+in its own resource directory first — where an installed copy keeps it — and
+then upwards from its own executable, which from `src-tauri/target/debug` is
+the repository. So a debug build runs the files being edited, with whichever
+Node is on PATH, and `npm run worker` in a terminal runs the same command
+against the same files. `CONTENTOS_WORKER_DIR` names the folder when it is
+somewhere else.
 
 The status is in the tray menu and in the setup window, in these words:
-*Connected*, *Cannot reach the console*, *Node is not installed*, *Node is too
-old*, *This machine's token was refused*, *The worker's files are missing*,
-*Not set up yet*, *The worker is not running*. They are separate states because
-they are separate actions — one is wifi, one is a download, one is a trip to
-Settings → Machines — and a single "error" would hide all three behind the same
-shrug. Anything the worker prints that this app does not recognise is still
-shown verbatim, under "What the worker is saying".
+*Connected*, *Cannot reach the console*, *This app's copy of Node is missing*,
+*Node is too old*, *This machine's token was refused*, *The worker's files are
+missing*, *Not set up yet*, *The worker is not running*. They are separate
+states because they are separate actions — one is wifi, one is a trip to
+Settings → Machines, one is installing the app again — and a single "error"
+would hide all of them behind the same shrug. Anything the worker prints that
+this app does not recognise is still shown verbatim, under "What the worker is
+saying".
 
-**Closing the window does not stop the worker; Quit does.** A machine that
-stops taking jobs because somebody closed a browser window would only ever work
-while it was being watched. That is only honest because of the tray: what
-carries on running is visible, says what it is doing, and can be stopped from
-the same menu. Quit kills the worker's whole process tree — `taskkill /T`, the
-same reasoning as `killTree` in `worker/index.ts`, because each job is its own
-process and the model CLIs are grandchildren.
+Two of those changed meaning when Node moved inside the installer. *This app's
+copy of Node is missing* used to mean "this computer has no Node", which was a
+download from nodejs.org; on an installed copy it can only mean the
+installation is damaged, so it says so and asks for a reinstall. From a
+checkout it still gives the developer's sentence, because there the fix really
+is to install one. *Node is too old* is now reachable only from a checkout at
+all — the Node inside the installer is pinned well above the 22.18 floor.
 
-**The app restarts a worker that ends on its own**, after ten seconds. That is
-not belt-and-braces: `sleep()` in `worker/index.ts` unrefs its timer, so when
-the console cannot be reached during the *first* registration there is nothing
-ref'd left in Node's event loop and the process exits 0 — having just printed
-"Trying again in 10s", which it then does not do. After registration the
-heartbeat and re-register intervals hold the loop open and the retry works
-properly. Until that is fixed in the worker, this app is what makes a laptop
-whose wifi arrives thirty seconds after the login screen start working anyway.
+### Building the installer
+
+```
+npm run desktop:installer
+```
+
+Two steps, and it is worth knowing which: `src-tauri/scripts/fetch-node.mjs`
+puts the pinned Node in `src-tauri/binaries/`, then `tauri build` bundles it.
+The fetch is a separate step because a 90 MB runtime is not a thing to keep in
+a repository — `src-tauri/binaries` is in `.gitignore`, and running the script
+is how a fresh clone gets one. Repeating it is cheap: a file that is already
+there and already matches its digest is reported and left alone.
+
+```
+src-tauri/target/release/bundle/nsis/Content OS_0.1.0_x64-setup.exe    ~25 MB
+```
+
+**What is inside it**, all of it landing in the install directory beside the
+app, and all of it removed by the uninstaller:
+
+| | |
+|---|---|
+| `contentos-desktop.exe` | the window, the tray, and the supervisor that runs the worker |
+| `node.exe` | Node **24.20.0**, the current LTS, carried as a Tauri `externalBin` |
+| `worker/` | every file, byte for byte the ones in this repository |
+| `lib/server/tools.ts`, `brain-defs.ts`, `brain-transports.ts` | the only three things `worker/` imports from the rest of the app |
+| `package.json` | the repository's, for the version the worker reports and so that Node reads the `.ts` files exactly as `npm run worker` does |
+
+That list is short because the worker imports nothing from `node_modules` —
+every import in `worker/*.ts` is a `node:` builtin, another `worker/` file, or
+one of those three, and those three import only `node:` builtins and each
+other. It is a claim worth re-checking rather than trusting whenever any of
+them changes:
+
+```
+grep -h "^import" worker/*.ts lib/server/tools.ts lib/server/brain-defs.ts lib/server/brain-transports.ts
+```
+
+Nothing is installed and nothing is compiled at install time. Node strips the
+types itself, which is the whole reason the worker was written without a build
+step in the first place.
+
+**How Node is pinned, and how the bytes are checked.** The version, the URL and
+the sha256 are constants in `src-tauri/scripts/fetch-node.mjs`, deliberately
+the same convention `worker/setup.ts` uses for yt-dlp, ffmpeg and whisper.cpp:
+nothing ever resolves "latest", the plan is printed before anything is fetched,
+and the digest being checked is the one in this repository, reviewed with it.
+The digests come from `https://nodejs.org/dist/v<version>/SHASUMS256.txt`,
+which is the file the Node project signs. Bytes stream into
+`node-<triple>.exe.part` while their sha256 and their length are computed on
+the way past, and only a file matching **both** is renamed into place — a
+captive portal answering with a login page and a `200` would otherwise leave a
+plausible-looking `node.exe` for the next build to ship. The name matters as
+much: `externalBin` resolves `binaries/node` to
+`binaries/node-x86_64-pc-windows-msvc.exe`, and a file under any other name
+means an installer that builds cleanly and carries no runtime at all.
+
+Bumping Node is that constant and its digest, and nothing else. Windows x64 and
+arm64 are in the catalogue; macOS and Linux are not, for the reason
+`worker/setup.ts` gives about ffmpeg — this team runs Windows, and an untested
+entry is worse than an absent one.
+
+**Where an installed app writes.** Its working directory is inside Program
+Files, where a normal user account cannot create anything, so the app hands the
+worker `CONTENTOS_DATA_DIR` and `CONTENTOS_TOOLS_DIR` under
+`%APPDATA%\com.contentos.desktop\`. Without that, `cliHome()` in
+`lib/server/tools.ts` — which does a `mkdirSync` — would fail on the first job,
+on the machine where nobody is reading a terminal. A checkout is deliberately
+left alone: `.data/` beside `worker/` is what `npm run worker` uses and what
+`npm run worker:setup` fills, and an app quietly preferring somewhere else
+would make a bug seen here impossible to reproduce there.
+
+### Signing, and what it costs not to
+
+**The installer this repository produces is unsigned**, and every build says so
+once per file:
+
+```
+sign.ps1: no certificate configured, so Content OS_0.1.0_x64-setup.exe is unsigned.
+```
+
+What that means for whoever installs it: SmartScreen shows *"Windows protected
+your PC"* and hides the Run button behind **More info**. For an internal team
+of a handful of people that is a decision rather than a blocker — somebody says
+"click More info, then Run anyway" once. For anything wider it is not, because
+that is also exactly what malware looks like, and teaching people to click
+through the warning is teaching them the wrong reflex.
+
+Fixing it costs money and identity rather than code: an **OV or EV code signing
+certificate** from a certificate authority, issued to a verified legal entity,
+roughly $200–$600 a year, and since June 2023 the private key has to live on a
+hardware token or in a cloud HSM. An EV certificate skips SmartScreen's
+reputation warm-up; an OV one still warns until enough people have installed
+it.
+
+The wiring is here and takes environment variables, so a real certificate plugs
+in without editing anything that is committed.
+`bundle.windows.signCommand` runs `src-tauri/scripts/sign.ps1` over every
+binary and the installer, and that script reads:
+
+| | |
+|---|---|
+| `CONTENTOS_SIGN_THUMBPRINT` | the SHA1 thumbprint of a certificate in this user's certificate store. This is the shape a token or HSM certificate takes — the key never leaves it, so there is no file to point at. |
+| `CONTENTOS_SIGN_PFX`, `CONTENTOS_SIGN_PFX_PASSWORD` | …or a `.pfx`, for a certificate that is a file. |
+| `CONTENTOS_SIGN_TIMESTAMP_URL` | an RFC3161 timestamp server. Defaults to DigiCert's. Not optional in practice: without a timestamp every signature stops verifying the day the certificate expires, including on installers already downloaded. |
+| `CONTENTOS_SIGN_TOOL` | `signtool.exe`, when the newest Windows SDK copy is not where the script looks. |
+
+With none of them set the script leaves the file alone and exits 0, so a build
+on a machine with no certificate still produces an installer. With one of them
+set and signing failing, the **build fails** — deliberately. An installer that
+was not signed must never leave the machine believing it was, because it then
+ships looking exactly like the signed one.
+
+A self-signed certificate is not an option and is not offered here. It signs
+nothing anybody's computer trusts, it does not remove the SmartScreen warning,
+and calling the result "signed" is worse than being plainly unsigned.
+
+### Auto-update: wired, and switched off until there is somewhere to look
+
+`tauri-plugin-updater` is registered, `src-tauri/src/updates.rs` does the check
+and the install, and the tray grows a **Check for updates…** item when there is
+an endpoint. **None of it has been run end to end**, for the plain reason that
+there is nothing to run it against — and the two things missing are
+configuration rather than code:
+
+```json
+"plugins": { "updater": {
+  "endpoints": ["https://…/latest.json"],
+  "pubkey": "…the public half of the signing key…"
+} }
+```
+
+Neither can be invented in a repository. A key pair would have to have its
+private half somewhere, and the only somewhere available to a commit is the
+commit — at which point anybody who has cloned this can sign an "update" that
+every installed copy downloads and runs. So `endpoints` is empty, and while it
+is empty the tray item is not built at all: a button that can only ever answer
+"this was built without an update server" teaches people that the menu is
+decorative.
+
+What a person does once there is somewhere to publish to:
+
+1. `npx tauri signer generate -w ~/.tauri/contentos.key` — and keep the private
+   half out of this repository.
+2. Put the public half in `plugins.updater.pubkey` and the URL of a
+   `latest.json` in `plugins.updater.endpoints`.
+3. Build with `TAURI_SIGNING_PRIVATE_KEY` and
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` set, and updater artifacts on:
+   `npx tauri build --config "{\"bundle\":{\"createUpdaterArtifacts\":true}}"`.
+   That produces the installer plus a `.sig` beside it.
+4. Serve a `latest.json` naming the version, the notes, the date, and each
+   platform's URL and signature. A static file on the console's own server is
+   enough; nothing here needs a release service.
+
+What the check does is deliberately small, and worth knowing before it is
+switched on. It asks only when somebody clicks, never silently — a machine four
+minutes into writing a section should not restart itself because a release
+happened. It stops the worker *before* handing over to the installer, because
+installing ends this process without going through the exit handler that would
+otherwise have killed it, and an orphaned worker would keep claiming jobs and
+spending somebody's model subscription while a second one started beside it.
+And the answer replaces the menu item's own label, because the window is
+usually closed — which is what the tray is for.
 
 ### What is still missing
 
-- **Node is not bundled.** The app spawns whatever `node` is on the machine and
-  says so plainly when there is none, or when it is too old to strip types
-  (22.18 is the floor; see `worker/resolve-ts.mjs`). Bundling it as a Tauri
-  sidecar means shipping `node.exe` (~50 MB) plus `worker/` and the `lib/server`
-  files it imports as bundle resources, pointing the spawn at
-  `resource_dir()`, and re-pinning the Node version in the same catalogue
-  `worker/setup.ts` uses for everything else. The worker imports nothing from
-  `node_modules`, so it is genuinely those files and no install step.
 - **The tools installer is not wired to a button.** `npm run worker:setup` is
   still a terminal command, and the audience for this app is exactly the
-  audience that should not have to run it.
-- **No auto-update and no start-at-login.** Both are the difference between a
-  machine that is available and a machine that is available when somebody
-  remembers.
+  audience that should not have to run it. It is also the one thing an
+  installed copy cannot do for itself yet: the app points the worker at
+  `%APPDATA%\com.contentos.desktop\tools`, and nothing fills it.
+- **No start-at-login.** The difference between a machine that is available and
+  a machine that is available when somebody remembers.
 - **`workers.max_concurrency`, the per-machine tool switches and the machine's
   name are not exposed.** They are environment variables the worker already
   reads, and they belong in the setup window next to the token.
@@ -1099,5 +1252,6 @@ whose wifi arrives thirty seconds after the login screen start working anyway.
   its lease. A Windows Job Object would close that hole.
 - **Only Windows has been built and run.** The credential store is wired per
   platform in `Cargo.toml` (Keychain on macOS, Secret Service on Linux) so that
-  neither silently falls back to keyring's non-persisting mock, but nothing on
-  either has been compiled, let alone used.
+  neither silently falls back to keyring's non-persisting mock, and the Node
+  catalogue has entries for Windows only, but nothing on either has been
+  compiled, let alone used.

@@ -11,10 +11,11 @@
 //! The first line of the menu is therefore the status itself, disabled: it is
 //! a statement, not a button.
 
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager, Wry};
 
+use crate::updates;
 use crate::windows;
 use crate::worker::{View, Worker};
 
@@ -23,6 +24,11 @@ use crate::worker::{View, Worker};
 /// having to be handed the menu.
 struct StatusItem(MenuItem<Wry>);
 
+/// The same trick for the update check, which also answers from another
+/// thread. There is no such item at all in a build with no update endpoint,
+/// hence the `Option`-shaped access in `updates_say`.
+struct UpdateItem(MenuItem<Wry>);
+
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
     let status = MenuItem::with_id(app, "status", "Starting…", false, None::<&str>)?;
     let console = MenuItem::with_id(app, "console", "Open the console", true, None::<&str>)?;
@@ -30,18 +36,26 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     let restart = MenuItem::with_id(app, "restart", "Restart the worker", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Content OS", true, None::<&str>)?;
 
-    let menu = Menu::with_items(
-        app,
-        &[
-            &status,
-            &PredefinedMenuItem::separator(app)?,
-            &console,
-            &setup,
-            &restart,
-            &PredefinedMenuItem::separator(app)?,
-            &quit,
-        ],
-    )?;
+    // Only when this build was given somewhere to look. An item that could
+    // only ever say "no update server was configured" teaches people that the
+    // menu is decorative; see src/updates.rs for what is missing and why.
+    let update = updates::configured(app)
+        .then(|| MenuItem::with_id(app, "updates", "Check for updates…", true, None::<&str>))
+        .transpose()?;
+
+    // Assembled rather than written out, because one of the items is there or
+    // is not. The separators have to be bound to names for the same reason.
+    let under_status = PredefinedMenuItem::separator(app)?;
+    let over_quit = PredefinedMenuItem::separator(app)?;
+    let mut items: Vec<&dyn IsMenuItem<Wry>> =
+        vec![&status, &under_status, &console, &setup, &restart];
+    if let Some(update) = &update {
+        items.push(update);
+    }
+    items.push(&over_quit);
+    items.push(&quit);
+
+    let menu = Menu::with_items(app, &items)?;
 
     TrayIconBuilder::with_id("main")
         // Compiled in from bundle.icon in tauri.conf.json, so this is only
@@ -60,6 +74,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             "console" => windows::console(app),
             "setup" => windows::setup(app),
             "restart" => app.state::<Worker>().start(app),
+            "updates" => updates::check(app),
             "quit" => {
                 // Order matters. The worker is killed while there is still an
                 // app to kill it from; `app.exit` unwinds the event loop, and
@@ -72,6 +87,9 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         .build(app)?;
 
     app.manage(StatusItem(status));
+    if let Some(update) = update {
+        app.manage(UpdateItem(update));
+    }
     Ok(())
 }
 
@@ -80,5 +98,16 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
 pub fn say(app: &AppHandle, view: &View) {
     if let Some(item) = app.try_state::<StatusItem>() {
         let _ = item.0.set_text(view.title);
+    }
+}
+
+/// What the update check is doing, in the item that was clicked to start it.
+///
+/// The answer replaces the label and stays there — "Up to date (0.1.0)" is
+/// worth leaving on screen, and clicking it asks again. There is nothing to
+/// update when the item does not exist, which is every build with no endpoint.
+pub fn updates_say(app: &AppHandle, text: &str) {
+    if let Some(item) = app.try_state::<UpdateItem>() {
+        let _ = item.0.set_text(text);
     }
 }

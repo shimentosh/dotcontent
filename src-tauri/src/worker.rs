@@ -7,10 +7,17 @@
 //! arrive somewhere a person can see it, and that is what most of this file
 //! is: spawn it, read what it says, and turn that into a state with a name.
 //!
-//! **It spawns the Node that is already on the machine.** Bundling a Node
-//! runtime as a Tauri sidecar is the next step and not this one; what makes
-//! that acceptable now is that Node's absence is *detected and named* rather
-//! than being a process that silently never started.
+//! **It brings its own Node, and its own copy of the worker.** The installer
+//! carries a pinned `node.exe` as a Tauri sidecar and `worker/` plus the three
+//! `lib/server` files it imports as bundle resources, so a teammate installs
+//! one thing and their machine starts taking jobs. "Install Node first" is the
+//! exact instruction this app exists to delete, and a runtime the app does not
+//! control is also a runtime that can be upgraded out from under it.
+//!
+//! A checkout still wins when there is one. Running the debug build from
+//! inside the repository uses the repository's `worker/` — because that is how
+//! anybody debugs this, and a developer editing `worker/index.ts` and watching
+//! an installed copy run instead would lose an afternoon to it.
 //!
 //! Nothing here is persisted. A job this machine was holding when the app
 //! quits is not lost: its lease expires on the server, the reaper puts it back
@@ -52,9 +59,15 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// The names are the point. Every one of these was a line in a terminal that
 /// somebody had to be a developer to read, and the whole reason this app
 /// exists is that the people running it are not: "cannot reach the console" is
-/// wifi, "token refused" is a trip to Settings → Machines, and "Node missing"
-/// is one download. A single "error" state would put all three behind the same
-/// shrug.
+/// wifi, "token refused" is a trip to Settings → Machines. A single "error"
+/// state would put both behind the same shrug.
+///
+/// `NodeMissing` changed meaning when Node started travelling inside the
+/// installer. It used to say "this computer has no Node", which was a download
+/// from nodejs.org; now the installer carries one, so it can only mean the
+/// installation is damaged — or that somebody is running a checkout without a
+/// Node on PATH. Both keep the state, and `start` writes whichever sentence is
+/// true, because the actions could not be further apart.
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub enum Health {
     #[default]
@@ -91,7 +104,7 @@ impl Health {
             Health::Starting => "Starting…",
             Health::Connected => "Connected",
             Health::Offline => "Cannot reach the console",
-            Health::NodeMissing => "Node is not installed",
+            Health::NodeMissing => "This app's copy of Node is missing",
             Health::NodeTooOld => "Node is too old",
             Health::WorkerMissing => "The worker's files are missing",
             Health::BadToken => "This machine's token was refused",
@@ -179,13 +192,9 @@ impl Worker {
             );
         }
 
-        let Some(root) = worker_root(app) else {
-            return self.set(
-                app,
-                Health::WorkerMissing,
-                "This app cannot find worker/index.ts. It looks for the Content OS folder around itself; \
-                 set CONTENTOS_WORKER_DIR to that folder if it is somewhere else.",
-            );
+        let layout = match Layout::find(app) {
+            Ok(layout) => layout,
+            Err((health, why)) => return self.set(app, health, why),
         };
 
         /*
@@ -195,9 +204,12 @@ impl Worker {
          * worker that has to be kept in step with package.json, and the day
          * they drift is the day this app runs a worker nobody can reproduce
          * from a terminal.
+         *
+         * The only difference an installed app makes is *which* Node and
+         * *which* copy of `worker/`, and both are decided in `Layout::find`.
          */
-        let mut cmd = Command::new("node");
-        cmd.current_dir(&root)
+        let mut cmd = Command::new(&layout.node);
+        cmd.current_dir(&layout.root)
             .arg("--disable-warning=MODULE_TYPELESS_PACKAGE_JSON")
             .arg("--import")
             .arg("./worker/register.mjs")
@@ -209,6 +221,7 @@ impl Worker {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        layout.give_it_somewhere_to_write(app, &mut cmd);
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -219,17 +232,17 @@ impl Worker {
             Ok(child) => child,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 /*
-                 * The one failure a non-developer is guaranteed to hit, and
-                 * the one that must never be silent. Naming the program and
-                 * where to get it is the difference between a person fixing
-                 * their own machine in five minutes and a message to whoever
-                 * set up the server.
+                 * Only reachable from a checkout: an installed app has already
+                 * been told in `Layout::find` that its own `node.exe` is not
+                 * there. This is the developer case, and it deserves the
+                 * developer's sentence rather than "reinstall".
                  */
                 return self.set(
                     app,
                     Health::NodeMissing,
-                    "The worker needs Node on this computer and there is none. Install Node 22.18 or newer \
-                     from nodejs.org — take the default options — then choose Restart the worker.",
+                    "This is a checkout of Content OS rather than an installed copy, so it has no Node of \
+                     its own and there is none on this computer either. Install Node 22.18 or newer from \
+                     nodejs.org, then choose Restart the worker.",
                 );
             }
             Err(e) => {
@@ -456,48 +469,172 @@ fn classify(line: &str) -> Option<(Health, String)> {
     }
     if line.contains("Unknown file extension") || line.contains("ERR_UNKNOWN_FILE_EXTENSION") {
         /*
-         * Node is installed but predates type stripping, so it will not run
-         * the worker's .ts files. It looks like a crash and is a version
-         * number; see worker/resolve-ts.mjs for why 22.18 is the floor.
+         * Node is there but predates type stripping, so it will not run the
+         * worker's .ts files. It looks like a crash and is a version number;
+         * see worker/resolve-ts.mjs for why 22.18 is the floor.
+         *
+         * Only a checkout can reach this now — the Node inside the installer
+         * is pinned well above the floor by src-tauri/scripts/fetch-node.mjs —
+         * so the advice is a developer's, and the state stays separate from
+         * "missing" because the fix is an upgrade rather than an install.
          */
         return Some((
             Health::NodeTooOld,
-            "The Node on this computer is too old to run the worker. Install Node 22.18 or newer from \
-             nodejs.org, then choose Restart the worker."
+            "The Node this checkout is using is too old to run the worker. Install Node 22.18 or newer \
+             from nodejs.org, then choose Restart the worker."
                 .into(),
         ));
     }
     None
 }
 
-/// The Content OS folder — the one with `worker/` in it.
+/// Which Node runs which copy of the worker, and where it may write.
+///
+/// Two shapes, and they are not variations of one another:
+///
+/// - **Installed.** Everything came out of the installer. `worker/` and the
+///   three `lib/server` files it imports are under Tauri's resource directory,
+///   and a pinned `node.exe` sits beside the app's own executable as a
+///   sidecar. Nothing is required of the computer.
+/// - **A checkout.** `worker/` is the repository's, which is the copy somebody
+///   is editing, and the Node is whatever they have. This is how the app is
+///   debugged, and it has to keep working or a fix would have to be installed
+///   to be tried.
+struct Layout {
+    /// The folder with `worker/` in it. Also the child's working directory,
+    /// because that is where `npm run worker` starts from.
+    root: PathBuf,
+    /// The program to run: an absolute path to the app's own Node when there
+    /// is one, and otherwise the bare name, which means PATH.
+    node: PathBuf,
+    /// Whether `root` came out of the installer. It decides one thing — where
+    /// the worker is allowed to write — and nothing else.
+    installed: bool,
+}
+
+impl Layout {
+    fn find(app: &AppHandle) -> Result<Self, (Health, String)> {
+        let (root, installed) = worker_root(app).ok_or_else(|| {
+            (
+                Health::WorkerMissing,
+                "This app cannot find worker/index.ts. An installed copy carries its own, so if this one \
+                 is damaged, install Content OS again. Running from a checkout it looks for the Content OS \
+                 folder around itself — set CONTENTOS_WORKER_DIR to that folder if it is somewhere else."
+                    .to_string(),
+            )
+        })?;
+
+        /*
+         * The app's own Node wherever there is one, including in a checkout:
+         * it is the version this worker is pinned to, fetched and checksummed
+         * by src-tauri/scripts/fetch-node.mjs, and a debug session that runs
+         * the same runtime as the installed app is a debug session whose
+         * findings transfer.
+         */
+        let node = match shipped_node() {
+            Some(node) => node,
+            None if installed => {
+                return Err((
+                    Health::NodeMissing,
+                    "Content OS installs its own copy of Node and that copy is not here, so this \
+                     installation is damaged — nothing is missing from your computer. Install Content OS \
+                     again over the top of this one; the console address and this machine's token are kept."
+                        .to_string(),
+                ))
+            }
+            None => PathBuf::from("node"),
+        };
+
+        Ok(Layout {
+            root,
+            node,
+            installed,
+        })
+    }
+
+    /// Give the worker somewhere it is allowed to write.
+    ///
+    /// This is not a nicety, it is the difference between an installed app
+    /// that works and one that fails its first job. `cliHome()` in
+    /// `lib/server/tools.ts` does a `mkdirSync` under `CONTENTOS_DATA_DIR`, or
+    /// under the working directory when that is unset — and an installed app's
+    /// working directory is inside Program Files, where a normal user account
+    /// cannot create anything. The failure would land on the machine where
+    /// nobody is reading a terminal.
+    ///
+    /// A checkout is deliberately left alone. `.data/` beside `worker/` is
+    /// what `npm run worker` uses and what `npm run worker:setup` fills, and an
+    /// app quietly preferring a different folder would make a bug seen here
+    /// impossible to reproduce there.
+    ///
+    /// An explicit setting always wins, for the same reason it does in
+    /// `worker/config.ts`: somebody put a three-gigabyte whisper model on the
+    /// drive with room for it.
+    fn give_it_somewhere_to_write(&self, app: &AppHandle, cmd: &mut Command) {
+        if !self.installed {
+            return;
+        }
+        let Ok(dir) = app.path().app_data_dir() else {
+            return;
+        };
+        // Two variables rather than one, because they mean different things:
+        // the first is where `cliHome()` makes the deliberately empty folder
+        // the model CLIs are started in, the second is where the tools
+        // installer puts yt-dlp, ffmpeg and whisper.cpp.
+        for (name, value) in [
+            ("CONTENTOS_DATA_DIR", dir.join("data")),
+            ("CONTENTOS_TOOLS_DIR", dir.join("tools")),
+        ] {
+            if std::env::var_os(name).is_none() {
+                cmd.env(name, value);
+            }
+        }
+    }
+}
+
+/// The Content OS folder — the one with `worker/` in it — and whether it came
+/// out of the installer.
 ///
 /// Searched for rather than configured, because in development this app is
 /// started from `src-tauri` and the worker is two directories up, and asking
 /// somebody to set a path to a folder that is already right there is the kind
 /// of setup step that makes a tool feel broken before it has run once.
 ///
-/// The resource directory is tried first among the automatic candidates
-/// because that is where an installed build will keep its copy the day the
-/// worker is bundled; today it simply is not there and the walk upwards wins.
-fn worker_root(app: &AppHandle) -> Option<PathBuf> {
-    let mut tried: Vec<PathBuf> = Vec::new();
+/// The resource directory is tried before the walk upwards, and on Windows
+/// that ordering is load-bearing rather than tidy: an installed app's
+/// executable lives *in* its resource directory, so the walk would find the
+/// same folder a step later and call it a checkout, and the worker would then
+/// be pointed at Program Files to write in.
+fn worker_root(app: &AppHandle) -> Option<(PathBuf, bool)> {
+    let mut tried: Vec<(PathBuf, bool)> = Vec::new();
     if let Ok(set) = std::env::var("CONTENTOS_WORKER_DIR") {
-        tried.push(PathBuf::from(set));
+        tried.push((PathBuf::from(set), false));
     }
     if let Ok(resources) = app.path().resource_dir() {
-        tried.push(resources);
+        tried.push((resources, true));
     }
     if let Ok(exe) = std::env::current_exe() {
-        tried.extend(exe.ancestors().map(PathBuf::from));
+        tried.extend(exe.ancestors().map(|p| (p.to_path_buf(), false)));
     }
     if let Ok(cwd) = std::env::current_dir() {
-        tried.extend(cwd.ancestors().map(PathBuf::from));
+        tried.extend(cwd.ancestors().map(|p| (p.to_path_buf(), false)));
     }
-    tried.into_iter().find(|root| {
+    tried.into_iter().find(|(root, _)| {
         root.join("worker").join("index.ts").is_file()
             && root.join("worker").join("register.mjs").is_file()
     })
+}
+
+/// The Node that came out of the installer, if it is there.
+///
+/// Tauri puts an `externalBin` next to the app's own executable and takes the
+/// target triple back off the name, so this is one `is_file` on a path that is
+/// known rather than a search. Absolute on purpose: the entire point of
+/// shipping a runtime is not to depend on what PATH happens to say.
+fn shipped_node() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let node = exe.with_file_name(if cfg!(windows) { "node.exe" } else { "node" });
+    node.is_file().then_some(node)
 }
 
 /// Kill the worker and everything it started.

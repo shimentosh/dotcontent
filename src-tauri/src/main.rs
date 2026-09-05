@@ -18,6 +18,7 @@
 
 mod settings;
 mod tray;
+mod updates;
 mod windows;
 mod worker;
 
@@ -74,6 +75,15 @@ fn open_console(app: AppHandle) {
 
 fn main() {
     tauri::Builder::default()
+        /*
+         * Registered even in a build with nowhere to look, because the plugin
+         * is where `updater()` comes from and the alternative is a `cfg` that
+         * would have to be flipped in Rust to turn updating on. The whole
+         * point of src/updates.rs is that turning it on is two entries in
+         * tauri.conf.json; with no endpoint the check simply says so and the
+         * menu item that would run it is never built.
+         */
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Worker::default())
         .invoke_handler(tauri::generate_handler![
             status,

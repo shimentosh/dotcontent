@@ -22,6 +22,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tauri-plugin-updater = "2.11.0"
 
 # The worker token is a credential, so it goes in the OS credential store
 # rather than beside the settings file. Windows-first, deliberately: this is
