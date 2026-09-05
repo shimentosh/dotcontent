@@ -1,12 +1,6 @@
 {
   "compilerOptions": {
-    // "nodenext", not "node16": NestJS 12 is ESM-only ("type": "module", no
-    // require export). node16 rejects importing it from this CommonJS build
-    // (TS1479); nodenext models Node's require(esm) support, which is how it
-    // already works at runtime. The emit stays CommonJS — this package has no
-    // "type": "module" — so ts-node, nest and dist/ are unaffected.
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
+    "module": "commonjs",
     "target": "es2022",
     "lib": ["es2023"],
     "types": ["node"],
@@ -15,10 +9,13 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "moduleResolution": "node",
     "resolveJsonModule": true,
     "sourceMap": true,
-    "baseUrl": "..",
-    "paths": { "@/*": ["./*"] },
+    // No baseUrl — TypeScript 7 removes it. Path mappings without one are
+    // resolved relative to this file, so "@/" is the repo root, one level up.
+    // register-paths.cjs carries the same mapping for the runtime.
+    "paths": { "@/*": ["../*"] },
     "rootDir": "..",
     "outDir": "dist"
   },
