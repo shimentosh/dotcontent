@@ -95,8 +95,12 @@ describe.skipIf(!up)("the queue", () => {
 
   it("applies every migration, and the worker split's columns land", async () => {
     const { q } = await dbMod();
+    const { MIGRATIONS } = await import("@/lib/server/db/schema");
     const names = await q<{ name: string }>("SELECT name FROM migrations ORDER BY name");
-    expect(names.at(-1)!.name).toBe("0015_workers");
+    // Compared against the list itself rather than a name written here: a
+    // hardcoded "the last one is 0015" fails the day somebody appends 0016,
+    // which is a passing test breaking on correct work.
+    expect(names.map((r) => r.name)).toEqual(MIGRATIONS.map((m) => m.name).sort());
 
     const cols = await q<{ t: string; c: string }>(
       `SELECT table_name AS t, column_name AS c FROM information_schema.columns
@@ -114,6 +118,7 @@ describe.skipIf(!up)("the queue", () => {
       "run_sections.wrote_with",
       "workspaces.api_fallback",
       "runs.created_by",
+      "workspaces.brain",
     ]) {
       expect(have.has(want), `migration did not create ${want}`).toBe(true);
     }

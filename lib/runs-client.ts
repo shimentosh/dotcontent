@@ -50,34 +50,79 @@ export const deleteRun = (id: string) =>
   );
 
 /**
- * Write one section.
+ * What `advance` did on the server, section by section.
  *
- * Resolves with the whole run rather than the section: a section finishing
- * changes what the rest of the page may now do, and returning only the one row
- * makes the caller stitch state back together by hand.
+ * The three outcomes are genuinely different sentences on the page, and the
+ * only place two of them reach the browser at all: a job queued behind a
+ * machine that is asleep carries the machine's NAME here and nowhere in the
+ * run row, and an unroutable section is a missing install rather than a model
+ * that refused. Keep the shapes as the service returns them.
  */
+export type AdvanceReport = {
+  /** Sections that now have a job a live machine can claim. */
+  enqueued: string[];
+  /** Sections queued behind a machine that has not been seen lately. */
+  waiting: { sectionId: string; machine: string }[];
+  /** Sections no machine on this estate can ever write. Already failed. */
+  unroutable: string[];
+};
+
 /**
- * Write the whole run, server-side.
+ * Start the run: queue everything that is ready, and return at once.
  *
- * Returns as soon as the loop starts, not when the run finishes — the page
- * follows it by reading the run, the same way it reads anything else.
+ * Nothing is written by the time this resolves — the sections are jobs now,
+ * picked up by whichever machine holds the CLI. The page follows the run by
+ * reading it, the same way it reads anything else.
  *
  * This is also Retry: the server puts failed sections back in the queue before
- * it drives, and `retried` says how many went back, so a caller can tell a
+ * it advances, and `retried` says how many went back, so a caller can tell a
  * retry from a plain start.
  */
 export const startWriting = (runId: string) =>
   apiFetch(`/api/runs/${runId}/start`, { method: "POST" }).then((r) =>
-    json<{ started: boolean; running: boolean; retried: number }>(r),
+    json<
+      { started: boolean; running: boolean; retried: number } & AdvanceReport
+    >(r),
   );
 
-/** Is this run being written right now, by anyone? */
+/**
+ * Is anything on the queue for this run — anywhere, on anyone's machine?
+ *
+ * True for a job that is merely queued as well as one a machine is holding, so
+ * it is "this run is not finished with" rather than "a model is talking right
+ * now". The two are told apart by looking at which sections say `writing`.
+ */
 export const isWriting = (runId: string) =>
   apiFetch(`/api/runs/${runId}/start`, { cache: "no-store" }).then((r) =>
     json<{ running: boolean }>(r),
   );
 
-export const writeSection = (runId: string, sectionId: string) =>
+/**
+ * Stop a run that is writing.
+ *
+ * Queued jobs stop being work immediately; a machine already running one finds
+ * out at its next heartbeat and kills the child process, so `stopped` counts
+ * jobs cancelled rather than processes already dead.
+ */
+export const stopRun = (runId: string) =>
+  apiFetch(`/api/runs/${runId}/stop`, { method: "POST" }).then((r) =>
+    json<{ ok: boolean; stopped: number; requeued: number }>(r),
+  );
+
+/**
+ * Ask for one section to be written.
+ *
+ * It queues; it does not write. This used to resolve with the section
+ * finished, because the model was a child process of the request — awaiting it
+ * now waits for a database write and gets back a run whose section says
+ * `writing`, with the text still minutes away on somebody else's laptop.
+ *
+ * The whole run comes back rather than the one row because queueing a section
+ * runs `advance`, which may queue everything else that has just become ready,
+ * and because a section changing state changes what the rest of the page may
+ * do.
+ */
+export const queueSection = (runId: string, sectionId: string) =>
   apiFetch(`/api/runs/${runId}/sections/${sectionId}`, { method: "POST" }).then(
     (r) => json<Run>(r),
   );
@@ -85,7 +130,7 @@ export const writeSection = (runId: string, sectionId: string) =>
 /**
  * Save what a person typed into a section.
  *
- * Returns the whole run for the same reason `writeSection` does: an edit can
+ * Returns the whole run for the same reason `queueSection` does: an edit can
  * change whether the run reads as finished, and the page should not have to
  * work that out from a single row.
  */

@@ -5,6 +5,7 @@ import {
 } from "@nestjs/common";
 
 import { getJob, reap, sweepPayloads } from "@/lib/server/repos/jobs";
+import { sourceFailed } from "@/lib/server/services/ingest";
 import { sectionFailed } from "@/lib/server/services/runs";
 
 /**
@@ -111,9 +112,21 @@ export class Reaper implements OnModuleInit, OnApplicationShutdown {
       for (const jid of failed) {
         try {
           const job = await getJob(jid);
-          if (job?.kind === "write_section") {
-            await sectionFailed(job, job.error || "No machine finished this.");
-          }
+          if (!job) continue;
+          const why = job.error || "No machine finished this.";
+          /*
+           * Every kind, not just the one. A reaped `ingest_source` used to end
+           * here silently, leaving its source on `fetching` with an empty queue
+           * behind it — the same dead row as a section stuck on `writing`, and
+           * the one a person is most likely to meet, because "nobody opened the
+           * laptop that has yt-dlp" is an ordinary Tuesday.
+           *
+           * `sourceFailed` is a no-op for `test_brain` and for anything with no
+           * source, so the branch does not have to enumerate the kinds that
+           * have nothing to tell.
+           */
+          if (job.kind === "write_section") await sectionFailed(job, why);
+          else await sourceFailed(job, why);
         } catch (e) {
           console.error(
             `Reaper: job ${jid} ended but its section could not be marked:`,

@@ -1,6 +1,6 @@
 import { write } from "@/lib/server/brains";
-import { getSettings } from "@/lib/server/repos/settings";
 import { getSource, updateSource } from "@/lib/server/repos/sources";
+import { DEFAULT_BRAIN, getWorkspace } from "@/lib/server/repos/workspaces";
 import { frameBytes, framePath } from "@/lib/server/services/ingest";
 
 /**
@@ -193,13 +193,27 @@ export async function research(input: {
     .filter(Boolean)
     .join("\n\n");
 
-  const settings = await getSettings();
-  const raw = await write(settings.brain, {
+  /*
+   * The brain belongs to the workspace the source is filed under.
+   *
+   * It used to be `settings.brain`, one value for the whole console. Which
+   * model reads a reel is the same editorial choice as which model writes the
+   * script from it — a workspace producing Bangla scripts and one producing
+   * SEO copy may reasonably differ, and neither should change because somebody
+   * else switched a global. A source with no workspace falls back to the same
+   * default a new workspace gets, so this can never resolve to nothing.
+   */
+  const workspace = source.workspaceId ? await getWorkspace(source.workspaceId) : null;
+  const raw = await write(workspace?.brain || DEFAULT_BRAIN, {
     system: SYSTEM,
     user: context,
     tier: "high",
     images: images.length ? images : undefined,
     imageFiles: files.length ? files : undefined,
+    // This runs in the API process, on the API's own disk, at the request of
+    // whoever administers it — not on a teammate's desktop, which is the case
+    // the per-machine switch exists for.
+    allowFrameRead: true,
     timeoutMs: 600_000,
   });
 

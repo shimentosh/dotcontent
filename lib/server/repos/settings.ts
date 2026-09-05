@@ -22,27 +22,32 @@ export type Settings = {
   autoApprove: boolean;
   /** Stops the aurora drifting and shortens transitions. */
   reduceMotion: boolean;
-  /** The model that writes. An integration id. */
-  brain: string;
-  /**
-   * Local tools allowed to run, by id. A tool that is installed but switched
-   * off is skipped — which is how you get metadata without a 200MB download.
-   */
-  enabled: string[];
-  /**
-   * Whether the Claude CLI may open the frame files on this machine.
-   *
-   * Only Claude's: Codex is handed the picture with `-i` and Gemini opens the
-   * one path it is given, neither of which grants the model anything. Claude
-   * reads a still by being granted the Read TOOL for that call, which is a
-   * different kind of permission from WebFetch, so it has its own switch.
-   *
-   * On by default, because this console runs off signed-in CLIs and the
-   * alternative is not "safer", it is "the researcher does not work". The
-   * switch stays so it can be turned off by whoever owns the machine.
-   */
-  cliCanReadFrames: boolean;
 };
+
+/*
+ * `brain`, `enabled` and `cliCanReadFrames` used to live here, and each was a
+ * different kind of wrong. See migration 0016 and docs/WORKER.md.
+ *
+ * This table is one row per key for the WHOLE console — there is no scope
+ * column and there never was one. That was right for one person on one
+ * laptop, and on a server with four teammates it meant a value that is a fact
+ * about one thing was being read as though it were a fact about everything:
+ *
+ * - `brain` is a fact about the CONTENT. It is on `workspaces` now, beside
+ *   `brand_voice`, so the Bangla-script brand and the SEO-copy brand can want
+ *   different models without either changing under the other.
+ * - `enabled` is a fact about a MACHINE. "yt-dlp is switched off" is true of
+ *   one desktop; it is `workers.enabled`, evaluated by the worker against its
+ *   own row.
+ * - `cliCanReadFrames` is a fact about a FILESYSTEM. It grants the Read tool
+ *   on one specific person's disk, so a global that let a teammate turn it on
+ *   from the other side of the office was not a setting, it was a hole. It is
+ *   `workers.can_read_frames`, which defaults OFF where this defaulted ON —
+ *   on purpose, and not a mismatch to be tidied away.
+ *
+ * What is left is genuinely console-wide, or wants to be per-user one day,
+ * which is a separate argument this move does not force.
+ */
 
 /*
  * `languages` and `connected` used to live here.
@@ -63,9 +68,6 @@ export const DEFAULTS: Settings = {
   quality: "Balanced",
   autoApprove: false,
   reduceMotion: false,
-  brain: "claude-cli",
-  enabled: ["yt-dlp", "ffmpeg", "ffprobe", "whisper"],
-  cliCanReadFrames: true,
 };
 
 export async function getSettings(): Promise<Settings> {

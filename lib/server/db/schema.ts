@@ -673,4 +673,61 @@ export const MIGRATIONS: { name: string; sql: string }[] = [
      WHERE state = 'writing';
     `,
   },
+
+  {
+    /*
+     * The three global settings that could never be global.
+     *
+     * `settings` is one row per key for the whole console, which was exactly
+     * right for one person on one laptop and is three separate wrong things
+     * for a team on a server. Each of these moves to the thing it is actually
+     * a fact about — see docs/WORKER.md, "settings.brain is a singleton and
+     * must be scoped".
+     *
+     * `enabled` and `cliCanReadFrames` need no new column: `workers.enabled`
+     * and `workers.can_read_frames` arrived with 0015 and a machine reports
+     * or is granted them per row. They are only deleted here.
+     */
+    name: "0016_scoped_settings",
+    sql: `
+    -- Which model writes is an editorial decision about the CONTENT, so it
+    -- sits beside brand_voice, which is scoped for exactly that reason and is
+    -- already read by startRun off the workspace rather than off the request.
+    -- A workspace writing Bangla scripts and one writing SEO copy may want
+    -- different models, and neither should change under the other because
+    -- somebody switched a global.
+    ALTER TABLE workspaces ADD COLUMN brain TEXT NOT NULL DEFAULT 'claude-cli';
+
+    /*
+     * Carry the global onto every workspace that exists.
+     *
+     * Without this, upgrading silently retunes every run in the database to
+     * the default: somebody who switched the console to Gemini months ago
+     * would press Run and get Claude, with nothing on any screen saying the
+     * setting had moved. The value is a jsonb string, so #>> '{}' is what
+     * takes the text out of it without the quotes coming along. COALESCE
+     * covers a console that never wrote the row at all, which is every
+     * install that left the picker alone.
+     */
+    UPDATE workspaces SET brain = COALESCE(
+      (SELECT value #>> '{}' FROM settings WHERE key = 'brain'), 'claude-cli');
+
+    /*
+     * And delete all three globals, rather than leaving them to rot.
+     *
+     * getSettings() only copies keys it already knows, so a leftover row is
+     * invisible today — which is the danger. A future setting that reuses one
+     * of these names would come up holding a value somebody set for a
+     * different purpose in a different world, and nothing would say so.
+     *
+     * cliCanReadFrames in particular must NOT be carried anywhere. It
+     * defaults ON here and workers.can_read_frames defaults OFF, deliberately:
+     * it grants the Read tool on one specific person's filesystem, and
+     * enrolling a machine must not inherit a permission somebody granted on a
+     * different one. Dropping the value on the floor is the migration doing
+     * its job.
+     */
+    DELETE FROM settings WHERE key IN ('brain', 'enabled', 'cliCanReadFrames');
+    `,
+  },
 ];

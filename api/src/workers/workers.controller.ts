@@ -13,7 +13,7 @@ import {
 } from "@nestjs/common";
 import busboy from "busboy";
 import type { Response } from "express";
-import { createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Transform } from "node:stream";
@@ -23,7 +23,6 @@ import {
   LEASE_SECONDS,
   claim,
   fail,
-  getJob,
   heartbeat,
   heldBy,
   succeed,
@@ -31,10 +30,15 @@ import {
 import { registerWorker } from "@/lib/server/repos/workers";
 import { getSource, updateSource } from "@/lib/server/repos/sources";
 import {
-  DATA_ROOT,
+  AUDIO_FILE,
   FRAME_FILE,
   MAX_UPLOAD_BYTES,
+  audioPath,
+  ensureSourceDir,
   frameFile,
+  sourceFailed,
+  sourceResult,
+  transcriptResult,
 } from "@/lib/server/services/ingest";
 import { sectionFailed, sectionResult } from "@/lib/server/services/runs";
 import type { ToolStatus } from "@/lib/server/tools";
@@ -208,12 +212,20 @@ export class WorkersController {
    * refused, the result already in `run_sections` stands, and the worker is
    * told 409 so that it stops rather than retrying into the same wall.
    *
-   * A `write_section` result is handed to the runs service, which records the
-   * text, the machine that wrote it and the milliseconds it took, and then
-   * advances the run. Nothing here writes `run_sections` itself: the ordering,
-   * the dependency waves and what "written" means to a run all belong on that
-   * side, and a second implementation of them living in a controller is how
-   * the two quietly stop agreeing.
+   * Every kind is handed to the service that owns the row it writes, and
+   * nothing here writes `run_sections` or `sources` itself: the ordering, the
+   * dependency waves, what "written" means to a run and what a missing
+   * transcript means to a source all belong on that side, and a second
+   * implementation of them living in a controller is how the two quietly stop
+   * agreeing.
+   *
+   * Until now only `write_section` was applied and the other three kinds were
+   * stored on the job and nowhere else — which is the same bug in three
+   * places: a machine finished the work, said so, and the row a person is
+   * looking at never moved. An ingest that landed left its source on
+   * "Fetching…" with an empty queue behind it, and the frames and the WAV it
+   * had already uploaded sat on disk with nothing in the database pointing at
+   * them.
    */
   @Post("jobs/:id/result")
   @WorkerRoute()
@@ -227,7 +239,34 @@ export class WorkersController {
     const job = await succeed(jobId, worker.id, result);
     if (!job) throw new ConflictException(staleJob(jobId));
 
-    if (job.kind === "write_section") await sectionResult(job, result, worker.name);
+    switch (job.kind) {
+      case "write_section":
+        await sectionResult(job, result, worker.name);
+        break;
+      /*
+       * The frames and the WAV are already here — they went up through the two
+       * upload endpoints below before this was posted — so the result only
+       * names files the server holds, and `sourceResult` re-checks every one
+       * of those names before it puts them on the row.
+       */
+      case "ingest_source":
+        await sourceResult(job, result);
+        break;
+      case "transcribe_audio":
+        await transcriptResult(job, result);
+        break;
+      /*
+       * `test_brain` has nothing to apply anywhere else, and that is the whole
+       * of its handling — but it is written down rather than left to fall off
+       * the end, because the thing that matters about it is that `succeed()`
+       * above has already put the job at `done` with the reply on it. That is
+       * what the Integrations panel polls for; a job that stayed `claimed`
+       * because nobody moved it would leave the button spinning until the
+       * lease expired and the reaper handed the test to a second machine.
+       */
+      case "test_brain":
+        break;
+    }
     return { ok: true };
   }
 
@@ -267,7 +306,23 @@ export class WorkersController {
      * sat on "Writing" for five days, which `docs/DECISIONS.md` records and
      * this whole design exists to make impossible.
      */
-    if (job.state === "failed") await sectionFailed(job, message);
+    if (job.state === "failed") {
+      if (job.kind === "write_section") {
+        await sectionFailed(job, message);
+      } else {
+        /*
+         * The same rule for a source, and `sourceFailed` draws the one
+         * distinction that matters: a failed `ingest_source` fetched nothing,
+         * so the source fails and names the machine; a failed
+         * `transcribe_audio` cost the source its words and nothing else, so
+         * the source stays ready and says which step fell short. A missing or
+         * broken transcriber degrades a source; it does not fail it. A
+         * `test_brain` has no source and falls through as a no-op — its
+         * failure is the answer, and it is already on the job.
+         */
+        await sourceFailed(job, message, worker.name);
+      }
+    }
     return { ok: true };
   }
 
@@ -296,8 +351,11 @@ export class WorkersController {
     const source = await getSource(sourceId);
     if (!source) throw new NotFoundException("No such source");
 
-    const dir = path.join(DATA_ROOT, "sources", sourceId);
-    await fs.mkdir(dir, { recursive: true });
+    // Through the ingest service rather than by rebuilding the path here:
+    // there is one place that knows where a source's files live, and a second
+    // copy of `.data/sources/<id>` in a controller is a layout that drifts the
+    // first time CONTENTOS_DATA_DIR means something new.
+    const dir = await ensureSourceDir(sourceId);
 
     return new Promise<{ files: string[] }>((resolve, reject) => {
       const bb = busboy({ headers: req.headers });
@@ -333,6 +391,88 @@ export class WorkersController {
 
       req.pipe(bb);
     });
+  }
+
+  /**
+   * The audio, from the machine that fetched the video.
+   *
+   * The other half of "ingest uploads, write downloads", and the reason
+   * `whisper` never became a dependency of this server. Audio is roughly a
+   * thirtieth of the video, so the ingesting worker sends a 16 kHz mono WAV —
+   * about a megabyte a minute rather than four hundred — and the machine with
+   * a GPU downloads only that when it claims the `transcribe_audio` job.
+   *
+   * One fixed filename rather than one the sender chooses. A frame's name
+   * carries information — which second it was cut at — and so has to be
+   * checked against `FRAME_FILE`; a source has exactly one audio track, so the
+   * safest name is the one the server picks and the sender cannot influence at
+   * all. Multipart, and counted as it passes, for the same reason the frames
+   * are: a parser buffers, and a cap read off content-length is a number the
+   * client chose.
+   */
+  @Post("sources/:id/audio")
+  @WorkerRoute()
+  async audioUp(@Req() req: WorkerRequest, @Param("id") sourceId: string) {
+    const source = await getSource(sourceId);
+    if (!source) throw new NotFoundException("No such source");
+
+    await ensureSourceDir(sourceId);
+    const dest = audioPath(sourceId);
+
+    return new Promise<{ ok: true; file: string }>((resolve, reject) => {
+      const bb = busboy({ headers: req.headers, limits: { files: 1 } });
+      let handled = false;
+
+      bb.on("file", (field, file) => {
+        if (field !== "file") {
+          file.resume();
+          return;
+        }
+        handled = true;
+        writeCappedFile(file, dest)
+          .then(() => resolve({ ok: true, file: AUDIO_FILE }))
+          .catch(reject);
+      });
+
+      bb.on("error", reject);
+      bb.on("finish", () => {
+        if (!handled) reject(new BadRequestException("No audio in that request"));
+      });
+
+      req.pipe(bb);
+    });
+  }
+
+  /**
+   * The audio, back down to the machine about to transcribe it.
+   *
+   * Streamed rather than read into memory the way a frame is: a JPEG is tens
+   * of kilobytes and an hour of speech is sixty megabytes, and buffering that
+   * per concurrent transcription is the API process falling over rather than
+   * the request.
+   *
+   * A 404 here is a real answer, not a fault — an `ingest_source` that could
+   * not download the video uploaded no audio, and the job for it should not
+   * have been enqueued, but a source deleted mid-transcription reaches exactly
+   * this line. The worker fails the job, `sourceFailed` writes the sentence,
+   * and the source stays readable.
+   */
+  @Get("sources/:id/audio")
+  @WorkerRoute()
+  async audioDown(@Param("id") sourceId: string, @Res() res: Response) {
+    const file = audioPath(sourceId);
+    const size = await fs
+      .stat(file)
+      .then((s) => s.size)
+      .catch(() => 0);
+    if (!size) throw new NotFoundException("No audio for that source");
+
+    res.set({
+      "content-type": "audio/wav",
+      "content-length": String(size),
+      "cache-control": "private, max-age=31536000, immutable",
+    });
+    createReadStream(file).pipe(res);
   }
 
   /**

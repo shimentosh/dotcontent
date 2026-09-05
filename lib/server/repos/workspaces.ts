@@ -7,6 +7,17 @@ import { id, iso, one, q } from "@/lib/server/db/client";
  * nothing in it decides policy: that belongs to the services.
  */
 
+/**
+ * What a workspace writes with when nobody has said otherwise.
+ *
+ * Lives here rather than in the settings repo because the choice is a
+ * property of the workspace now: `settings.brain` was one row for the whole
+ * console, so two brands in one database could not want different models —
+ * see migration 0016. Exported so the run service and the integrations page
+ * fall back to the same id instead of each spelling one out.
+ */
+export const DEFAULT_BRAIN = "claude-cli";
+
 export type Workspace = {
   id: string;
   name: string;
@@ -15,6 +26,26 @@ export type Workspace = {
   status: string;
   goal: string;
   brandVoice: string;
+  /**
+   * Which model writes for this brand. An integration id.
+   *
+   * Editorial, not hardware: the Bangla-script workspace and the SEO-copy one
+   * may reasonably want different models, and neither should change under the
+   * other because somebody switched a global. It sits beside `brandVoice` for
+   * exactly that reason.
+   */
+  brain: string;
+  /**
+   * May the server spend an API key when no machine can take the work?
+   *
+   * Off, and off is the feature. The whole worker split exists so a run costs
+   * a subscription somebody already pays for rather than money per token, and
+   * a fallback that fired whenever nobody's laptop was open would spend that
+   * money precisely when nobody was watching. Turning it on is a deliberate
+   * act, per workspace, by somebody who knows what it costs — which is why it
+   * cannot be a global either.
+   */
+  apiFallback: boolean;
   langs: string[];
   tint: string;
   photo: string | null;
@@ -33,6 +64,12 @@ const map = (r: Row): Workspace => ({
   status: String(r.status ?? "Planning"),
   goal: String(r.goal ?? ""),
   brandVoice: String(r.brand_voice ?? ""),
+  // Empty only on a hand-edited row — the column has a default and 0016
+  // filled every existing row — but an empty brain id would reach findBrain()
+  // and fail a run with "No model called", which is a confusing sentence
+  // about a column nobody typed into.
+  brain: String(r.brain || DEFAULT_BRAIN),
+  apiFallback: r.api_fallback === true,
   // jsonb comes back already parsed; the guard is for a hand-edited row.
   langs: Array.isArray(r.langs) ? (r.langs as string[]) : [],
   tint: String(r.tint ?? ""),
@@ -58,10 +95,10 @@ export async function createWorkspace(
 ): Promise<Workspace> {
   const row = await one<Row>(
     `INSERT INTO workspaces
-       (id, name, handle, channel, status, goal, brand_voice, langs, tint,
-        photo, position)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10,
-             COALESCE($11, (SELECT COALESCE(MAX(position), -1) + 1 FROM workspaces)))
+       (id, name, handle, channel, status, goal, brand_voice, brain,
+        api_fallback, langs, tint, photo, position)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12,
+             COALESCE($13, (SELECT COALESCE(MAX(position), -1) + 1 FROM workspaces)))
      RETURNING *`,
     [
       patch.id || id("ws"),
@@ -71,6 +108,10 @@ export async function createWorkspace(
       patch.status ?? "Planning",
       patch.goal ?? "",
       patch.brandVoice ?? "",
+      patch.brain || DEFAULT_BRAIN,
+      // Never inherited from another workspace and never on by default: a new
+      // brand must not arrive already able to spend money unattended.
+      patch.apiFallback ?? false,
       JSON.stringify(patch.langs ?? []),
       patch.tint ?? "",
       patch.photo ?? null,
@@ -98,6 +139,8 @@ export async function updateWorkspace(
   if (patch.status !== undefined) set("status", patch.status);
   if (patch.goal !== undefined) set("goal", patch.goal);
   if (patch.brandVoice !== undefined) set("brand_voice", patch.brandVoice);
+  if (patch.brain !== undefined) set("brain", patch.brain || DEFAULT_BRAIN);
+  if (patch.apiFallback !== undefined) set("api_fallback", patch.apiFallback);
   if (patch.langs !== undefined) set("langs", JSON.stringify(patch.langs), "::jsonb");
   if (patch.tint !== undefined) set("tint", patch.tint);
   if (patch.photo !== undefined) set("photo", patch.photo);

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { cliHome, run, toolStatuses } from "@/lib/server/tools";
-import { getSecret, getSettings } from "@/lib/server/repos/settings";
+import { getSecret } from "@/lib/server/repos/settings";
 
 /**
  * The models that can be the brain, and how each one is reached.
@@ -278,6 +278,22 @@ export type WriteRequest = {
    * anywhere.
    */
   imageFiles?: string[];
+  /**
+   * Whether Claude's CLI may be granted `Read` for this one call.
+   *
+   * Decided by whoever owns the filesystem the grant lands on, and carried in
+   * the request rather than read from a console-wide setting. It used to be
+   * `settings.cliCanReadFrames`, one row for the whole install — which was
+   * right while the install was one person's laptop and is a hole the moment
+   * the CLI runs somewhere else: a teammate flipping a switch in the console
+   * would be granting file access on YOUR desktop.
+   *
+   * The server sends it from `workers.can_read_frames`; the worker checks its
+   * own row again before spawning, because the last word belongs to the
+   * machine. Absent means no — a grant is never made on the strength of the
+   * request alone.
+   */
+  allowFrameRead?: boolean;
 };
 
 /**
@@ -320,13 +336,13 @@ export async function write(brainId: string, req: WriteRequest): Promise<string>
      * switch that says so. Codex and Gemini are given the picture and granted
      * nothing.
      */
-    (def.id !== "claude-cli" || (await getSettings()).cliCanReadFrames);
+    (def.id !== "claude-cli" || req.allowFrameRead === true);
 
   if (req.images?.length && !canSeeOnApi && !canSeeOnCli) {
     throw new Error(
       status.transport === "cli"
         ? def.id === "claude-cli"
-          ? `${def.name} can read the frames, but “Let the Claude CLI open frame files” is off in Settings — that switch is what grants it Read for the one call.`
+          ? `${def.name} can read the frames, but this machine is not allowed to open frame files — turn that on for it in Settings → Machines. It is per machine because the grant lands on that machine’s disk.`
           : `${def.name} cannot be shown frames here.`
         : `${def.name} on an API key cannot be given frames here. Switch it to the CLI in Settings — a signed-in CLI can open the frame files.`,
     );

@@ -16,6 +16,7 @@ import { RunsController } from "./runs/runs.controller";
 import { SourcesController } from "./sources/sources.controller";
 import { ResearchController } from "./research/research.controller";
 import { WorkersController } from "./workers/workers.controller";
+import { MachinesController } from "./machines/machines.controller";
 import { Reaper } from "./workers/reaper";
 
 /**
@@ -46,6 +47,13 @@ import { Reaper } from "./workers/reaper";
     SourcesController,
     ResearchController,
     WorkersController,
+    /*
+     * The console's view of the machines, not the machines' own protocol.
+     * `MachinesController` is behind the global session guard like every other
+     * console route; `WorkersController` above is bearer-token only. Two
+     * controllers because they are two principals — see docs/WORKER.md.
+     */
+    MachinesController,
   ],
   /*
    * The reaper is a provider rather than something started in `main`, so that

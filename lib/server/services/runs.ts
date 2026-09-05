@@ -1,10 +1,9 @@
 import { markUsed, resolve as resolvePack } from "@/lib/server/repos/packs";
-import { findBrain, type Transport } from "@/lib/server/brains";
-import { getSettings } from "@/lib/server/repos/settings";
-import { sourceBrief } from "@/lib/server/services/ingest";
+import { findBrain, write, type Transport } from "@/lib/server/brains";
+import { frameBytes, framePath, sourceBrief } from "@/lib/server/services/ingest";
 import { fetchSource } from "@/lib/server/services/webfetch";
 import { plan, systemPrompt, userPrompt } from "@/lib/server/prompt";
-import { getWorkspace } from "@/lib/server/repos/workspaces";
+import { DEFAULT_BRAIN, getWorkspace } from "@/lib/server/repos/workspaces";
 import { getTopic, updateTopic } from "@/lib/server/repos/series";
 import { getSource } from "@/lib/server/repos/sources";
 import {
@@ -374,11 +373,21 @@ export async function advance(runId: string): Promise<{
   waiting: { sectionId: string; machine: string }[];
   /** Sections nothing on this estate can ever write. Already failed. */
   unroutable: string[];
+  /**
+   * Sections the server is writing itself, on the workspace's API key.
+   *
+   * Its own list rather than folded into `enqueued`, because these have no job
+   * row and no machine: "3 sections queued" and "3 sections are costing money
+   * right now" are different sentences and the page must be able to tell them
+   * apart. Empty unless `workspaces.api_fallback` is on.
+   */
+  onApi: string[];
 }> {
   const out = {
     enqueued: [] as string[],
     waiting: [] as { sectionId: string; machine: string }[],
     unroutable: [] as string[],
+    onApi: [] as string[],
   };
 
   const run = await getRun(runId);
@@ -449,8 +458,17 @@ export async function advance(runId: string): Promise<{
 
   if (!ready.length) return out;
 
-  const settings = await getSettings();
-  const brainId = settings.brain;
+  /*
+   * Which model, and may the server pay for it — both read off the workspace.
+   *
+   * `settings.brain` was one row for the whole console, so a teammate
+   * switching the picker retuned every brand in the database at once. It is
+   * `workspaces.brain` now, beside `brand_voice`, and read here the way
+   * `startRun` already reads the voice: off the workspace, never off the
+   * request. See migration 0016.
+   */
+  const workspace = await getWorkspace(run.workspaceId);
+  const brainId = workspace?.brain || DEFAULT_BRAIN;
   const { needs, transport } = transportFor(brainId);
 
   /*
@@ -474,6 +492,23 @@ export async function advance(runId: string): Promise<{
    */
   const allowFrameRead = route.capable.some((w) => w.canReadFrames);
 
+  /*
+   * The API-key fallback, and the two conditions it takes.
+   *
+   * Nothing awake can write this — either no machine anywhere has the CLI, or
+   * every machine that does is shut — AND this workspace has said, in
+   * writing, that the server may spend a key when that happens.
+   *
+   * The second half is the whole point and is not caution. This split exists
+   * so a run costs a subscription somebody already pays for; a fallback that
+   * fired by itself would spend real money at exactly the moment nobody was
+   * watching, which is the failure docs/DEPLOYING.md warns about. With it off
+   * the job takes the routing below — unroutable, or queued behind
+   * `wait_until` — and says so on the page. It stays available because
+   * "everyone has gone home and this ships tonight" is a real evening.
+   */
+  const onApi = route.live.length === 0 && workspace?.apiFallback === true;
+
   // One fetch of the evidence for the whole wave, not one per section: it is
   // the same website and the same reel for every section in a run.
   const brief = await evidenceFor(run);
@@ -489,6 +524,25 @@ export async function advance(runId: string): Promise<{
       transport,
       allowFrameRead,
     );
+
+    /*
+     * Case 0: nobody can write it and the workspace has agreed to pay.
+     *
+     * Ahead of the other three because it answers the same question they do —
+     * "no machine is going to take this" — with the one answer that produces a
+     * section instead of a message. The row goes to `writing` here, where the
+     * database can see it, and the write itself is detached: `advance` is
+     * called from an HTTP handler and a section takes minutes, so awaiting it
+     * would hold the request open until the gateway gave up. No job row,
+     * because a job with no machine to claim it is a queue entry nothing can
+     * ever pick up — which is the "Writing forever" bug in another costume.
+     */
+    if (onApi) {
+      await setSection(runId, def.id, { state: "writing", error: "" });
+      writeOnServer(run, def, brainId, payload);
+      out.onApi.push(def.id);
+      continue;
+    }
 
     /*
      * Case 1: nothing on this estate has ever advertised the tool.
@@ -575,11 +629,121 @@ export async function advance(runId: string): Promise<{
   // it. After the enqueues, not before: a topic marked generating for a run
   // that turned out to be entirely unroutable would be stuck on a state
   // nothing takes it out of.
-  if (run.topicId && out.enqueued.length) {
+  if (run.topicId && (out.enqueued.length || out.onApi.length)) {
     await updateTopic(run.topicId, { status: "generating" });
   }
 
   return out;
+}
+
+/*
+ * The sections the server is part way through writing itself.
+ *
+ * Only meaningful for the API fallback, and only because that path has no job
+ * row: everything on the queue is guarded by `jobs_one_per_section`, which is
+ * the database saying it where every replica can hear. This is the weaker
+ * thing — one process's memory — and it is honest about covering one process:
+ * two API replicas with the fallback on could both start the same section in
+ * the same second, before either had written `writing`. That is one more
+ * reason the fallback is off by default and per workspace rather than a mode
+ * the console runs in.
+ */
+const writingOnServer = new Set<string>();
+
+/**
+ * The frames, as bytes and as paths on THIS machine.
+ *
+ * Only for the fallback, and only because the server is where the frames
+ * actually live (docs/WORKER.md, "Frames": ingest uploads, write downloads).
+ * A worker gets URLs and downloads them; the server has the files already, so
+ * it reads them rather than fetching its own HTTP endpoint.
+ *
+ * Both shapes, because `write()` picks the transport: the Anthropic API path
+ * takes image blocks and every CLI takes a path. Handing over neither would be
+ * the worst outcome in docs/DECISIONS.md — a section answered from the
+ * transcript and presented as though the stills had been looked at — so when
+ * a section has frames and the chosen brain cannot be shown them, `write()`
+ * refuses and the section fails with a sentence saying why.
+ */
+async function serverFrames(run: Run, def: PackSectionDef) {
+  if (!run.sourceId || def.dependsOn.length) return { images: [], files: [] };
+  const source = await getSource(run.sourceId);
+  if (!source?.frames.length) return { images: [], files: [] };
+
+  const images: { mediaType: string; data: string }[] = [];
+  const files: string[] = [];
+  for (const f of source.frames) {
+    const bytes = await frameBytes(run.sourceId, f.file);
+    if (bytes) images.push({ mediaType: "image/jpeg", data: bytes.toString("base64") });
+    const file = framePath(run.sourceId, f.file);
+    if (file) files.push(file);
+  }
+  return { images, files };
+}
+
+/**
+ * Write one section here, on the workspace's API key, and pay for it.
+ *
+ * Deliberately not awaited by its caller — see "Case 0" — so it owns its own
+ * ending: every path through it finishes the section, because a section left
+ * on `writing` with no job behind it is a run that reads Writing forever and
+ * nothing on any timer to end it. The success and failure tails are
+ * `sectionResult` and `sectionFailed`, the same two the worker-facing
+ * controller calls, so a section written here is recorded, unblocks its
+ * dependants and moves its topic exactly as one written on a laptop does.
+ *
+ * `server:api` in `wrote_with` is the point of the column: it is the only
+ * record anywhere of which sections cost money rather than somebody's
+ * subscription.
+ */
+function writeOnServer(
+  run: Run,
+  def: PackSectionDef,
+  brainId: string,
+  payload: { system: string; user: string; tier: string; timeoutMs: number },
+) {
+  const key = `${run.id}::${def.id}`;
+  if (writingOnServer.has(key)) return;
+  writingOnServer.add(key);
+
+  const job = { kind: "write_section" as const, runId: run.id, sectionId: def.id };
+
+  void (async () => {
+    const started = Date.now();
+    try {
+      const { images, files } = await serverFrames(run, def);
+      const text = await write(brainId, {
+        system: payload.system,
+        user: payload.user,
+        tier: payload.tier,
+        timeoutMs: payload.timeoutMs,
+        images: images.length ? images : undefined,
+        imageFiles: files.length ? files : undefined,
+        /*
+         * The server's own disk, granted by the person who runs the server.
+         *
+         * `workers.can_read_frames` defaults off because that grant lands on
+         * somebody else's desktop and they get the last word. This path is the
+         * API host reading files it already stores, at the explicit request of
+         * a workspace that switched the fallback on, so the same caution does
+         * not apply and refusing here would only mean a frame section silently
+         * losing its frames.
+         */
+        allowFrameRead: true,
+      });
+      // Through sectionResult rather than around it: it is the one place that
+      // knows an empty answer is a failure rather than an empty section.
+      await sectionResult(job, { text, ms: Date.now() - started }, "server:api");
+    } catch (e) {
+      await sectionFailed(
+        job,
+        e instanceof Error ? e.message.slice(0, 400) : "The API did not answer",
+        Date.now() - started,
+      );
+    } finally {
+      writingOnServer.delete(key);
+    }
+  })();
 }
 
 /**
@@ -599,8 +763,10 @@ export async function advance(runId: string): Promise<{
  * about the model at all.
  *
  * `wroteWith` is the machine's name, from the job's worker rather than from
- * anything in the request body. It is the only record of whose subscription
- * paid for this section.
+ * anything in the request body — or the literal `server:api` when the
+ * workspace's API-key fallback wrote it here instead. It is the only record of
+ * whose subscription paid for this section, and of which sections were paid
+ * for in money.
  *
  * Returns the run as it now stands, and has already called `advance` — so the
  * next wave is on the queue by the time this resolves.
@@ -610,7 +776,11 @@ export async function sectionResult(
   job: Pick<Job, "runId" | "sectionId" | "kind">,
   /** What the machine posted: `{ text, ms, using }`. */
   result: Record<string, unknown>,
-  /** The machine's name, from the authenticated worker — never from the body. */
+  /**
+   * The machine's name, from the authenticated worker — never from the body —
+   * or `server:api` from the fallback in `advance`, which is the only other
+   * thing allowed to call this.
+   */
   workerName: string,
 ): Promise<Run | null> {
   if (job.kind !== "write_section" || !job.runId || !job.sectionId) return null;

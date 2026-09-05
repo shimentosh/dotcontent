@@ -26,10 +26,12 @@ import {
   UsedGlyph,
   GlobeGlyph,
   KeyGlyph,
+  PlugGlyph,
   SpeechGlyph,
   StackGlyph,
 } from "@/components/ui/DocIcons";
 import { TeamPanel } from "@/components/settings/TeamPanel";
+import { MachinesPanel } from "@/components/settings/MachinesPanel";
 
 /**
  * Preferences, keys and the account.
@@ -45,6 +47,7 @@ type SectionKey =
   | "general"
   | "keys"
   | "team"
+  | "machines"
   | "language"
   | "appearance"
   | "account";
@@ -53,6 +56,9 @@ const SECTIONS: { key: SectionKey; label: string; icon: typeof CpuGlyph }[] = [
   { key: "general", label: "Generation", icon: CpuGlyph },
   { key: "keys", label: "API keys", icon: KeyGlyph },
   { key: "team", label: "Team", icon: UsedGlyph },
+  // Not CpuGlyph: Generation already wears it, and two identical glyphs in a
+  // seven-row nav make the reader check the words to tell them apart.
+  { key: "machines", label: "Machines", icon: PlugGlyph },
   { key: "language", label: "Language", icon: SpeechGlyph },
   { key: "appearance", label: "Appearance", icon: GlobeGlyph },
   { key: "account", label: "Account", icon: StackGlyph },
@@ -239,24 +245,37 @@ export function SettingsView() {
                     label="Approve finished sections automatically"
                   />
                 </Setting>
+                {/*
+                  This used to be a console-wide toggle, and it granted the
+                  Read tool on whatever filesystem happened to be running the
+                  model. Now that the model runs on somebody's desktop, a
+                  global here would let a teammate turn on file access on
+                  another person's computer — which is not a setting, it is a
+                  hole. It is per machine, in Machines, owned by whoever owns
+                  the disk.
+                */}
                 <Setting
                   label="Let the Claude CLI open frame files"
-                  hint="How Claude reads a video's stills without an API key: the researcher gives it the paths of the frames you ticked and grants it Read for that one call, and the prompt tells it to open those files and nothing else. On by default — turn it off and Claude cannot see frames. ChatGPT and Gemini are unaffected: the CLI hands them the picture itself and grants nothing."
-                  saved={saved === "cliCanReadFrames"}
+                  hint="Set per machine now, because it grants Read on one particular person's computer — the one that will actually run the model."
                 >
-                  <Toggle
-                    on={settings.cliCanReadFrames}
-                    onToggle={() =>
-                      put({ cliCanReadFrames: !settings.cliCanReadFrames })
-                    }
-                    label="Let the Claude CLI open frame files"
-                  />
+                  <Button onClick={() => setSection("machines")}>
+                    Set it on Machines
+                  </Button>
                 </Setting>
               </Card>
             </>
           ) : null}
 
           {section === "team" ? <TeamPanel /> : null}
+
+          {/*
+            Where runs actually happen. It is a settings section rather than a
+            page of its own because it is the same act as Team next door —
+            mint a credential, show it once, list who holds one, revoke — and
+            splitting the two would put "who is in" and "what may run" on
+            different screens.
+          */}
+          {section === "machines" ? <MachinesPanel /> : null}
 
           {settings && section === "keys" ? (
             <>

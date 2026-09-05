@@ -4,8 +4,13 @@ import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
-import { requireTool, run, toolStatus } from "@/lib/server/tools";
-import { getSettings } from "@/lib/server/repos/settings";
+import { run, toolStatus } from "@/lib/server/tools";
+import {
+  activeJobs,
+  enqueue,
+  type Job,
+} from "@/lib/server/repos/jobs";
+import { listWorkers, routeFor } from "@/lib/server/repos/workers";
 import {
   createSource,
   deleteSource,
@@ -29,6 +34,22 @@ import {
  * frames out of it, and a transcriber turns the audio into text. Each step is
  * optional in the sense that a missing tool degrades the result rather than
  * failing the run: metadata alone is still far more than nothing.
+ *
+ * **None of that runs here any more, for a link.** `ingest()` builds a job and
+ * returns; a worker on somebody's desktop runs yt-dlp and ffmpeg, uploads the
+ * stills and a 16 kHz WAV, and posts back what it found. This file keeps the
+ * decisions — what to fetch, where it goes, what a missing tool means — and
+ * the machine only executes, exactly as `advance()` does for a section. See
+ * docs/WORKER.md.
+ *
+ * The one ingest that stays here is an upload. The bytes have already arrived
+ * on this server from the browser, and sending four hundred megabytes back out
+ * to a laptop to cut eight stills would double the transfer to learn nothing;
+ * `ffmpeg` is a real dependency of the API image and already in
+ * `api/Dockerfile`. Transcription still leaves, as its own job, because
+ * `whisper` is the one step that wants a GPU and the one dependency the server
+ * should not carry — and whisper.cpp, the only whisper a non-developer can
+ * install in one click, takes a 16 kHz mono WAV as input anyway.
  */
 
 /**
@@ -47,6 +68,42 @@ const DATA = path.join(DATA_ROOT, "sources");
 const FRAME_COUNT = 8;
 
 /**
+ * The tallest a still is worth being.
+ *
+ * The frames are read for on-screen text and a browser address bar, and 4K
+ * costs bandwidth and disk to answer the same question. Named here rather than
+ * only at the ffmpeg call site because it now also travels in a payload to a
+ * machine this process cannot see, and the two must not drift apart.
+ */
+const FRAME_MAX_HEIGHT = 720;
+
+/**
+ * What whisper.cpp takes, and therefore what gets uploaded.
+ *
+ * Sixteen kilohertz mono is not a number invented here to be tidy — it is
+ * whisper.cpp's input format, so the conversion is a step that had to happen
+ * on somebody's machine regardless. Doing it during the ingest means the audio
+ * that crosses the network is roughly a thirtieth of the video: a megabyte a
+ * minute rather than four hundred, which is the whole reason transcription can
+ * afford to be a separate job on a different desktop.
+ */
+const AUDIO_RATE = 16_000;
+
+/** The one name a source's audio may have, on either side of the network. */
+export const AUDIO_FILE = "audio.wav";
+
+/**
+ * How long the machine fetching a link gets before it gives up.
+ *
+ * yt-dlp climbs a ladder of three attempts and each may pull tens of
+ * megabytes, so this is generous on purpose. The server says it rather than
+ * the worker choosing, for the same reason `SECTION_TIMEOUT_MS` does: an
+ * ingest must not take twice as long on one teammate's laptop as on another's
+ * because of a different default.
+ */
+const INGEST_TIMEOUT_MS = 900_000;
+
+/**
  * How long whisper gets before it is killed.
  *
  * The base model on a CPU transcribes at roughly real time, so ten minutes
@@ -55,6 +112,19 @@ const FRAME_COUNT = 8;
  * person reads when it runs out has to quote the same number.
  */
 const WHISPER_TIMEOUT_MS = 600_000;
+
+/** Which whisper model the transcriber is told to load. */
+const WHISPER_MODEL = "base";
+
+/**
+ * How long a job may sit waiting for a machine that is capable but shut.
+ *
+ * The same fifteen minutes `advance()` gives a section, and for the same
+ * reason: somebody opening their laptop is the normal resolution and it should
+ * just start, while a laptop that stays shut has to end as a stated failure
+ * rather than as a row that reads "Fetching…" all night.
+ */
+const WAIT_FOR_MACHINE_MS = 15 * 60_000;
 
 /**
  * The only shapes a frame filename may have — the evenly spaced ones, and the
@@ -74,11 +144,38 @@ export class IngestError extends Error {
 
 const dirFor = (sid: string) => path.join(DATA, sid);
 
+/** Where a source's 16 kHz WAV is, for the endpoints that take and serve it. */
+export function audioPath(sourceId: string) {
+  return path.join(dirFor(sourceId), AUDIO_FILE);
+}
+
+/** Make sure a source's directory exists before something is written into it. */
+export async function ensureSourceDir(sourceId: string) {
+  const dir = dirFor(sourceId);
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
+}
+
 /**
  * Fetch a source, or hand back the one already fetched.
  *
  * Re-fetching is opt-in: the same reel gives the same frames and the same
  * transcript, and a run started twice should not cost two downloads.
+ *
+ * **This no longer fetches anything.** It writes a job and returns a source in
+ * `fetching`, exactly the shape `advance()` gave `write_section`: the server
+ * decides what to fetch and where the results go, and whichever machine has
+ * yt-dlp on it does the work. The old version spawned yt-dlp, ffmpeg and
+ * whisper inside the API process, which is only correct while the API is a
+ * laptop — on the VPS `docs/DEPLOYING.md` describes it is a box with no GPU,
+ * no browser cookies and, quite often, no yt-dlp at all.
+ *
+ * The three routing cases are `advance()`'s, and they are three rather than
+ * one because the answers differ: an install command, "open your laptop", and
+ * "wait a moment" are not the same sentence. What they share is the rule
+ * underneath — a job that cannot run must reach a terminal state, visibly. A
+ * source left on `fetching` with nothing in the queue behind it is the
+ * five-days-on-Writing row of `docs/DECISIONS.md` wearing a different hat.
  */
 export async function ingest(input: {
   url: string;
@@ -93,66 +190,126 @@ export async function ingest(input: {
   const existing = await findByUrl(url, input.workspaceId ?? null);
   if (existing && !input.refresh && existing.state === "ready") return existing;
 
-  const source = existing ?? (await createSource({ url, workspaceId: input.workspaceId }));
-  await updateSource(source.id, { state: "fetching", error: "" });
+  const source =
+    existing ?? (await createSource({ url, workspaceId: input.workspaceId }));
 
-  try {
-    const meta = await fetchMeta(url);
-    await updateSource(source.id, {
-      title: String(meta.title ?? ""),
-      uploader: String(meta.uploader ?? meta.channel ?? ""),
-      description: String(meta.description ?? "").slice(0, 8000),
-      duration: meta.duration == null ? null : Math.round(Number(meta.duration)),
-      thumbnail: String(meta.thumbnail ?? ""),
-      meta,
-    });
-
-    const dir = dirFor(source.id);
-    await fs.mkdir(dir, { recursive: true });
-
-    const video = await download(url, dir);
-    const frames = video.file ? await cutFrames(video.file, dir) : [];
-    // Only when there is a file: with nothing downloaded there is no audio,
-    // and "whisper is switched off" underneath "the video is private" is a
-    // second sentence about a step that was never going to run.
-    const spoken = video.file
-      ? await transcribe(video.file, dir)
-      : { text: "", note: "", failed: false };
-
-    return (await updateSource(source.id, {
-      state: "ready",
-      frames,
-      transcript: spoken.text,
-      /*
-       * The reason, in yt-dlp's own words.
-       *
-       * "Could not be downloaded" is the same sentence for a private video, a
-       * dead link and a platform refusing anonymous requests, and only one of
-       * those is worth trying again. The tool already says which.
-       */
-      /*
-       * Whichever step fell short, in its own words.
-       *
-       * The download's reason wins when there is one: it is the larger loss,
-       * and it is why whisper never ran. Otherwise a whisper that FAILED gets
-       * the line — this path said nothing at all about the transcript before,
-       * so a whisper killed at the ten minute mark produced a source marked
-       * ready, with an empty transcript, and no hint anywhere that anything
-       * had gone wrong. A whisper deliberately switched off says nothing here:
-       * a link fetched for its caption is doing what was asked of it, and an
-       * error on every one of them is a banner people learn to stop reading.
-       */
-      error: video.file
-        ? spoken.failed
-          ? spoken.note
-          : ""
-        : `Metadata only — ${video.error}. The caption and title are still usable.`,
-    }))!;
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "The download failed";
-    await updateSource(source.id, { state: "failed", error: message.slice(0, 600) });
-    throw new IngestError(message, 502);
+  /*
+   * One live ingest per source.
+   *
+   * `jobs_one_per_section` cannot help here: its predicate is on
+   * (run_id, section_id), both null for an ingest, and Postgres treats NULLs
+   * as distinct — so the index that stops a section being written twice is
+   * silent about a link being fetched twice. Two tabs, a double click on
+   * Fetch, or a refresh while one is already running would otherwise put two
+   * machines on the same download, and the second one's frames would land on
+   * top of the first's half-written JPEGs.
+   *
+   * Read rather than enforced, because the honest fix is a partial unique
+   * index on `source_id` and that lives in a migration this change does not
+   * own. A race between two clicks in the same second can still slip through;
+   * the cost of that is one duplicated download, not a corrupted row.
+   */
+  const already = (await activeJobs()).some(
+    (j) => j.sourceId === source.id && j.kind === "ingest_source",
+  );
+  if (already) {
+    return (await updateSource(source.id, { state: "fetching" }))!;
   }
+
+  const payload = {
+    sourceId: source.id,
+    url,
+    refresh: input.refresh === true,
+    frameCount: FRAME_COUNT,
+    maxHeight: FRAME_MAX_HEIGHT,
+    audioRate: AUDIO_RATE,
+    audioFile: AUDIO_FILE,
+    timeoutMs: INGEST_TIMEOUT_MS,
+    /*
+     * Where the bytes go, named in the payload rather than assembled on the
+     * worker. The server is the single source of truth for frames — the
+     * browser renders them, the machine that ingests and the machine that
+     * writes are usually different, and desktops are not backed up — so
+     * ingest uploads and write downloads, and the uploader is told exactly
+     * where by the side that owns the filesystem.
+     */
+    uploadFrames: `/api/workers/sources/${source.id}/frames`,
+    uploadAudio: `/api/workers/sources/${source.id}/audio`,
+  };
+
+  /*
+   * `yt-dlp` alone, and the rest as soft preferences.
+   *
+   * The pipeline degrades rather than failing when a tool is missing —
+   * metadata alone is still far more than nothing — and that must survive the
+   * move. Naming ffmpeg in `needs` would make a machine with yt-dlp and no
+   * ffmpeg unable to see the job at all, so a link that would have yielded a
+   * title, a caption and a transcript yields an error instead. `whisper` is
+   * not here for a stronger reason still: transcription is its own job, so an
+   * estate with no whisper anywhere still ingests.
+   */
+  const needs = ["yt-dlp"];
+  const route = await routeFor(needs);
+
+  /*
+   * Case 1: nothing on this estate has ever advertised yt-dlp.
+   *
+   * The job is unroutable at birth and the source fails with the sentence
+   * naming what to install. Queueing it instead would be a row that reads
+   * "Fetching…" until somebody deletes it, because no machine can ever claim
+   * it — forever is not a state a person can act on.
+   */
+  if (route.missing.length) {
+    const need = route.missing[0];
+    const install = await installHint(need);
+    const message = install
+      ? `No machine here has ${need}, so this link cannot be fetched. Install it on one — ${install} — then press Fetch again.`
+      : `No machine here has ${need}, and none has ever reported how to install it.`;
+    await enqueue({
+      kind: "ingest_source",
+      workspaceId: source.workspaceId,
+      sourceId: source.id,
+      needs,
+      payload,
+      state: "unroutable",
+      error: message,
+    });
+    return (await updateSource(source.id, {
+      state: "failed",
+      error: message,
+    }))!;
+  }
+
+  /*
+   * Case 2: a machine could fetch it, but none of them is awake.
+   *
+   * Queued with a deadline and a sentence naming the machine, so somebody
+   * opening their laptop simply starts it. The source stays `fetching` and
+   * carries the wait as its error line, because "waiting for Shakhawat's
+   * desktop" is the true answer to "why has this not moved" and a blank row is
+   * not. Past `wait_until` the reaper ends the job — see `sourceFailed`.
+   */
+  const asleep = route.live.length === 0;
+  const machines = route.capable.map((w) => w.name).join(" or ");
+  const waiting = `Waiting for ${machines}, which has not been seen recently.`;
+
+  await enqueue({
+    kind: "ingest_source",
+    workspaceId: source.workspaceId,
+    sourceId: source.id,
+    needs,
+    payload,
+    ...(asleep
+      ? { waitUntil: new Date(Date.now() + WAIT_FOR_MACHINE_MS), error: waiting }
+      : {}),
+  });
+
+  // Case 3 is ordinary queueing and has nothing to say beyond position, so
+  // the error line is cleared rather than left showing a previous attempt's.
+  return (await updateSource(source.id, {
+    state: "fetching",
+    error: asleep ? waiting : "",
+  }))!;
 }
 
 /**
@@ -169,11 +326,13 @@ export const MAX_UPLOAD_BYTES = 512 * 1024 * 1024;
 /**
  * A video somebody had on their machine.
  *
- * The same pipeline as a link, minus the download: the file is written into
- * the source's own directory and then cut and transcribed exactly as a fetched
- * one is. Footage that was never posted anywhere is the ordinary case for
- * research — a screen recording, a client's export, a reel saved months ago —
- * and it had no way in at all while a URL was the only input.
+ * The one ingest that does **not** become a job, and deliberately. The bytes
+ * are already arriving here from the browser; sending a four hundred megabyte
+ * recording back out to a laptop to cut eight stills would double the transfer
+ * to learn nothing, and `ffmpeg` is already a dependency of the API image. So
+ * the server does the ffmpeg half itself — the frames and the WAV — and then
+ * enqueues `transcribe_audio` like any other source, because that is the half
+ * that wants a GPU and is the one dependency the server should not carry.
  *
  * Streamed to disk, not buffered. `await file.arrayBuffer()` holds the whole
  * upload in memory — a 400MB recording became 400MB of heap in the route, then
@@ -201,32 +360,326 @@ export async function ingestFile(input: {
   await updateSource(source.id, { state: "fetching", error: "" });
 
   try {
-    const dir = dirFor(source.id);
-    await fs.mkdir(dir, { recursive: true });
+    const dir = await ensureSourceDir(source.id);
     const file = path.join(dir, `video${ext}`);
     await writeCapped(input.stream, file);
 
     const seconds = await durationOf(file);
     const frames = await cutFrames(file, dir);
-    const spoken = await transcribe(file, dir);
+    // The audio out of the same file, in the format the transcriber takes, so
+    // the only thing that ever leaves this server for a transcription is about
+    // a megabyte a minute rather than the whole recording.
+    const audio = await extractAudio(file, dir);
 
-    return (await updateSource(source.id, {
+    const ready = (await updateSource(source.id, {
       state: "ready",
       title: name,
       duration: seconds || null,
       frames,
-      transcript: spoken.text,
-      // What actually happened, rather than the guess this used to print. "Off
-      // or not installed" was shown to people whose whisper was installed,
-      // switched on, and killed by the timeout — the one case of the four
-      // where there is something to be done about it.
-      error: spoken.note,
     }))!;
+
+    /*
+     * The transcript arrives later, on somebody else's machine.
+     *
+     * An upload is `ready` the moment the frames exist — everything a person
+     * came here for is on the page — and the note says where the words are.
+     * Waiting for whisper before calling it ready would put a spinner on a
+     * source that is already usable, on an estate that may have no whisper at
+     * all.
+     */
+    const note = audio
+      ? await requestTranscript(ready)
+      : "No transcript — ffmpeg could not get any audio out of that file.";
+    return (await updateSource(source.id, { error: note }))!;
   } catch (e) {
     const message = e instanceof Error ? e.message : "The upload failed";
     await updateSource(source.id, { state: "failed", error: message.slice(0, 600) });
     throw new IngestError(message, 500);
   }
+}
+
+/**
+ * A machine has finished fetching a link. Write down what it found.
+ *
+ * The counterpart of `sectionResult` in services/runs.ts, and called from the
+ * same place: the worker-facing controller, once `jobs.succeed()` has
+ * confirmed the job still belonged to the machine posting it. Do not call it
+ * on a result `succeed()` returned null for — that is a laptop waking up and
+ * posting an ingest that was reassigned twenty minutes ago, and whatever is on
+ * the row now is the copy that stands.
+ *
+ * The frames and the WAV are already here: they went up through
+ * `POST /api/workers/sources/:id/frames` and `.../audio` before this was
+ * posted, so the result only NAMES files the server already holds. Every name
+ * is checked against `FRAME_FILE` again anyway. It was checked at the upload,
+ * but this is a different write — these names go onto the row and are later
+ * joined to a path by `framePath`, and a name that never matched an uploaded
+ * file would put a broken picture in the picker at best.
+ *
+ * Nothing here fails the source over a missing transcript. The worker reports
+ * what it could not do in `error`, that sentence is shown, and the source is
+ * still `ready`: metadata and stills are far more than nothing, and an ingest
+ * that failed because an optional tool was absent would make the feature
+ * unavailable to anyone without a Python toolchain.
+ */
+export async function sourceResult(
+  job: Pick<Job, "kind" | "sourceId">,
+  result: Record<string, unknown>,
+): Promise<Source | null> {
+  if (job.kind !== "ingest_source" || !job.sourceId) return null;
+  const source = await getSource(job.sourceId);
+  if (!source) return null;
+
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  const meta = result.meta;
+  const duration = Number(result.duration);
+
+  const frames: Frame[] = Array.isArray(result.frames)
+    ? (result.frames as unknown[])
+        .map((f) => (f && typeof f === "object" ? (f as Record<string, unknown>) : {}))
+        .filter((f) => FRAME_FILE.test(str(f.file)))
+        .map((f) => ({ at: Number(f.at) || 0, file: str(f.file) }))
+        .sort((a, b) => a.at - b.at)
+    : [];
+
+  const transcript = str(result.transcript).trim();
+
+  await updateSource(source.id, {
+    state: "ready",
+    title: str(result.title),
+    uploader: str(result.uploader),
+    description: str(result.description).slice(0, 8000),
+    duration: Number.isFinite(duration) && duration > 0 ? Math.round(duration) : null,
+    thumbnail: str(result.thumbnail),
+    frames,
+    ...(transcript ? { transcript } : {}),
+    ...(meta === undefined ? {} : { meta }),
+  });
+
+  /*
+   * Whichever step fell short, in its own words — and the machine's reason
+   * wins.
+   *
+   * A download that failed is the larger loss and it is why there is no audio
+   * to transcribe, so its sentence goes on the row and no transcription is
+   * asked for. `Metadata only — <yt-dlp's own words>` matters because "could
+   * not be downloaded" is the same sentence for a private video, a dead link
+   * and a platform refusing anonymous requests, and only one of those is worth
+   * trying again.
+   */
+  const reported = str(result.error).trim();
+  const audio = result.audio === true;
+
+  let note = reported;
+  if (!note && !transcript) {
+    note = audio
+      ? await requestTranscript(source)
+      : "No transcript — the machine that fetched this got no audio out of it.";
+  }
+
+  return (await updateSource(source.id, { error: note }))!;
+}
+
+/**
+ * A transcription came back. Put the words on the source.
+ *
+ * Separate from `sourceResult` because it is a separate job on, usually, a
+ * separate machine: an upload never had an `ingest_source` at all, and a link
+ * fetched on a laptop with no GPU is transcribed on a desktop that has one.
+ */
+export async function transcriptResult(
+  job: Pick<Job, "kind" | "sourceId">,
+  result: Record<string, unknown>,
+): Promise<Source | null> {
+  if (job.kind !== "transcribe_audio" || !job.sourceId) return null;
+  const source = await getSource(job.sourceId);
+  if (!source) return null;
+
+  const text = (typeof result.text === "string" ? result.text : "").trim();
+
+  /*
+   * Transcribed to nothing is a fact about the audio, not a success.
+   *
+   * A reel with music and no speech genuinely has no transcript, and so does a
+   * whisper that exited clean and wrote an empty file. Neither is a failure of
+   * the source and neither may look like a transcript that simply has not
+   * arrived yet, so both get a sentence and the source stays ready.
+   */
+  if (!text) {
+    return (await updateSource(source.id, {
+      error: "No transcript — the audio was transcribed and came back empty.",
+    }))!;
+  }
+
+  return (await updateSource(source.id, {
+    transcript: text,
+    // Only a note about the transcript is cleared. An ingest's own reason —
+    // "Metadata only — this video is private" — is still true after a
+    // transcription lands somewhere else, and wiping it would quietly remove
+    // the only record that the video was never downloaded.
+    ...(isTranscriptNote(source.error) ? { error: "" } : {}),
+  }))!;
+}
+
+/**
+ * A source's job failed on the machine that held it, or ran out of patience.
+ *
+ * The counterpart of `sectionFailed`, and it must be called from the same two
+ * places for the same reason: the worker-facing controller when `jobs.fail()`
+ * comes back with a job in a TERMINAL state, and the reaper when a job ends on
+ * evidence nobody reports — a lease that expired because a laptop was shut,
+ * attempts spent, or a `wait_until` nobody came back for. Without the second
+ * caller a source sits on `fetching` with an empty queue behind it, which is
+ * precisely the row this whole design exists to make impossible.
+ *
+ * Do not call it on a retryable failure that still has attempts left: that job
+ * is about to be tried on another machine, and marking the source failed in
+ * between would flash "Failed" on something that is about to succeed.
+ *
+ * The two kinds end differently, and that difference is the degradation
+ * philosophy stated in code:
+ *
+ * - An `ingest_source` that failed produced nothing, so the source fails and
+ *   says which machine said what.
+ * - A `transcribe_audio` that failed cost the source its words and nothing
+ *   else. The metadata, the caption and the stills are all still there and are
+ *   still worth reading, so the source stays `ready` and the failure is a
+ *   sentence rather than a state. Failing it here would mean an estate whose
+ *   only whisper machine is broken could not use a link at all.
+ */
+export async function sourceFailed(
+  job: Pick<Job, "kind" | "sourceId">,
+  error: string,
+  /** The machine that reported it, so the sentence can name it. "" if none. */
+  workerName = "",
+): Promise<Source | null> {
+  if (!job.sourceId) return null;
+  const source = await getSource(job.sourceId);
+  if (!source) return null;
+
+  const reason = (error || "The machine did not say why.").slice(0, 600);
+  const on = workerName ? ` on ${workerName}` : "";
+
+  if (job.kind === "transcribe_audio") {
+    return (await updateSource(source.id, {
+      // Kept in the "No transcript" shape on purpose: `transcriptResult` reads
+      // that shape to know whether an arriving transcript may clear the line.
+      error: `No transcript — transcription failed${on}: ${reason}`,
+    }))!;
+  }
+
+  if (job.kind !== "ingest_source") return source;
+
+  return (await updateSource(source.id, {
+    state: "failed",
+    error: `${reason}${on ? ` (${workerName})` : ""}`,
+  }))!;
+}
+
+/**
+ * Ask for a transcript, and return the sentence the source should show.
+ *
+ * The same three routing cases as everything else, and the same rule — a job
+ * that cannot run must reach a terminal state, visibly — with one deliberate
+ * difference: **none of the three fails the source.** A missing transcriber
+ * degrades a source and says which; it does not fail an ingest. That was true
+ * when whisper ran inline and it has to survive the split, or an estate where
+ * nobody has installed whisper stops being able to use a link at all.
+ *
+ * So case 1 does not even enqueue. An `unroutable` row would be an honest
+ * record, but it would also be a job on the queue view for something nobody
+ * asked to be told about twice; the sentence on the source is the whole of
+ * what a person can act on.
+ */
+async function requestTranscript(source: Source): Promise<string> {
+  if (source.transcript.trim()) return "";
+
+  const needs = ["whisper"];
+  const route = await routeFor(needs);
+
+  if (route.missing.length) {
+    const install = await installHint("whisper");
+    return install
+      ? `No transcript — no machine here has whisper. Install it on one: ${install}`
+      : "No transcript — no machine here has whisper.";
+  }
+
+  /*
+   * One live transcription per source, for the reason `ingest` guards itself:
+   * an ingest whose result lands twice, or an upload retried, would otherwise
+   * put two machines on the same WAV and spend two GPUs to write the same
+   * words.
+   */
+  const already = (await activeJobs()).some(
+    (j) => j.sourceId === source.id && j.kind === "transcribe_audio",
+  );
+  if (already) return "Transcript — a machine is working on it.";
+
+  const asleep = route.live.length === 0;
+  const machines = route.capable.map((w) => w.name).join(" or ");
+
+  await enqueue({
+    kind: "transcribe_audio",
+    workspaceId: source.workspaceId,
+    sourceId: source.id,
+    needs,
+    payload: {
+      sourceId: source.id,
+      // The WAV and nothing else. This is the sentence the whole split turns
+      // on: audio is roughly a thirtieth of the video, so the round trip a
+      // desktop GPU is worth is a megabyte a minute rather than four hundred.
+      audioUrl: `/api/workers/sources/${source.id}/audio`,
+      model: WHISPER_MODEL,
+      timeoutMs: WHISPER_TIMEOUT_MS,
+    },
+    ...(asleep
+      ? {
+          waitUntil: new Date(Date.now() + WAIT_FOR_MACHINE_MS),
+          error: `No transcript yet — waiting for ${machines}, which has not been seen recently.`,
+        }
+      : {}),
+  });
+
+  return asleep
+    ? `No transcript yet — waiting for ${machines}, which has not been seen recently.`
+    : "Transcript — a machine is working on it.";
+}
+
+/**
+ * Whether a source's error line is about its transcript rather than about the
+ * source itself.
+ *
+ * A marker in the wording rather than a column, because there is exactly one
+ * `error` field and two things want to write to it. Every sentence this file
+ * produces about a transcript begins with "No transcript" or "Transcript", and
+ * only those may be cleared when words finally arrive — an ingest's own reason
+ * ("Metadata only — the video is private") is still true afterwards and must
+ * survive.
+ */
+function isTranscriptNote(error: string) {
+  return /^(No transcript|Transcript)\b/.test(error.trim());
+}
+
+/**
+ * How to install a tool nothing on this estate has.
+ *
+ * Read off any machine that has ever reported the tool, present or not: a
+ * `ToolStatus` carries its own `install` string, so the sentence a person is
+ * shown comes from the same table the probe wrote rather than from a second
+ * copy of the install commands kept here and left to drift. When no machine
+ * has ever heard of it there is nothing honest to say beyond its name.
+ *
+ * The twin of the one in services/runs.ts. Duplicated rather than shared
+ * because it is six lines and the alternative is a helpers module that exists
+ * to hold six lines; if a third caller appears, that is the moment to move it.
+ */
+async function installHint(need: string): Promise<string> {
+  const workers = await listWorkers();
+  for (const w of workers) {
+    const tool = w.tools.find((t) => t.id === need);
+    if (tool?.install) return tool.install;
+  }
+  return "";
 }
 
 /**
@@ -236,6 +689,12 @@ export async function ingestFile(input: {
  * the wrong answer whenever the thing worth seeing — the address bar, the
  * result on screen — happens between two of them. Added to the row rather than
  * replacing it, in time order, so the strip stays a timeline.
+ *
+ * Only for uploads, now, and the message says so. A fetched link's video never
+ * comes to this server — the worker uploads eight stills and a WAV and keeps
+ * the four hundred megabytes on its own disk — so there is genuinely nothing
+ * here to cut a ninth frame out of, and a sentence that pretended otherwise
+ * would send somebody looking for a file that was never meant to exist.
  */
 export async function addFrameAt(sourceId: string, at: number): Promise<Source> {
   const source = await getSource(sourceId);
@@ -246,7 +705,7 @@ export async function addFrameAt(sourceId: string, at: number): Promise<Source> 
   const video = files.find((f) => f.startsWith("video."));
   if (!video) {
     throw new IngestError(
-      "The video itself was never downloaded, so there is nothing to take a frame from.",
+      "The video itself is not on this server — a fetched link is downloaded on the machine that ingests it, and only the stills and the audio come back. Upload the file to take extra frames from it.",
       409,
     );
   }
@@ -269,7 +728,7 @@ export async function addFrameAt(sourceId: string, at: number): Promise<Source> 
       "-frames:v",
       "1",
       "-vf",
-      "scale=720:-2",
+      `scale=-2:${FRAME_MAX_HEIGHT}`,
       "-q:v",
       "4",
       path.join(dir, file),
@@ -351,110 +810,25 @@ export function framePath(sourceId: string, file: string) {
   return FRAME_FILE.test(file) ? path.join(dirFor(sourceId), file) : null;
 }
 
-/** What the platform says about the video, without downloading it. */
-async function fetchMeta(url: string): Promise<Record<string, unknown>> {
-  await requireTool("yt-dlp");
-  const { code, out, err } = await run(
-    "yt-dlp",
-    ["--dump-single-json", "--no-warnings", "--no-playlist", url],
-    { timeout: 90_000 },
-  );
-  if (code !== 0 || !out.trim()) {
-    throw new Error(firstUseful(err) || "yt-dlp could not read that link");
-  }
-  try {
-    return JSON.parse(out) as Record<string, unknown>;
-  } catch {
-    throw new Error("yt-dlp returned something that was not JSON");
-  }
-}
-
 /**
- * The video file itself.
+ * Whether a tool is here to be run.
  *
- * Tried more than once, because "download this video" is not one operation any
- * more. YouTube in particular refuses anonymous requests for the media even
- * when it happily hands over the metadata, so the ladder goes: a single
- * progressive file (smallest, most often allowed), then separate video+audio
- * streams muxed by ffmpeg, then the same again with the cookies from a signed
- * in browser.
- *
- * Capped at 720p throughout: the frames are read for on-screen text and a
- * browser address bar, and 4K costs bandwidth and disk to answer the same
- * question.
- *
- * Returns the path, or "" and the reason it could not — metadata alone is
- * still a useful source, so this degrades rather than throwing.
+ * Presence only. This used to AND `toolStatus(id).present` with the global
+ * `settings.enabled`, and that switch is now a fact about a WORKER —
+ * `workers.enabled`, evaluated by the machine against its own row. Leaving it
+ * in would mean somebody switching ffmpeg off for their laptop silently
+ * stopped every browser upload on the server from getting any stills, which is
+ * a control doing something nobody asked it to. `ffmpeg` and `ffprobe` are
+ * dependencies of the API image — they are in `api/Dockerfile` — so on this
+ * side there is nothing to switch off.
  */
-async function download(
-  url: string,
-  dir: string,
-): Promise<{ file: string; error: string }> {
-  // Switched off means metadata only, deliberately — which is the fast path
-  // when all you want is the caption and the title.
-  if (!(await allowed("yt-dlp"))) {
-    return { file: "", error: "yt-dlp is switched off in Integrations" };
-  }
-
-  const attempts: { label: string; args: string[] }[] = [
-    { label: "progressive", args: ["-f", "b[height<=720]/b"] },
-    { label: "split streams", args: ["-f", "bv*[height<=720]+ba/bv*+ba"] },
-    // Last, and only if the others failed: reading the browser's cookies is
-    // how you get at something the platform will only serve to a signed-in
-    // session. It fails harmlessly when the browser is running and holding
-    // its cookie database open.
-    {
-      label: "browser cookies",
-      args: [
-        "--cookies-from-browser",
-        "chrome",
-        "-f",
-        "b[height<=720]/b",
-      ],
-    },
-  ];
-
-  const failures: string[] = [];
-
-  for (const attempt of attempts) {
-    const { code, err } = await run(
-      "yt-dlp",
-      [
-        ...attempt.args,
-        "--no-playlist",
-        "--no-warnings",
-        "-o",
-        path.join(dir, "video.%(ext)s"),
-        url,
-      ],
-      { timeout: 300_000 },
-    );
-
-    const files = await fs.readdir(dir).catch(() => []);
-    const file = files.find((f) => f.startsWith("video."));
-    if (code === 0 && file) return { file: path.join(dir, file), error: "" };
-
-    failures.push(`${attempt.label}: ${firstUseful(err) || `exit ${code}`}`);
-  }
-
-  return { file: "", error: failures[0] ?? "yt-dlp could not fetch the media" };
-}
-
-/**
- * Whether a tool may run: installed AND switched on.
- *
- * The switches on the integrations page were saved and then ignored, which
- * made them the worst kind of control — one that remembers what you told it
- * and does the opposite.
- */
-async function allowed(id: "yt-dlp" | "ffmpeg" | "ffprobe" | "whisper") {
-  const [status, settings] = await Promise.all([toolStatus(id), getSettings()]);
-  return status.present && settings.enabled.includes(id);
+async function present(id: "ffmpeg" | "ffprobe") {
+  return (await toolStatus(id)).present;
 }
 
 /** Evenly spaced stills, as JPEGs beside the video. */
 async function cutFrames(video: string, dir: string): Promise<Frame[]> {
-  if (!(await allowed("ffmpeg"))) return [];
+  if (!(await present("ffmpeg"))) return [];
 
   const seconds = await durationOf(video);
   if (!seconds) return [];
@@ -476,7 +850,7 @@ async function cutFrames(video: string, dir: string): Promise<Frame[]> {
         "-frames:v",
         "1",
         "-vf",
-        "scale=720:-2",
+        `scale=-2:${FRAME_MAX_HEIGHT}`,
         "-q:v",
         "4",
         path.join(dir, file),
@@ -488,8 +862,35 @@ async function cutFrames(video: string, dir: string): Promise<Frame[]> {
   return frames;
 }
 
+/**
+ * The audio, on its own, in the only format the transcriber takes.
+ *
+ * `-vn` drops the video, `-ac 1` mixes to mono and `-ar 16000` resamples,
+ * which together are whisper.cpp's required input and, not by coincidence,
+ * about a thirtieth of the bytes. Returns whether there is a file: a silent
+ * screen recording with no audio track at all is a real thing people upload,
+ * and it is not a failure — it is a source with no words in it, which the
+ * caller says out loud rather than leaving as an empty transcript nobody can
+ * explain.
+ */
+async function extractAudio(video: string, dir: string): Promise<boolean> {
+  if (!(await present("ffmpeg"))) return false;
+  const out = path.join(dir, AUDIO_FILE);
+  const { code } = await run(
+    "ffmpeg",
+    ["-y", "-i", video, "-vn", "-ac", "1", "-ar", String(AUDIO_RATE), out],
+    { timeout: 300_000 },
+  );
+  if (code !== 0) return false;
+  // ffmpeg can exit 0 having written a header and nothing else, and a WAV with
+  // no samples sent to a GPU is a minute of somebody's machine spent to
+  // transcribe silence.
+  const size = await fs.stat(out).then((s) => s.size).catch(() => 0);
+  return size > 1024;
+}
+
 async function durationOf(video: string) {
-  if (!(await allowed("ffprobe"))) return 0;
+  if (!(await present("ffprobe"))) return 0;
   const { out } = await run(
     "ffprobe",
     [
@@ -505,148 +906,6 @@ async function durationOf(video: string) {
   );
   const seconds = Number(out.trim());
   return Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
-}
-
-/**
- * What came back from the attempt to transcribe — and, when nothing did, why.
- *
- * A bare "" said four different things at once: whisper is switched off,
- * whisper is not installed, whisper ran for ten minutes and was killed, and
- * whisper exited fine but wrote nothing. The first two are the fast path and
- * the last two are failures, and the caller marked all four `state: "ready"`
- * with an empty transcript — so a source whose transcription had timed out
- * looked exactly like one nobody wanted transcribed, and the model later wrote
- * a thinner section off the frames alone with nobody the wiser.
- */
-type Transcribed = {
-  /** The spoken audio as text, or "" if there is none. */
-  text: string;
-  /**
-   * Why there is no text, as the sentence the source's `error` field carries
-   * to the screen. Empty when there IS text, and only then.
-   */
-  note: string;
-  /**
-   * Whether that note is a real failure or an expected absence. Switched off
-   * and not installed are decisions about this machine; timed out and crashed
-   * are things that went wrong and might go right on a retry.
-   */
-  failed: boolean;
-};
-
-/**
- * The spoken audio, as text.
- *
- * Whisper if it is switched on and installed. If it is not, this returns no
- * text and the source is still useful — the caption and description usually
- * carry the domain too. The alternative, failing the whole ingest over an
- * optional tool, would make the feature unavailable to anyone without a Python
- * toolchain. A whisper that ran and failed degrades the same way, but says so:
- * the transcript is the difference between a section written from what was
- * said and one written from what could be seen.
- */
-async function transcribe(video: string, dir: string): Promise<Transcribed> {
-  /*
-   * However this machine can reach it.
-   *
-   * `pip install openai-whisper` often lands the script somewhere not on
-   * PATH — normal on Windows — so the probe also tries `python -m whisper`
-   * and records whichever answered. Running the recorded one means an install
-   * the probe found is an install this can use.
-   */
-  const [tool, settings] = await Promise.all([toolStatus("whisper"), getSettings()]);
-
-  /*
-   * The two expected absences, told apart.
-   *
-   * `allowed()` collapses them into one boolean, which is the right answer for
-   * ffmpeg and the wrong one here: "switched off" is fixed by a toggle on the
-   * Integrations page and "not installed" by a pip install, and a person told
-   * the wrong one goes looking in the wrong place.
-   */
-  if (!settings.enabled.includes("whisper")) {
-    return {
-      text: "",
-      note: "No transcript — whisper is switched off in Integrations.",
-      failed: false,
-    };
-  }
-  if (!tool.present) {
-    return {
-      text: "",
-      note: `No transcript — whisper is not installed here. ${tool.install}`,
-      failed: false,
-    };
-  }
-
-  const { code, err } = await run(
-    tool.command,
-    [
-      ...tool.lead,
-      video,
-      "--model",
-      "base",
-      "--output_format",
-      "txt",
-      "--output_dir",
-      dir,
-      "--fp16",
-      "False",
-    ],
-    { env: tool.env, timeout: WHISPER_TIMEOUT_MS },
-  );
-
-  if (code !== 0) {
-    /*
-     * A timeout reads as its own thing, not as a crash.
-     *
-     * `run()` kills the child and returns -1 with "Timed out after ..." on
-     * stderr, and that is the likeliest real failure here: the base model on a
-     * CPU runs at roughly real time, so a long video on an ordinary laptop
-     * runs out of clock rather than crashing. The remedy is a shorter clip,
-     * not a reinstall, so the sentence must not say the same thing a crash
-     * would.
-     */
-    if (/Timed out after/.test(err)) {
-      return {
-        text: "",
-        note: `No transcript — whisper ran out of time after ${Math.round(
-          WHISPER_TIMEOUT_MS / 60_000,
-        )} minutes on this video. A shorter clip will finish.`,
-        failed: true,
-      };
-    }
-    return {
-      text: "",
-      note: `No transcript — whisper failed: ${firstUseful(err) || `exit ${code}`}`,
-      failed: true,
-    };
-  }
-
-  const files = await fs.readdir(dir).catch(() => []);
-  const txt = files.find((f) => f.endsWith(".txt"));
-  /*
-   * Exited clean and left nothing behind: a directory it could not write into,
-   * or a build that wrote some other format. There is no transcript either
-   * way, and it is not the fast path, so it does not get to look like one.
-   */
-  if (!txt) {
-    return {
-      text: "",
-      note: "No transcript — whisper finished but wrote no text file.",
-      failed: true,
-    };
-  }
-
-  const text = (await fs.readFile(path.join(dir, txt), "utf8").catch(() => "")).trim();
-  if (!text) {
-    return {
-      text: "",
-      note: "No transcript — whisper wrote an empty text file.",
-      failed: true,
-    };
-  }
-  return { text, note: "", failed: false };
 }
 
 /** One frame's bytes, for the API route that serves them. */
@@ -710,13 +969,3 @@ export async function sourceBrief(sourceId: string) {
     ...lines,
   ].join("\n\n");
 }
-
-/** Trims a tool's stderr to the line that says what went wrong. */
-function firstUseful(err: string) {
-  const line = err
-    .split("\n")
-    .map((l) => l.trim())
-    .find((l) => l && !l.startsWith("WARNING"));
-  return (line ?? "").replace(/^ERROR:\s*/, "").slice(0, 300);
-}
-

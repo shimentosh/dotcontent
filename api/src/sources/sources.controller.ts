@@ -29,11 +29,25 @@ import {
 /**
  * Source videos: fetched from a link, or uploaded from a machine.
  *
- * Slow on purpose. A fetch holds while yt-dlp downloads, ffmpeg cuts stills
- * and a transcriber runs — minutes, not seconds — and the browser waits with
- * a spinner on it. Express has no request timeout of its own, so there is
- * nothing here to raise; the Next handlers needed `maxDuration` and this does
- * not.
+ * The two halves are no longer the same shape, and the difference is the whole
+ * of `docs/WORKER.md`'s "Uploads stay on the server" decision:
+ *
+ * - **A link returns immediately.** `ingest()` writes an `ingest_source` job
+ *   and hands back a source in `fetching`; yt-dlp and ffmpeg run on whichever
+ *   machine has them. This route used to hold for minutes with a spinner on
+ *   the other end, which only ever worked because the API was somebody's
+ *   laptop — on a server it is a request held open across a download that
+ *   machine cannot do at all.
+ * - **An upload still holds.** The bytes are already arriving here, and
+ *   sending a four hundred megabyte recording back out to a laptop to cut
+ *   eight stills would double the transfer to learn nothing. The ffmpeg half
+ *   runs in this process; only the transcription leaves, as its own job.
+ *
+ * So a caller polls `GET /sources/:id` after a fetch and watches `state` move
+ * from `fetching` to `ready` or `failed`. It must not treat the POST's answer
+ * as finished work: `frames` and `transcript` are empty in it by design, and
+ * a screen that renders that response as the result shows an empty picker for
+ * every link.
  */
 @Controller("sources")
 export class SourcesController {
@@ -42,7 +56,15 @@ export class SourcesController {
     return listSources(workspaceId || undefined);
   }
 
-  /** Fetch a reel by link, or hand back the one already fetched. */
+  /**
+   * Queue a fetch for a link, or hand back the one already fetched.
+   *
+   * Returns a source in `fetching` with a job behind it — or, when nothing on
+   * this estate has yt-dlp, one already `failed` with a sentence naming what
+   * to install. Both are terminal-or-moving states a person can act on, which
+   * is the rule: a source must never sit on `fetching` with an empty queue
+   * behind it.
+   */
   @Post()
   fetch(
     @Body() body: { url?: string; workspaceId?: string | null; refresh?: boolean },
@@ -62,6 +84,11 @@ export class SourcesController {
    * parser: a parser buffers, and the whole point of the ingest's streaming
    * path is that a 400MB recording never sits in memory. The declared size is
    * refused up front as a courtesy; the ingest counts the bytes itself.
+   *
+   * Still the slow route, and still on purpose — the frames are cut here. It
+   * comes back `ready` with the stills on it, and the transcript arrives later
+   * on whichever machine has whisper, so `transcript` may fill in after this
+   * response the same way a link's does.
    */
   @Post("upload")
   upload(@Req() req: Request) {
@@ -117,7 +144,14 @@ export class SourcesController {
     return { ok: await removeSource(id) };
   }
 
-  /** One more still, at a moment somebody asked for. */
+  /**
+   * One more still, at a moment somebody asked for.
+   *
+   * Uploads only. A fetched link's video is downloaded on the machine that
+   * ingests it and never comes here — only the stills and the audio do — so
+   * this answers 409 with a sentence saying so rather than pretending a file
+   * is missing.
+   */
   @Post(":id/frames")
   @HttpCode(201)
   addFrame(@Param("id") id: string, @Body() body: { at?: number }) {
