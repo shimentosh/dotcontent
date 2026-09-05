@@ -175,12 +175,6 @@ export class RunsController {
     };
   }
 
-  /** Is this run being written right now, by anyone, on any machine? */
-  @Get(":id/start")
-  async running(@Param("id") id: string) {
-    return { running: await isRunning(id) };
-  }
-
   /**
    * The queue's own record of this run, one entry per job, with the machine.
    *
