@@ -61,92 +61,165 @@ three files of plumbing for something nothing queries by.
   {
     name: "0015_workers",
     sql: `
-    CREATE TABLE workers (
-      id           TEXT PRIMARY KEY,
-      -- Whose machine. Removing a person removes their sessions today; their
-      -- workers go the same way, because the CLI on that box is signed in as
-      -- them and the jobs it claims spend their subscription.
-      user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      -- What the person calls it. "Shakhawat's desktop", not a hostname —
-      -- the machine picker is read by a human choosing where a run happens.
-      name         TEXT NOT NULL,
-      -- sha256 of the enrolment token. The token itself is shown once, in the
-      -- desktop app, and is never in this table: a database dump must not be
-      -- a list of live credentials, the same reason API keys are encrypted.
-      token_hash   TEXT NOT NULL UNIQUE,
-      platform     TEXT NOT NULL DEFAULT '',
-      version      TEXT NOT NULL DEFAULT '',
-      -- What it can run: the ToolStatus array lib/server/tools.ts already
-      -- produces, whole. Probing is now the worker's job and this is the
-      -- report — the server has no machine to probe.
-      tools        JSONB NOT NULL DEFAULT '[]'::jsonb,
-      -- The subset of those the owner has switched on. settings.enabled is a
-      -- global singleton today and cannot be: "ffmpeg is off" is a fact about
-      -- one machine.
-      enabled      JSONB NOT NULL DEFAULT '[]'::jsonb,
-      -- Whether this machine's Claude CLI may be granted Read for frames.
-      -- The switch belongs to whoever owns the machine, not to the console.
-      can_read_frames BOOLEAN NOT NULL DEFAULT false,
-      max_concurrency INTEGER NOT NULL DEFAULT 1,
-      last_seen_at TIMESTAMPTZ,
-      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-    CREATE INDEX workers_user ON workers(user_id);
-    CREATE INDEX workers_live ON workers(last_seen_at);
+CREATE TABLE workers (
+  id           TEXT PRIMARY KEY,
+  -- Whose machine. Removing a person removes their sessions today; their
+  -- workers go the same way, because the CLI on that box is signed in as
+  -- them and the jobs it claims spend their subscription.
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  -- What the person calls it. "Shakhawat's desktop", not a hostname —
+  -- the machine picker is read by a human choosing where a run happens.
+  name         TEXT NOT NULL,
+  -- sha256 of the enrolment token. The token itself is shown once, in the
+  -- desktop app, and is never in this table: a database dump must not be
+  -- a list of live credentials, the same reason API keys are encrypted.
+  token_hash   TEXT NOT NULL UNIQUE,
+  platform     TEXT NOT NULL DEFAULT '',
+  version      TEXT NOT NULL DEFAULT '',
+  -- What it can run: the ToolStatus array lib/server/tools.ts already
+  -- produces, whole. Probing is now the worker's job and this is the
+  -- report — the server has no machine to probe.
+  tools        JSONB NOT NULL DEFAULT '[]'::jsonb,
+  -- The subset of those the owner has switched on. settings.enabled is a
+  -- global singleton today and cannot be: "ffmpeg is off" is a fact about
+  -- one machine.
+  enabled      JSONB NOT NULL DEFAULT '[]'::jsonb,
+  -- Which workspaces this machine may serve. EMPTY MEANS ALL, and today
+  -- it is empty on every row: there are no roles in this console, and
+  -- inventing one here would be one team's answer imposed through a
+  -- schema. The column exists anyway because the day a client's
+  -- unreleased footage must not reach a contractor's laptop, the answer
+  -- has to be one UPDATE and one AND in the claim query — not a
+  -- migration, a backfill and a rewrite of the most important query in
+  -- the system, under time pressure.
+  workspace_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+  -- Whether this machine's Claude CLI may be granted Read for frames.
+  -- The switch belongs to whoever owns the machine, not to the console.
+  -- Note the global it replaces defaults ON and this defaults OFF:
+  -- enrolling a machine must not silently carry over file access somebody
+  -- granted on a different one.
+  can_read_frames BOOLEAN NOT NULL DEFAULT false,
+  -- One machine is one CLI login, so one job at a time. Parallelism is
+  -- meant to come from more laptops; twelve claude processes on one
+  -- laptop is not the win, twelve sections across four laptops is.
+  max_concurrency INTEGER NOT NULL DEFAULT 1,
+  last_seen_at TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX workers_user ON workers(user_id);
+CREATE INDEX workers_live ON workers(last_seen_at);
 
-    CREATE TABLE jobs (
-      id           TEXT PRIMARY KEY,
-      kind         TEXT NOT NULL,             -- write_section | ingest_source | test_brain
-      -- queued -> claimed -> done | failed | unroutable | cancelled
-      state        TEXT NOT NULL DEFAULT 'queued',
-      workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
-      -- What this job is FOR, so a result can be written back without the
-      -- payload having to be re-read. Nulled, never cascaded to the job's
-      -- deletion: a finished run's jobs are the only record of where the work
-      -- ran and how long it took.
-      run_id       TEXT REFERENCES runs(id) ON DELETE CASCADE,
-      section_id   TEXT,
-      source_id    TEXT REFERENCES sources(id) ON DELETE CASCADE,
-      -- Tool ids, all of which a worker must advertise AND have enabled.
-      -- ["claude"] for a section; ["yt-dlp","ffmpeg","whisper"] for an ingest.
-      needs        JSONB NOT NULL DEFAULT '[]'::jsonb,
-      -- Pin to one machine when the person chose one. Null means any worker
-      -- that qualifies.
-      wants_worker TEXT REFERENCES workers(id) ON DELETE SET NULL,
-      -- Everything the worker is told. Built by the server, opaque to the
-      -- worker beyond its own kind's shape. See "Job types".
-      payload      JSONB NOT NULL DEFAULT '{}'::jsonb,
-      -- What came back, kept for the same reason sources.research is kept: a
-      -- result that only ever reached a browser did not survive a reload.
-      result       JSONB NOT NULL DEFAULT '{}'::jsonb,
-      error        TEXT NOT NULL DEFAULT '',
-      attempts     INTEGER NOT NULL DEFAULT 0,
-      max_attempts INTEGER NOT NULL DEFAULT 2,
-      priority     INTEGER NOT NULL DEFAULT 0,
-      worker_id    TEXT REFERENCES workers(id) ON DELETE SET NULL,
-      -- The lease. A claimed job is this worker's until this passes, and the
-      -- reaper takes it back the moment it does. This column is what replaces
-      -- requeueOrphans.
-      lease_until  TIMESTAMPTZ,
-      -- Past this, with nobody able to run it, the job fails with a sentence
-      -- naming the tool. Set at enqueue when a capable worker exists but is
-      -- offline; see "Capability matching".
-      wait_until   TIMESTAMPTZ,
-      claimed_at   TIMESTAMPTZ,
-      finished_at  TIMESTAMPTZ,
-      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-    -- The claim query's index: state and priority, ordered by age.
-    CREATE INDEX jobs_claimable ON jobs(state, priority DESC, created_at)
-      WHERE state = 'queued';
-    CREATE INDEX jobs_lease ON jobs(lease_until) WHERE state = 'claimed';
-    CREATE INDEX jobs_run ON jobs(run_id);
-    -- One live job per section. A double Run, two tabs, or a stale poll must
-    -- not enqueue the same section twice and pay two subscriptions for it.
-    CREATE UNIQUE INDEX jobs_one_per_section ON jobs(run_id, section_id)
-      WHERE state IN ('queued', 'claimed');
+CREATE TABLE jobs (
+  id           TEXT PRIMARY KEY,
+  -- write_section | ingest_source | transcribe_audio | test_brain.
+  -- transcribe_audio is its own kind because whisper is the one step that
+  -- wants a GPU and the one dependency the server should not carry: an
+  -- upload's frames are cut where the bytes already are, and only the
+  -- 16 kHz WAV — a megabyte a minute, not four hundred — goes out.
+  kind         TEXT NOT NULL,
+  -- queued -> claimed -> done | failed | unroutable | cancelled
+  state        TEXT NOT NULL DEFAULT 'queued',
+  workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
+  -- What this job is FOR, so a result can be written back without the
+  -- payload having to be re-read.
+  run_id       TEXT REFERENCES runs(id) ON DELETE CASCADE,
+  section_id   TEXT,
+  source_id    TEXT REFERENCES sources(id) ON DELETE CASCADE,
+  -- Tool ids, all of which a worker must advertise AND have enabled.
+  -- ["claude"] for a section; ["yt-dlp"] for an ingest, which degrades
+  -- rather than failing when ffmpeg or whisper are missing.
+  needs        JSONB NOT NULL DEFAULT '[]'::jsonb,
+  -- Pin to one machine when the person chose one. Null means any worker
+  -- that qualifies.
+  wants_worker TEXT REFERENCES workers(id) ON DELETE SET NULL,
+  -- Everything the worker is told. Built by the server, opaque to the
+  -- worker beyond its own kind's shape. Emptied by the payload sweep a
+  -- day after the job finishes; see sweepPayloads in repos/jobs.ts.
+  payload      JSONB NOT NULL DEFAULT '{}'::jsonb,
+  -- What came back, kept for the same reason sources.research is kept: a
+  -- result that only ever reached a browser did not survive a reload.
+  result       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  error        TEXT NOT NULL DEFAULT '',
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  -- One retry, because one retry covers the closed laptop and the dropped
+  -- connection — the failures that recur — and a prompt the model refuses
+  -- will refuse it again, so a third attempt is money spent to learn
+  -- nothing.
+  max_attempts INTEGER NOT NULL DEFAULT 2,
+  priority     INTEGER NOT NULL DEFAULT 0,
+  worker_id    TEXT REFERENCES workers(id) ON DELETE SET NULL,
+  -- The lease. A claimed job is this worker's until this passes, and the
+  -- reaper takes it back the moment it does. This column is what replaces
+  -- requeueOrphans.
+  lease_until  TIMESTAMPTZ,
+  -- Past this, with nobody having picked it up, the job fails with a
+  -- sentence naming the machine it was waiting for. Set at enqueue when a
+  -- capable worker exists but is not live; see "Capability matching".
+  wait_until   TIMESTAMPTZ,
+  claimed_at   TIMESTAMPTZ,
+  finished_at  TIMESTAMPTZ,
+  -- Stamped by the payload sweep, so a job it has already emptied is
+  -- cheap to skip and is distinguishable from one whose payload really
+  -- was {}.
+  swept_at     TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- The claim query's index: state and priority, ordered by age.
+CREATE INDEX jobs_claimable ON jobs(state, priority DESC, created_at)
+  WHERE state = 'queued';
+CREATE INDEX jobs_lease ON jobs(lease_until) WHERE state = 'claimed';
+CREATE INDEX jobs_run ON jobs(run_id);
+-- The payload sweep runs inside the reaper's 15s interval, so it must not
+-- be a sequential scan of every job this console has ever run.
+CREATE INDEX jobs_sweep ON jobs(finished_at)
+  WHERE finished_at IS NOT NULL AND swept_at IS NULL;
+-- One live job per section. A double Run, two tabs, or a stale poll must
+-- not enqueue the same section twice and pay two subscriptions for it.
+-- Postgres treats NULLs as distinct, so ingests and brain tests — which
+-- have no section — are untouched by this.
+CREATE UNIQUE INDEX jobs_one_per_section ON jobs(run_id, section_id)
+  WHERE state IN ('queued', 'claimed');
+
+-- Which machine wrote each section, or 'server:api' when the workspace's
+-- API-key fallback did it. created_by from 0014 only says who pressed the
+-- button; without this, "which sections did we actually pay money for"
+-- has no answer anywhere in the database.
+ALTER TABLE run_sections ADD COLUMN wrote_with TEXT NOT NULL DEFAULT '';
+
+-- The API-key fallback, off. viaAnthropic and friends stay on the server
+-- and the server never reaches for them on its own: this whole split
+-- exists so a run costs a subscription somebody already pays for, and a
+-- fallback that fired when nobody's laptop was open would spend real
+-- money precisely when nobody was watching. Turning it on is a deliberate
+-- act, per workspace, by somebody who knows what it costs.
+ALTER TABLE workspaces ADD COLUMN api_fallback BOOLEAN NOT NULL DEFAULT false;
+
+/*
+ * A ONE-TIME sweep, and the last one there will ever be.
+ *
+ * Every run_sections row that says 'writing' at this moment belongs to a
+ * driver that died with a process on this machine, because until this
+ * migration there was only ever one process and it held the run in its
+ * own memory. So these really are orphans of the old world, and putting
+ * them back in the queue is simply the truth about them.
+ *
+ * Nothing at boot may ever do this again. resumeOrphans() in
+ * api/src/main.ts made exactly this UPDATE on every start, reasoning that
+ * a 'writing' row must be dead because its driver was. Once the work runs
+ * on somebody else's laptop that reasoning is false: a deploy or a crash
+ * would requeue a section a machine is four minutes into writing, the
+ * section gets written twice, the second result overwrites the first, and
+ * both spent a subscription. With two API replicas it is worse — every
+ * boot steals the other replica's in-flight work.
+ *
+ * From here jobs.lease_until decides, per job, on evidence — a lease that
+ * ran out — instead of on the assumption that a boot means nothing is
+ * running.
+ */
+UPDATE run_sections SET state = 'queued', updated_at = now()
+ WHERE state = 'writing';
     `,
   },
 ```
@@ -160,8 +233,13 @@ WITH claimed AS (
      AND (wants_worker IS NULL OR wants_worker = $1)
      -- Everything this job needs, the worker has. $2 is the worker's enabled
      -- tool ids as a jsonb array; ?& asks "are all of these keys present".
-     AND (SELECT bool_and(need IN (SELECT jsonb_array_elements_text($2::jsonb)))
-            FROM jsonb_array_elements_text(needs) AS need)
+     -- COALESCE because bool_and over zero rows is NULL, not true: without
+     -- it a job with an empty `needs` — a test_brain, an ingest that asks for
+     -- nothing — is invisible to every worker forever.
+     AND COALESCE(
+           (SELECT bool_and(need IN (SELECT jsonb_array_elements_text($2::jsonb)))
+              FROM jsonb_array_elements_text(needs) AS need),
+           true)
    ORDER BY priority DESC, created_at
    FOR UPDATE SKIP LOCKED
    LIMIT $3

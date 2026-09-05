@@ -1,6 +1,12 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
+    // "nodenext", not "node16": NestJS 12 is ESM-only ("type": "module", no
+    // require export). node16 rejects importing it from this CommonJS build
+    // (TS1479); nodenext models Node's require(esm) support, which is how it
+    // already works at runtime. The emit stays CommonJS — this package has no
+    // "type": "module" — so ts-node, nest and dist/ are unaffected.
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
     "target": "es2022",
     "lib": ["es2023"],
     "types": ["node"],
@@ -9,7 +15,6 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "moduleResolution": "node",
     "resolveJsonModule": true,
     "sourceMap": true,
     "baseUrl": "..",

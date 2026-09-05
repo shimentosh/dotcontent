@@ -671,10 +671,34 @@ export async function sourceBrief(sourceId: string) {
     source.duration ? `DURATION: ${source.duration}s` : "",
     source.description ? `CAPTION / DESCRIPTION:\n${source.description}` : "",
     source.transcript ? `TRANSCRIPT:\n${source.transcript}` : "",
+    /*
+     * How many stills, and at what seconds — and deliberately NOT where they
+     * are.
+     *
+     * This line used to end with "They are on disk under
+     * .data/sources/<id>/", which is the server's own filesystem layout. Once
+     * a section is written by a worker on somebody's desktop that sentence is
+     * simply false: the frames were downloaded for that one call into a temp
+     * directory, under a different name, on a different machine. A model told
+     * to open a path that is not there does the thing `CLI_GUARD` in
+     * lib/server/brains.ts exists to stop — it goes hunting, finds nothing,
+     * and writes a paragraph about the failure into the script.
+     *
+     * The paths belong to the transport, not to the evidence. `viaClaudeCli`
+     * lists them and is granted Read for the one call, `viaCodexCli` attaches
+     * them with -i, `viaGeminiCli` resolves them as @ references; each already
+     * names them correctly for itself, and nothing else has any business
+     * naming them. Do not helpfully put a path back here.
+     *
+     * The wording says what was taken from the video, not what the model is
+     * looking at: `write()` refuses a request with pictures a transport cannot
+     * show, and the Ollama path never sees any, so a source brief that
+     * promised "here are your frames" would be lying on every one of those.
+     */
     source.frames.length
-      ? `FRAMES: ${source.frames.length} stills were taken, at ${source.frames
+      ? `FRAMES: ${source.frames.length} stills were taken from the video, at ${source.frames
           .map((f) => `${f.at}s`)
-          .join(", ")}. They are on disk under .data/sources/${source.id}/.`
+          .join(", ")}.`
       : "",
   ].filter(Boolean);
 
