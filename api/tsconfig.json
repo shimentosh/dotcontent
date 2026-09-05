@@ -12,10 +12,8 @@
     "moduleResolution": "node",
     "resolveJsonModule": true,
     "sourceMap": true,
-    // No baseUrl — TypeScript 7 removes it. Path mappings without one are
-    // resolved relative to this file, so "@/" is the repo root, one level up.
-    // register-paths.cjs carries the same mapping for the runtime.
-    "paths": { "@/*": ["../*"] },
+    "baseUrl": "..",
+    "paths": { "@/*": ["./*"] },
     "rootDir": "..",
     "outDir": "dist"
   },
