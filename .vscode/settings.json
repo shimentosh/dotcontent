@@ -1,0 +1,9 @@
+{
+  // Use the TypeScript in node_modules (5.9.3) for IntelliSense, not the one
+  // bundled with the editor. A newer bundled compiler reports options this
+  // repo's compiler still accepts — `moduleResolution: node` and `baseUrl` in
+  // api/tsconfig.json are deprecated in TypeScript 7 — as errors in files that
+  // build and typecheck clean. Editor and CI now agree on one compiler.
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true
+}

@@ -463,4 +463,328 @@ export const MIGRATIONS: { name: string; sql: string }[] = [
     ALTER TABLE sources ADD COLUMN researched_at TIMESTAMPTZ;
     `,
   },
+
+  {
+    /*
+     * Who started a run.
+     *
+     * Nothing recorded it. On one laptop that was the same person every time,
+     * so the column would have been a joke; on a server it is the only way to
+     * answer the question DEPLOYING.md poses — a run against an API key costs
+     * real money, and "who ran what" had no answer anywhere in the database.
+     * It is also the groundwork for several people on several machines driving
+     * runs against one of these.
+     *
+     * Nulled rather than cascaded, for the reason `topic_id` above is: the
+     * content outlives the person who asked for it, and an employee leaving
+     * must not take a month of scripts with them. `invites.created_by` is the
+     * same pattern for the same reason.
+     *
+     * Nullable with no backfill: every run that already exists was started by
+     * somebody the database cannot name, and guessing — the owner, the first
+     * user — would put a name on work as if it were known.
+     */
+    name: "0014_run_author",
+    sql: `
+    ALTER TABLE runs ADD COLUMN created_by TEXT REFERENCES users(id) ON DELETE SET NULL;
+    CREATE INDEX runs_created_by ON runs(created_by);
+    `,
+  },
+
+  {
+    /*
+     * Workers, and the queue they claim from.
+     *
+     * Everything before this migration assumed one process: the box that
+     * answered HTTP was the box with `claude`, `yt-dlp` and `whisper` on it,
+     * so "is this section being written?" could be a Set in that process's
+     * memory. The moment the model runs on somebody's laptop that assumption
+     * is false, and the two things holding it together become bugs — a lock
+     * that only locks one replica, and a boot sweep that steals work a
+     * machine is four minutes into. `docs/WORKER.md` has the argument; these
+     * two tables are it, written down.
+     *
+     * A `workers` row is one machine with one signed-in CLI on it. A `jobs`
+     * row is one unit of work the server has already finished thinking about:
+     * finished text and a command, never a pack or a rule, because business
+     * logic shipped to fifteen desktops needs fifteen updates to change a
+     * prompt, and the prompt changes weekly.
+     */
+    name: "0015_workers",
+    sql: `
+    CREATE TABLE workers (
+      id           TEXT PRIMARY KEY,
+      -- Whose machine. Removing a person removes their sessions today; their
+      -- workers go the same way, because the CLI on that box is signed in as
+      -- them and the jobs it claims spend their subscription.
+      user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      -- What the person calls it. "Shakhawat's desktop", not a hostname —
+      -- the machine picker is read by a human choosing where a run happens.
+      name         TEXT NOT NULL,
+      -- sha256 of the enrolment token. The token itself is shown once, in the
+      -- desktop app, and is never in this table: a database dump must not be
+      -- a list of live credentials, the same reason API keys are encrypted.
+      token_hash   TEXT NOT NULL UNIQUE,
+      platform     TEXT NOT NULL DEFAULT '',
+      version      TEXT NOT NULL DEFAULT '',
+      -- What it can run: the ToolStatus array lib/server/tools.ts already
+      -- produces, whole. Probing is now the worker's job and this is the
+      -- report — the server has no machine to probe.
+      tools        JSONB NOT NULL DEFAULT '[]'::jsonb,
+      -- The subset of those the owner has switched on. settings.enabled is a
+      -- global singleton today and cannot be: "ffmpeg is off" is a fact about
+      -- one machine.
+      enabled      JSONB NOT NULL DEFAULT '[]'::jsonb,
+      -- Which workspaces this machine may serve. EMPTY MEANS ALL, and today
+      -- it is empty on every row: there are no roles in this console, and
+      -- inventing one here would be one team's answer imposed through a
+      -- schema. The column exists anyway because the day a client's
+      -- unreleased footage must not reach a contractor's laptop, the answer
+      -- has to be one UPDATE and one AND in the claim query — not a
+      -- migration, a backfill and a rewrite of the most important query in
+      -- the system, under time pressure.
+      workspace_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+      -- Whether this machine's Claude CLI may be granted Read for frames.
+      -- The switch belongs to whoever owns the machine, not to the console.
+      -- Note the global it replaces defaults ON and this defaults OFF:
+      -- enrolling a machine must not silently carry over file access somebody
+      -- granted on a different one.
+      can_read_frames BOOLEAN NOT NULL DEFAULT false,
+      -- One machine is one CLI login, so one job at a time. Parallelism is
+      -- meant to come from more laptops; twelve claude processes on one
+      -- laptop is not the win, twelve sections across four laptops is.
+      max_concurrency INTEGER NOT NULL DEFAULT 1,
+      last_seen_at TIMESTAMPTZ,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX workers_user ON workers(user_id);
+    CREATE INDEX workers_live ON workers(last_seen_at);
+
+    CREATE TABLE jobs (
+      id           TEXT PRIMARY KEY,
+      -- write_section | ingest_source | transcribe_audio | test_brain.
+      -- transcribe_audio is its own kind because whisper is the one step that
+      -- wants a GPU and the one dependency the server should not carry: an
+      -- upload's frames are cut where the bytes already are, and only the
+      -- 16 kHz WAV — a megabyte a minute, not four hundred — goes out.
+      kind         TEXT NOT NULL,
+      -- queued -> claimed -> done | failed | unroutable | cancelled
+      state        TEXT NOT NULL DEFAULT 'queued',
+      workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
+      -- What this job is FOR, so a result can be written back without the
+      -- payload having to be re-read.
+      run_id       TEXT REFERENCES runs(id) ON DELETE CASCADE,
+      section_id   TEXT,
+      source_id    TEXT REFERENCES sources(id) ON DELETE CASCADE,
+      -- Tool ids, all of which a worker must advertise AND have enabled.
+      -- ["claude"] for a section; ["yt-dlp"] for an ingest, which degrades
+      -- rather than failing when ffmpeg or whisper are missing.
+      needs        JSONB NOT NULL DEFAULT '[]'::jsonb,
+      -- Pin to one machine when the person chose one. Null means any worker
+      -- that qualifies.
+      wants_worker TEXT REFERENCES workers(id) ON DELETE SET NULL,
+      -- Everything the worker is told. Built by the server, opaque to the
+      -- worker beyond its own kind's shape. Emptied by the payload sweep a
+      -- day after the job finishes; see sweepPayloads in repos/jobs.ts.
+      payload      JSONB NOT NULL DEFAULT '{}'::jsonb,
+      -- What came back, kept for the same reason sources.research is kept: a
+      -- result that only ever reached a browser did not survive a reload.
+      result       JSONB NOT NULL DEFAULT '{}'::jsonb,
+      error        TEXT NOT NULL DEFAULT '',
+      attempts     INTEGER NOT NULL DEFAULT 0,
+      -- One retry, because one retry covers the closed laptop and the dropped
+      -- connection — the failures that recur — and a prompt the model refuses
+      -- will refuse it again, so a third attempt is money spent to learn
+      -- nothing.
+      max_attempts INTEGER NOT NULL DEFAULT 2,
+      priority     INTEGER NOT NULL DEFAULT 0,
+      worker_id    TEXT REFERENCES workers(id) ON DELETE SET NULL,
+      -- The lease. A claimed job is this worker's until this passes, and the
+      -- reaper takes it back the moment it does. This column is what replaces
+      -- requeueOrphans.
+      lease_until  TIMESTAMPTZ,
+      -- Past this, with nobody having picked it up, the job fails with a
+      -- sentence naming the machine it was waiting for. Set at enqueue when a
+      -- capable worker exists but is not live; see "Capability matching".
+      wait_until   TIMESTAMPTZ,
+      claimed_at   TIMESTAMPTZ,
+      finished_at  TIMESTAMPTZ,
+      -- Stamped by the payload sweep, so a job it has already emptied is
+      -- cheap to skip and is distinguishable from one whose payload really
+      -- was {}.
+      swept_at     TIMESTAMPTZ,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    -- The claim query's index: state and priority, ordered by age.
+    CREATE INDEX jobs_claimable ON jobs(state, priority DESC, created_at)
+      WHERE state = 'queued';
+    CREATE INDEX jobs_lease ON jobs(lease_until) WHERE state = 'claimed';
+    CREATE INDEX jobs_run ON jobs(run_id);
+    -- The payload sweep runs inside the reaper's 15s interval, so it must not
+    -- be a sequential scan of every job this console has ever run.
+    CREATE INDEX jobs_sweep ON jobs(finished_at)
+      WHERE finished_at IS NOT NULL AND swept_at IS NULL;
+    -- One live job per section. A double Run, two tabs, or a stale poll must
+    -- not enqueue the same section twice and pay two subscriptions for it.
+    -- Postgres treats NULLs as distinct, so ingests and brain tests — which
+    -- have no section — are untouched by this.
+    CREATE UNIQUE INDEX jobs_one_per_section ON jobs(run_id, section_id)
+      WHERE state IN ('queued', 'claimed');
+
+    -- Which machine wrote each section, or 'server:api' when the workspace's
+    -- API-key fallback did it. created_by from 0014 only says who pressed the
+    -- button; without this, "which sections did we actually pay money for"
+    -- has no answer anywhere in the database.
+    ALTER TABLE run_sections ADD COLUMN wrote_with TEXT NOT NULL DEFAULT '';
+
+    -- The API-key fallback, off. viaAnthropic and friends stay on the server
+    -- and the server never reaches for them on its own: this whole split
+    -- exists so a run costs a subscription somebody already pays for, and a
+    -- fallback that fired when nobody's laptop was open would spend real
+    -- money precisely when nobody was watching. Turning it on is a deliberate
+    -- act, per workspace, by somebody who knows what it costs.
+    ALTER TABLE workspaces ADD COLUMN api_fallback BOOLEAN NOT NULL DEFAULT false;
+
+    /*
+     * A ONE-TIME sweep, and the last one there will ever be.
+     *
+     * Every run_sections row that says 'writing' at this moment belongs to a
+     * driver that died with a process on this machine, because until this
+     * migration there was only ever one process and it held the run in its
+     * own memory. So these really are orphans of the old world, and putting
+     * them back in the queue is simply the truth about them.
+     *
+     * Nothing at boot may ever do this again. resumeOrphans() in
+     * api/src/main.ts made exactly this UPDATE on every start, reasoning that
+     * a 'writing' row must be dead because its driver was. Once the work runs
+     * on somebody else's laptop that reasoning is false: a deploy or a crash
+     * would requeue a section a machine is four minutes into writing, the
+     * section gets written twice, the second result overwrites the first, and
+     * both spent a subscription. With two API replicas it is worse — every
+     * boot steals the other replica's in-flight work.
+     *
+     * From here jobs.lease_until decides, per job, on evidence — a lease that
+     * ran out — instead of on the assumption that a boot means nothing is
+     * running.
+     */
+    UPDATE run_sections SET state = 'queued', updated_at = now()
+     WHERE state = 'writing';
+    `,
+  },
+
+  {
+    /*
+     * The three global settings that could never be global.
+     *
+     * `settings` is one row per key for the whole console, which was exactly
+     * right for one person on one laptop and is three separate wrong things
+     * for a team on a server. Each of these moves to the thing it is actually
+     * a fact about — see docs/WORKER.md, "settings.brain is a singleton and
+     * must be scoped".
+     *
+     * `enabled` and `cliCanReadFrames` need no new column: `workers.enabled`
+     * and `workers.can_read_frames` arrived with 0015 and a machine reports
+     * or is granted them per row. They are only deleted here.
+     */
+    name: "0016_scoped_settings",
+    sql: `
+    -- Which model writes is an editorial decision about the CONTENT, so it
+    -- sits beside brand_voice, which is scoped for exactly that reason and is
+    -- already read by startRun off the workspace rather than off the request.
+    -- A workspace writing Bangla scripts and one writing SEO copy may want
+    -- different models, and neither should change under the other because
+    -- somebody switched a global.
+    ALTER TABLE workspaces ADD COLUMN brain TEXT NOT NULL DEFAULT 'claude-cli';
+
+    /*
+     * Carry the global onto every workspace that exists.
+     *
+     * Without this, upgrading silently retunes every run in the database to
+     * the default: somebody who switched the console to Gemini months ago
+     * would press Run and get Claude, with nothing on any screen saying the
+     * setting had moved. The value is a jsonb string, so #>> '{}' is what
+     * takes the text out of it without the quotes coming along. COALESCE
+     * covers a console that never wrote the row at all, which is every
+     * install that left the picker alone.
+     */
+    UPDATE workspaces SET brain = COALESCE(
+      (SELECT value #>> '{}' FROM settings WHERE key = 'brain'), 'claude-cli');
+
+    /*
+     * And delete all three globals, rather than leaving them to rot.
+     *
+     * getSettings() only copies keys it already knows, so a leftover row is
+     * invisible today — which is the danger. A future setting that reuses one
+     * of these names would come up holding a value somebody set for a
+     * different purpose in a different world, and nothing would say so.
+     *
+     * cliCanReadFrames in particular must NOT be carried anywhere. It
+     * defaults ON here and workers.can_read_frames defaults OFF, deliberately:
+     * it grants the Read tool on one specific person's filesystem, and
+     * enrolling a machine must not inherit a permission somebody granted on a
+     * different one. Dropping the value on the floor is the migration doing
+     * its job.
+     */
+    DELETE FROM settings WHERE key IN ('brain', 'enabled', 'cliCanReadFrames');
+    `,
+  },
+
+  {
+    /*
+     * One sign-in, carried from the desktop app into its webview.
+     *
+     * The app signs in from Rust and holds the session as a header credential;
+     * the console window beside it is an ordinary navigation to somebody
+     * else's origin and carries no cookie. So a teammate signed in twice on
+     * first setup — once in the setup window, once in the console — for the
+     * same account, on the same machine, a second apart.
+     *
+     * A hand-off code is the bridge. The app mints one over the session it
+     * already holds, the webview is opened at `/api/auth/adopt?code=…`, and
+     * that route spends the code and sets the cookie the ordinary way. See
+     * "Hand-off" in lib/server/auth.ts for the rules and docs/WORKER.md for
+     * what this deliberately is not.
+     */
+    name: "0017_handoff_codes",
+    sql: `
+    CREATE TABLE handoffs (
+      -- The sha256 of the code, never the code. For the two minutes it lives
+      -- a hand-off code IS a session: whoever holds it can spend it and be
+      -- signed in as that person. Storing it raw would make a database dump a
+      -- list of live logins, which is the same argument workers.token_hash
+      -- makes about a machine's token, and it is worth more here because the
+      -- thing on the other end is a person's whole console.
+      code_hash  TEXT PRIMARY KEY,
+
+      -- The session this code hands over. NOT the user: spending a code must
+      -- not mint a second session, or one sign-in would leave two rows and
+      -- revoking either would leave the other alive. Cascaded, so signing out
+      -- — or Settings → Team removing somebody — takes any un-spent codes
+      -- with it rather than leaving a live one pointing at a dead session.
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+      -- Minutes, not days. A code that outlives the navigation it was minted
+      -- for is a session sitting in a URL — in a webview's history, in a
+      -- proxy log, in whatever a screen recorder caught — waiting to be
+      -- replayed.
+      expires_at TIMESTAMPTZ NOT NULL,
+
+      -- Set by the UPDATE that spends it, so single use is decided by
+      -- Postgres rather than by a read followed by a write that two
+      -- navigations can interleave. The row is kept rather than deleted so a
+      -- replay is a row that says "already used" instead of a row that is
+      -- missing for two different reasons.
+      used_at    TIMESTAMPTZ
+    );
+
+    -- The sweep's index. Spent and expired rows are dead weight and are
+    -- cleared whenever a code is minted, and that pass must not become a
+    -- sequential scan of every hand-off this console has ever made.
+    CREATE INDEX handoffs_sweep ON handoffs(expires_at);
+    `,
+  },
 ];

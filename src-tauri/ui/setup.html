@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Content OS — this machine</title>
+    <!--
+      The one screen this app draws itself.
+
+      Everything else in Content OS is served by the team's console and shown in
+      a webview, deliberately: a second copy of the UI here would be a second
+      thing to keep in step, and it would be the copy nobody remembered to
+      update. But this machine has to be set up before there IS a console to
+      load, so it cannot be set up from one — and a person who has to open a
+      terminal to fix their own machine is the failure this whole app exists to
+      prevent, so the worker's status is on this page too.
+
+      What it asks for is an email and a password, and nothing else. It used to
+      ask for a worker token minted in Settings → Machines on a web console,
+      which is an instruction with nowhere to follow it once only the API is
+      deployed. So the app signs in, keeps the session, and mints this
+      machine's token for itself through POST /api/machines — see
+      src-tauri/src/account.rs. The token field is still here, one disclosure
+      down, because somebody handed a token by a colleague should not be
+      stopped; it is simply not the way in any more.
+
+      The addresses used to be the second question here and mostly are not any
+      more: an installer is built with both, so the fields are folded away
+      unless this machine is being pointed somewhere else, or unless the app
+      genuinely has one of them from nowhere. There are two of them because
+      there are two servers — the console and the API on its own hostname —
+      and both are shown, provenance and all, because the one that is broken
+      is by definition not the one whose page you are looking at. See
+      src-tauri/src/settings.rs.
+
+      Plain HTML and CSS on purpose. The colours are the console's own tokens
+      from lib/theme.ts, copied rather than imported, because importing would
+      mean a build step for a single page.
+    -->
+    <style>
+      :root {
+        --bg: #06060a;
+        --panel: #0d0d13;
+        --text: #f0f0f4;
+        --mute: rgba(240, 240, 244, 0.5);
+        --accent: #0057fc;
+        --accent-text: #6a9dff;
+        --good: #4bb07a;
+        --warn: #c99a3f;
+        --bad: #d1656b;
+        --hair: 1px solid rgba(255, 255, 255, 0.07);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 24px;
+        min-height: 100vh;
+        box-sizing: border-box;
+        display: grid;
+        place-items: center;
+        background: var(--bg);
+        color: var(--text);
+        font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      .sheet {
+        width: 100%;
+        max-width: 360px;
+        margin: auto;
+      }
+      h1 { font-size: 15px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
+      p.sub { color: var(--mute); margin: 0 0 24px; }
+      .panel {
+        background: var(--panel);
+        border: var(--hair);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .status { display: flex; align-items: center; gap: 8px; }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mute); flex: none; }
+      .dot.connected { background: var(--good); }
+      .dot.starting { background: var(--warn); }
+      .dot.offline, .dot.stopped { background: var(--warn); }
+      .dot.bad-token, .dot.node-missing, .dot.worker-missing { background: var(--bad); }
+      .dot.not-configured { background: var(--mute); }
+      #state { font-weight: 600; }
+      #message { color: var(--mute); margin: 8px 0 0; }
+      label { display: block; margin-bottom: 4px; font-weight: 500; }
+      .hint { color: var(--mute); margin: 4px 0 16px; }
+      input {
+        width: 100%;
+        padding: 8px 10px;
+        background: rgba(255, 255, 255, 0.04);
+        border: var(--hair);
+        border-radius: 6px;
+        color: var(--text);
+        font: inherit;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      input:focus { outline: none; border-color: rgba(0, 87, 252, 0.5); box-shadow: 0 0 0 3px rgba(0, 87, 252, 0.25); }
+      .row { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+      button {
+        padding: 8px 14px;
+        border-radius: 6px;
+        border: var(--hair);
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--text);
+        font: inherit;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 140ms cubic-bezier(0.32, 0.72, 0, 1);
+      }
+      button:hover { background: rgba(255, 255, 255, 0.09); }
+      button.primary { background: var(--accent); border-color: transparent; }
+      button.primary:hover { background: #1a68ff; }
+      .spacer { flex: 1; }
+      #error, #account-error { color: var(--bad); margin: 12px 0 0; min-height: 0; }
+      #error:empty, #account-error:empty { display: none; }
+      /*
+        What just happened, in green, and only while it is news. It is a
+        separate line from the status panel above on purpose: that one says
+        what is true now, this one says what the button did, and a person who
+        pressed Sign in needs both — "connected" alone does not tell them
+        whether a machine was made or reused.
+      */
+      #account-said { color: var(--good); margin: 12px 0 0; }
+      #account-said:empty { display: none; }
+      details { margin-top: 4px; }
+      summary { color: var(--mute); cursor: pointer; }
+      /*
+        The address, when the app already knows it. Read-only text rather than
+        a filled-in field: a field invites a person to correct something that
+        is not theirs to correct, and this one is usually the installer's
+        answer, not theirs.
+      */
+      .value {
+        margin: 0;
+        font: 13px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+        -webkit-user-select: text;
+        user-select: text;
+        word-break: break-all;
+      }
+      /*
+        Nothing is known, so the disclosure stops being one: no summary to
+        open, just the label and the field, which is the screen as it was
+        before any of this.
+      */
+      details.bare > summary { display: none; }
+      details.bare { margin-top: 0; }
+      .built-in { margin: 8px 0 0; }
+      .built-in code { -webkit-user-select: text; user-select: text; word-break: break-all; }
+      /*
+        The two addresses read as one thing with two rows, not as two
+        settings: they are always a pair, and a person who sees them as
+        unrelated is a person who moves one of them.
+      */
+      .name { margin: 0 0 4px; font-weight: 500; }
+      .name .mute { color: var(--mute); font-weight: 400; }
+      .address + .address { margin-top: 14px; }
+      .addresses { margin-bottom: 4px; }
+      button.link {
+        padding: 0;
+        border: none;
+        background: none;
+        color: var(--accent-text);
+        font: inherit;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+      button.link:hover { background: none; color: var(--text); }
+      pre {
+        margin: 12px 0 0;
+        padding: 12px;
+        max-height: 180px;
+        overflow: auto;
+        background: rgba(0, 0, 0, 0.35);
+        border-radius: 6px;
+        font: 11px/1.6 ui-monospace, "Cascadia Mono", Consolas, monospace;
+        color: var(--mute);
+        white-space: pre-wrap;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+
+      /*
+        The console's own sign-in, in the values this window can reach.
+        components/views/AuthView.tsx is the screen it is matching: the mark
+        beside the wordmark, a 27px tight heading, one sentence, then the
+        panel. The kit is not importable here — this is plain HTML in a Tauri
+        window — so the numbers are copied, not the components.
+      */
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin-bottom: 22px;
+      }
+      .mark {
+        width: 30px;
+        height: 30px;
+        border-radius: 9px;
+        background: linear-gradient(150deg, #5b93ff, #0057fc);
+      }
+      .wordmark {
+        font-size: 17px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+      h1#title {
+        font-size: 27px;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        margin: 0 0 6px;
+      }
+
+      /*
+        One line, and everything that is not signing in behind it. Quiet on
+        purpose: a person who needs it is looking for it, and a person who does
+        not should not be reading it.
+      */
+      .diag {
+        margin-top: 22px;
+      }
+      .diag > summary {
+        cursor: pointer;
+        font-size: 12.5px;
+        color: rgba(255, 255, 255, 0.45);
+        padding: 6px 0;
+      }
+      .diag > summary:hover {
+        color: rgba(255, 255, 255, 0.72);
+      }
+      .diag[open] > summary {
+        margin-bottom: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      One sheet, centred.
+
+      The window is sized for the sign-in, so on a first run the content is
+      shorter than the window and used to sit against the top-left corner with
+      the rest of the frame empty below it. Centring is `place-items` on the
+      body with `margin: auto` here: the pair centres the sheet while there is
+      room and lets it scroll normally when the diagnostics are open and there
+      is not — which `place-items` alone does not, because a grid item taller
+      than its track gets clipped at the top rather than scrolled to.
+    -->
+    <main class="sheet">
+    <!--
+      The first thing a teammate sees, and it is a sign-in.
+
+      This screen used to open with a title, an explanatory paragraph, a status
+      card, the sign-in, two addresses with their provenance, two disclosures
+      and three buttons — for a person whose whole job here is to type an email
+      and a password. Everything else is diagnostics, and diagnostics belong
+      where somebody goes looking for them.
+
+      It is shaped like the console's own sign-in (components/views/AuthView)
+      on purpose: the same person meets both, and two different-looking front
+      doors to one product is a reason to wonder which one is real.
+    -->
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <span class="wordmark">Content OS</span>
+    </div>
+
+    <h1 id="title">Sign in</h1>
+    <p class="sub" id="subtitle">
+      This app opens your team's console and runs the worker on this computer.
+    </p>
+
+    <!--
+      The way in, and the only one a teammate should need.
+
+      Two fields, both of which they already know, and everything else — the
+      session, this machine's worker token, the machine's name on the console —
+      is the app's job from here. The panel has two faces because the questions
+      are different: somebody who has never signed in is asked to; somebody who
+      has is shown who they are and offered the one repair that needs no
+      password, which is the answer to a revoked machine or a cleared
+      credential store.
+    -->
+    <div class="panel" id="account">
+
+      <div id="signed-in" hidden>
+        <p class="value" id="account-email"></p>
+        <div class="row">
+          <button id="re-enrol">Set this machine up again</button>
+          <div class="spacer"></div>
+          <button type="button" class="link" id="switch-account">Sign in as somebody else</button>
+        </div>
+      </div>
+
+      <div id="signed-out">
+        <label for="email">Email</label>
+        <input id="email" type="email" spellcheck="false" autocomplete="off" placeholder="you@yourteam.com" />
+        <label for="password">Password</label>
+        <input id="password" type="password" placeholder="Your Content OS password" />
+        <div class="row">
+          <button class="primary" id="sign-in">Sign in</button>
+        </div>
+      </div>
+
+      <p id="account-error"></p>
+      <p id="account-said"></p>
+    </div>
+
+    <!--
+      Everything that is not signing in, one click away.
+
+      Somebody diagnosing a machine that will not connect needs every one of
+      these — which server the worker called, who told it to call that one,
+      what it said, and the token path for a machine being set up by whoever
+      runs the console rather than the person sitting at it. None of it is
+      gone. It is simply not the first thing in front of somebody who has not
+      signed in yet.
+
+      Open by itself once the machine is set up: whoever comes back to this
+      window then is checking or repairing, not signing in.
+    -->
+    <details class="diag" id="diagnostics">
+      <summary>This machine's setup and worker</summary>
+
+    <div class="panel">
+      <div class="status"><span class="dot" id="dot"></span><span id="state">Starting…</span></div>
+      <p id="message"></p>
+      <details>
+        <summary>What the worker is saying</summary>
+        <pre id="log"></pre>
+      </details>
+    </div>
+
+    <div class="panel">
+      <!--
+        Two addresses, because there are two servers: the console is the web
+        app and the API is the NestJS service beside it, on its own hostname
+        in production (docs/DEPLOYING.md) and on :4000 in a checkout. Both are
+        shown, and both say where they came from, because "my machine will not
+        connect" is answered by knowing which server the worker was calling
+        and who told it to call that one — and the console cannot answer it,
+        since the window in front of the person is proof that one is fine.
+      -->
+      <div class="addresses">
+        <div class="address" id="console-block">
+          <p class="name">Console address <span class="mute">— the pages this app opens</span></p>
+          <p class="value" id="console-known"></p>
+          <p class="hint" id="console-source"></p>
+        </div>
+        <div class="address" id="api-block">
+          <p class="name">API address <span class="mute">— what the worker calls for jobs</span></p>
+          <p class="value" id="api-known"></p>
+          <p class="hint" id="api-source"></p>
+        </div>
+      </div>
+
+      <details id="override">
+        <summary>Use different addresses on this machine</summary>
+
+        <label for="console-url">Console address</label>
+        <input id="console-url" type="url" spellcheck="false" placeholder="https://contentos.yourteam.com" />
+        <p class="hint" id="console-url-hint"></p>
+        <p class="hint built-in" id="console-built-in" hidden>
+          This copy of Content OS was built with <code id="console-built-in-url"></code>.
+          <button type="button" class="link" id="console-use-built-in">Go back to it</button>
+        </p>
+
+        <label for="api-url">API address</label>
+        <input id="api-url" type="url" spellcheck="false" placeholder="https://api.contentos.yourteam.com" />
+        <p class="hint" id="api-url-hint"></p>
+        <p class="hint built-in" id="api-built-in" hidden>
+          This copy of Content OS was built with <code id="api-built-in-url"></code>.
+          <button type="button" class="link" id="api-use-built-in">Go back to it</button>
+        </p>
+      </details>
+
+      <!--
+        Still reachable, and out of the way.
+
+        Signing in above mints this machine's token by itself, so nobody
+        ordinarily comes here. But somebody does: a machine being set up by
+        whoever runs the console rather than by the person sitting at it, a
+        teammate whose account is not made yet, a support call. Removing the
+        field would turn those into "reinstall the app", so it is one
+        disclosure down rather than gone.
+      -->
+      <details id="token-details">
+        <summary>Set this machine up with a token instead</summary>
+        <label for="token">This machine's token</label>
+        <input id="token" type="password" spellcheck="false" placeholder="Paste the token you were shown" />
+        <p class="hint">
+          Minted on the console under Settings → Machines and shown once. It is
+          kept in Windows Credential Manager, not in a file.
+        </p>
+      </details>
+
+      <div class="row">
+        <button id="save">Save and start</button>
+        <button id="console">Open the console</button>
+        <div class="spacer"></div>
+        <button id="restart">Restart the worker</button>
+      </div>
+      <p id="error"></p>
+    </div>
+    </details>
+    </main>
+
+    <script>
+      const { invoke } = window.__TAURI__.core;
+      const { listen } = window.__TAURI__.event;
+
+      const el = (id) => document.getElementById(id);
+
+      /*
+        Whether the person opened or closed the diagnostics themselves. Without
+        it every poll would re-open a section somebody had just closed — the
+        screen arguing with the person using it.
+      */
+      let diagnosticsTouched = false;
+
+      /*
+        Whether the sign-in fields are on screen for somebody who is already
+        signed in. It is a thing the person asked for by clicking, not a fact
+        about the machine, so it lives here and not in the view Rust sends —
+        otherwise every status tick from the worker would fold the form away
+        again while they were typing in it.
+      */
+      let switching = false;
+
+      function render(view) {
+        el("dot").className = "dot " + view.state;
+        el("state").textContent = view.title;
+        el("message").textContent = view.message;
+        el("log").textContent = view.log.join("\n") || "Nothing yet.";
+        addresses(view);
+        account(view);
+        if (view.hasToken && !el("token").value) {
+          el("token").placeholder = "Saved — leave blank to keep it";
+        }
+      }
+
+      /*
+        Who this app is signed in as, if anybody.
+
+        The two faces are not two states of one form: one says "here is who you
+        are, and here is the one button that fixes a machine", the other asks
+        the only question this window has. Both can be on screen at once, and
+        only when somebody has said they are handing the machine over — a
+        person who is signed in should not have to look at a password field
+        they have no reason to fill in.
+      */
+      function account(view) {
+        const signedIn = Boolean(view.signedInAs);
+        el("signed-in").hidden = !signedIn;
+        el("account-email").textContent = view.signedInAs;
+        el("signed-out").hidden = signedIn && !switching;
+
+        /*
+          The window has two jobs and they are not the same shape.
+
+          Signed out it is a sign-in and should look like one. Signed in,
+          nobody opens it to sign in — they came to check this machine is
+          working or to fix it — so it leads with what is true and the
+          diagnostics are already open rather than one click further away.
+        */
+        el("title").textContent = signedIn ? "This machine" : "Sign in";
+        el("subtitle").textContent = signedIn
+          ? "The worker on this computer does the writing and the video work."
+          : "This app opens your team's console and runs the worker on this computer.";
+
+        /*
+          Not on screen at all until it is worth something.
+
+          Signed out and nothing wrong, there is nothing behind this a person
+          can act on: the worker has not been asked to do anything yet, and the
+          addresses were decided when the installer was built. Offering it
+          anyway is a second thing to read on a screen whose whole job is two
+          fields.
+
+          It appears the moment it can help — once this machine is set up, and
+          the instant anything fails, which is when the addresses, the worker's
+          own words and the token fallback are the answer. `NOT_WORKING` is the
+          set of states from worker.rs that a person has to do something about;
+          `starting` and `not-configured` are not among them, because neither
+          is news on a screen that has not been used yet.
+        */
+        const NOT_WORKING = ["offline", "node-missing", "worker-missing", "bad-token", "stopped"];
+        const wrong = NOT_WORKING.includes(view.state) || Boolean(el("account-error").textContent);
+        el("diagnostics").hidden = !signedIn && !wrong;
+        if ((signedIn || wrong) && !diagnosticsTouched) el("diagnostics").open = true;
+        // The repair only means anything with a session behind it, and the
+        // sentence for having none is in Rust, where the reason lives.
+        el("re-enrol").disabled = !signedIn;
+      }
+
+      /*
+        The two addresses, described once.
+
+        A table rather than two copies of the same twenty lines, because the
+        pair has to stay a pair: a change to how one of them is drawn that
+        misses the other is exactly the drift that leaves a person reading a
+        provenance line about the wrong server. Only the words differ, so only
+        the words are written twice.
+      */
+      const ADDRESSES = [
+        {
+          key: "console",
+          url: "consoleUrl",
+          source: "consoleSource",
+          words: "consoleSourceWords",
+          builtIn: "builtInConsoleUrl",
+          keep: "This machine only. Leave it blank to keep the console address above.",
+          ask: "Where your team's Content OS is. Ask whoever set up the server.",
+        },
+        {
+          key: "api",
+          url: "apiUrl",
+          source: "apiSource",
+          words: "apiSourceWords",
+          builtIn: "builtInApiUrl",
+          keep: "This machine only. Leave it blank to keep the API address above.",
+          ask: "The server the worker asks for jobs. It is a different host from the console — usually api. in front of it, but not always. Ask whoever set up the server.",
+        },
+      ];
+
+      /*
+        What the person is meant to do about them.
+
+        Two genuinely different screens, not one screen with values in it. When
+        the app already knows an address — because it was built in, saved here,
+        or exported into a development environment — it is shown as text with a
+        line saying where it came from, and the field that would change it is
+        folded away behind a summary: it is not a question, and a filled field
+        reads like one that needs checking. When neither is known there is no
+        summary to open and the fields are exactly what they always were,
+        because then they genuinely are the question.
+
+        The in-between is real and worth drawing properly: a copy built before
+        this app knew there were two addresses, or built by somebody who set
+        only one, knows its console and not its API. That one keeps the
+        summary — something here IS settled — but opens itself, so the field
+        that is still a question is on screen without being hunted for.
+
+        Nothing here ever writes a resolved address into a field. Blank means
+        "leave it alone" on the way back to Rust, and pre-filling would turn
+        every Save into a save of the addresses as well — which on a build that
+        knows its own would quietly write a copy of them into settings.json and
+        pin this machine to today's answer forever.
+      */
+      function addresses(view) {
+        let anyMissing = false;
+        let allMissing = true;
+
+        for (const spec of ADDRESSES) {
+          const known = view[spec.source] !== "none";
+          anyMissing = anyMissing || !known;
+          allMissing = allMissing && !known;
+
+          // The whole row goes, heading and all. A label over an empty line
+          // says "this is broken" without saying what to do; the field below,
+          // which is open and waiting, says it.
+          el(`${spec.key}-block`).hidden = !known;
+          el(`${spec.key}-known`).textContent = view[spec.url];
+          el(`${spec.key}-source`).textContent = view[spec.words];
+          el(`${spec.key}-url-hint`).textContent = known ? spec.keep : spec.ask;
+
+          // The way back, offered only to the person who needs it: somebody
+          // who has overridden this address here. Without it, one typo in an
+          // override hides the address this copy was built with and nothing on
+          // the screen ever mentions it again. Per address, because the two
+          // are overridden separately and a link that put back the wrong one
+          // would be worse than no link.
+          const strayed =
+            view[spec.source] === "this-machine" &&
+            view[spec.builtIn] &&
+            view[spec.builtIn] !== view[spec.url];
+          el(`${spec.key}-built-in`).hidden = !strayed;
+          el(`${spec.key}-built-in-url`).textContent = view[spec.builtIn];
+        }
+
+        const override = el("override");
+        override.classList.toggle("bare", allMissing);
+        if (anyMissing) override.open = true;
+      }
+
+      // Fills the field rather than saving, so that going back to a built-in
+      // address is the same two steps as any other change to it, and is
+      // visible before it happens.
+      for (const spec of ADDRESSES) {
+        el(`${spec.key}-use-built-in`).addEventListener("click", () => {
+          el(`${spec.key}-url`).value = el(`${spec.key}-built-in-url`).textContent;
+          el(`${spec.key}-url`).focus();
+        });
+      }
+
+      /*
+        One place where a button that talks to the console is pressed.
+
+        Every one of them can take a few seconds, can fail with a sentence the
+        person is meant to read, and must not be pressable twice while it is
+        running — a second sign-in mid-flight would race the first and could
+        mint two machines for one computer. The button says what it is doing
+        while it does it, because a window that looks frozen is a window
+        somebody clicks again.
+      */
+      async function talk(button, working, call) {
+        const label = button.textContent;
+        button.disabled = true;
+        button.textContent = working;
+        el("account-error").textContent = "";
+        el("account-said").textContent = "";
+        try {
+          const done = await call();
+          el("account-said").textContent = done.said;
+          el("password").value = "";
+          switching = false;
+          render(done.view);
+        } catch (e) {
+          // Every sentence here is written in src/account.rs, where the reason
+          // for it lives: a wrong password, a server that cannot be reached, a
+          // console with no accounts on it yet. The page shows it as it is
+          // rather than replacing it with something vaguer.
+          el("account-error").textContent = String(e);
+        } finally {
+          button.disabled = false;
+          button.textContent = label;
+        }
+      }
+
+      const signIn = () =>
+        talk(el("sign-in"), "Signing in…", () =>
+          invoke("sign_in", {
+            email: el("email").value,
+            password: el("password").value,
+          }),
+        );
+
+      el("diagnostics").addEventListener("toggle", () => (diagnosticsTouched = true));
+      el("sign-in").addEventListener("click", signIn);
+      el("re-enrol").addEventListener("click", () =>
+        talk(el("re-enrol"), "Setting up…", () => invoke("enrol")),
+      );
+
+      // Enter in either field signs in. A form of two fields where the only
+      // button is the obvious one should not need the mouse.
+      for (const id of ["email", "password"]) {
+        el(id).addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && !el("sign-in").disabled) signIn();
+        });
+      }
+
+      el("switch-account").addEventListener("click", () => {
+        switching = true;
+        el("signed-out").hidden = false;
+        el("email").focus();
+      });
+
+      el("save").addEventListener("click", async () => {
+        el("error").textContent = "";
+        try {
+          render(
+            await invoke("save", {
+              consoleUrl: el("console-url").value,
+              apiUrl: el("api-url").value,
+              token: el("token").value,
+            }),
+          );
+          el("token").value = "";
+          el("console-url").value = "";
+          el("api-url").value = "";
+        } catch (e) {
+          // Every failure here is something the person can act on — a typo in
+          // the address, a credential store that said no — so it is shown as a
+          // sentence rather than swallowed.
+          el("error").textContent = String(e);
+        }
+      });
+
+      el("restart").addEventListener("click", () => invoke("restart"));
+      el("console").addEventListener("click", () => invoke("open_console"));
+
+      listen("worker-status", (event) => render(event.payload));
+      invoke("status").then(render);
+    </script>
+  </body>
+</html>

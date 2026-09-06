@@ -140,6 +140,25 @@ that was being written when the server went down was meant to finish.
 same reason: a topic that fails to update must not strand the section in
 writing with the failure recorded nowhere.
 
+**Superseded by the worker split — the goal stands, the mechanism is gone.**
+The reasoning above rests on one premise: a `writing` row must be dead,
+because the only thing that could be writing it was this process. That was
+true while the model was a child of the API. It stopped being true the day
+the work moved to somebody's laptop, and it inverted — the boot sweep now
+requeues a section a machine is four minutes into, pays a second
+subscription for it, and lets the slower answer overwrite the one that
+landed. With two API replicas, every boot steals the other's work.
+
+`resumeOrphans`, `driveRun` and `isDriving` are deleted;
+`requeueOrphans(runId?)` lost its no-argument form, so the global sweep is
+not a thing the code can express any more rather than a thing nothing
+calls. A run still survives a restart, and survives more than it did — it
+now survives the API being down entirely, because no process holds it. What
+recovers it is the lease in `jobs`, expiring on evidence rather than on an
+assumption about processes: see `docs/WORKER.md`, "Liveness and recovery".
+`requeueFailed` is untouched; it answers "the person pressed Retry", which
+is a different question and still the right one.
+
 ## An unreachable API says so, in red, at the top
 
 With the backend on its own port, the console has a failure it never had
@@ -312,6 +331,22 @@ Do not grow this into component tests. The screens are checked by opening them
 (`docs/BROWSER.md`); what these are for is the logic that fails silently, on one
 row, days later.
 
+**One database test, and only one.** `tests/queue.test.ts` covers the claim
+query and the reaper. The "no database" rule holds everywhere it was written
+for — a repo function that reads a row back is checked by using the app — but
+the queue is a different kind of thing: it decides, across machines that cannot
+see each other, who writes which section, and it gets that wrong silently. Two
+laptops writing the same section pay two subscriptions for one answer, and a
+job no worker can see leaves a run reading "Writing" for ever, which is the
+same bug `statusOf` is up there for. Three real defects came out of writing it:
+`bool_and` over zero rows is NULL rather than true, so a job needing no tools
+was invisible to every machine; the reaper ended jobs that were still running;
+and the payload sweep rewrote every historical row on every tick.
+
+It builds and drops its own database, so it cannot reach the workspace the dev
+server is using, and it skips itself when no Postgres answers. Do not add a
+second one without an argument this strong.
+
 ## A template travels as a file, and arrives as a draft
 
 Export writes the whole brief — rules, purpose, every section and its prompt,
@@ -389,10 +424,14 @@ something carries it, like Used and Ignored.
 Retry is one press, on the row. It calls the same `startWriting` the document
 page does, and `POST /api/runs/[id]/start` clears the run's failures —
 `requeueFailed`, which was written for this and had never been called — before
-`driveRun` picks the run up. Within one drive a failed section is still
+the run is picked up again. Within one drive a failed section is still
 skipped, otherwise the loop spends the model's time forever on the one thing
 that does not work; but carrying that skip into the NEXT drive made Retry do
 nothing at all on exactly the run you would press it for.
+
+The mechanism moved with the worker split — `driveRun` is now `advance()` and
+the skip is a job's `max_attempts` rather than a loop's memory — but Retry is
+unchanged, and `requeueFailed` is still exactly what it does.
 
 ## Run is one press, wherever the topic is
 
@@ -458,6 +497,18 @@ is.
 A failed section is skipped rather than retried: it has had its turn, and
 anything depending on it never becomes eligible, so the run ends with those
 still queued — which is the truth, and visible.
+
+**Superseded by the worker split — and this decision is the reason it works.**
+"Driven by the server, not by the tab" was the right call and it is what made
+the next step possible: once the driving was off the tab, moving it off the
+API process too was a change of address rather than a rewrite. What is gone is
+the loop and the `globalThis` set. `driveRun` is `advance(runId)`, which
+enqueues a job per ready section and returns; a worker on somebody's own
+machine claims it. The set could only ever see one process, which was correct
+while the model was that process's own child and is a lock that does not lock
+the moment the model runs somewhere else — the queue's unique index and lease
+say the same thing where every process can hear it. A run now survives more
+than a closed tab: it survives the API being down. See `docs/WORKER.md`.
 
 ## The spawned Claude CLI is granted exactly two tools
 
@@ -596,3 +647,74 @@ compose runs it before the server takes traffic.
 
 `npm run build:check` → `.next-check`, never the dev server's `.next`. See
 `docs/DEVELOPING.md`; this one has bitten a session already.
+
+## The heavy work runs on the team's own machines, not on the server
+
+The full argument is `docs/WORKER.md`; this is the entry that says the call
+was made, so nobody re-derives it or quietly undoes half of it.
+
+Everything used to happen in one process: the API held the run driver, the
+driver called the model, and the model was `claude` spawned on the same box —
+as were `yt-dlp`, `ffmpeg` and `whisper`. That is exactly right on one
+person's laptop and impossible on a server, which has no signed-in CLI and no
+GPU. It is why deploying meant an `ANTHROPIC_API_KEY` and real money per run.
+
+So: the **server** keeps the UI, the API, Postgres, the frames and every
+decision. A **worker** on each teammate's own computer claims jobs over HTTPS
+and runs the CLIs under that person's own login. Outbound connections only —
+no inbound port, no static IP, nothing opened on anybody's router.
+
+Three parts of that are load-bearing and are the ones to protect:
+
+- **The server decides; the worker executes.** A job carries finished text and
+  a command, never a pack, a rule, a brand voice or a dependency graph. Put
+  business logic on the worker and changing a prompt becomes fifteen desktop
+  updates — and the prompt changes weekly. It is also why `worker/` may import
+  only `tools.ts`, `brain-defs.ts` and `brain-transports.ts` from `lib/server`:
+  an import of a repo puts Postgres on a teammate's laptop.
+- **Coordination lives in the database, not in a process.** The claim is
+  `FOR UPDATE SKIP LOCKED` and a lease; that is what replaced a `globalThis`
+  Set, which could only ever see one process and was a lock that did not lock
+  the moment the model ran somewhere else. Nothing at boot may touch a
+  section's state again — recovery is a lease expiring on evidence, not a
+  process assuming nothing else is running.
+- **A job that cannot run must reach a terminal state, visibly.** No machine
+  has the tool → fail at enqueue, naming the tool and its install command. A
+  capable machine is asleep → queue it, name the machine, and fail it if
+  nobody opens the laptop. Anything that leaves a section queued for ever is
+  the "Writing for five days" row this console already fixed once.
+
+The API key did not go away; it stopped being automatic.
+`workspaces.api_fallback` is off by default, because a fallback that fired by
+itself would spend money at exactly the moment nobody was watching.
+
+## The desktop app is unsigned and does not update itself
+
+Both were considered and both were declined, on 2026-09-05, because this
+console is an internal tool for one team.
+
+**No code-signing certificate.** An OV or EV certificate costs money every
+year and a verified legal identity, to remove a warning that a handful of
+people see once each. The installer is handed over in person or through a link
+the team already trusts. What they see is SmartScreen's *"Windows protected
+your PC"* with Run hidden behind **More info**, and whoever sends the file
+should say so in the same message — otherwise somebody decides on their own
+that it is unsafe.
+
+**No update endpoint.** Updating is being handed a new installer, which for
+five people is a message with a file in it. An endpoint, a signing key and an
+honest `latest.json` is real infrastructure to save that message.
+
+Both are wired anyway and neither is pretended-finished. `sign.ps1` takes a
+real certificate through the environment and prints one line per file saying
+it is unsigned when there is none; a build with a certificate configured and
+signing failing fails deliberately. The updater plugin is registered and its
+tray item is built **only** when an endpoint is configured, so today it does
+not appear rather than being a button that does nothing.
+
+That is the part worth protecting. Do not delete the hooks to tidy up: the
+answer changes the day this reaches somebody outside the team — a client, a
+contractor, a download page — and on that day it should be configuration, not
+a rewrite. Do not generate a self-signed certificate either. It removes no
+warning, nothing trusts it, and calling the result "signed" is worse than
+being plainly unsigned.

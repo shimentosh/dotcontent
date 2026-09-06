@@ -14,7 +14,16 @@ export const CurrentUser = createParamDecorator(
     ctx.switchToHttp().getRequest<SessionRequest>().user ?? null,
 );
 
-/** The session id off the cookie, valid or not — logout needs it either way. */
+/**
+ * The session id, valid or not — logout needs it either way.
+ *
+ * From the cookie or from an `Authorization: Session …` header, whichever the
+ * caller used: the guard resolves that before anything reads this, so a
+ * handler never has to know which transport carried it. A browser sends the
+ * cookie; the desktop app, whose webview is on a local origin against a remote
+ * API, sends the header, because a cookie in that position is third-party and
+ * is what webviews are progressively refusing.
+ */
 export const SessionId = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext) =>
     ctx.switchToHttp().getRequest<SessionRequest>().sessionId,

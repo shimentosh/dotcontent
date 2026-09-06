@@ -21,6 +21,12 @@
     "api:typecheck": "npm run typecheck --prefix api",
     "api:smoke": "node scripts/api-smoke.mjs",
     "start": "next start",
+    "worker": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./worker/register.mjs worker/index.ts",
+    "worker:setup": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./worker/register.mjs worker/setup.ts",
+    "desktop": "node src-tauri/scripts/dev.mjs",
+    "desktop:build": "cargo build --release --manifest-path src-tauri/Cargo.toml",
+    "desktop:node": "node src-tauri/scripts/fetch-node.mjs",
+    "desktop:installer": "node src-tauri/scripts/installer.mjs",
     "lint": "eslint"
   },
   "dependencies": {
@@ -31,6 +37,7 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
     "@types/node": "^24.13.3",
     "@types/pg": "^8.23.1",
     "@types/react": "^19",

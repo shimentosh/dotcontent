@@ -22,12 +22,17 @@ import {
 import { useStore } from "@/lib/store";
 import { latestRunFor, topicSlug } from "@/lib/run-doc";
 import { packForSeries } from "@/lib/packs";
-import { editSection, startWriting, writeSection } from "@/lib/runs-client";
-import { useRunDocument } from "@/lib/use-run-document";
+import {
+  editSection,
+  queueSection,
+  startWriting,
+  stopRun,
+} from "@/lib/runs-client";
+import { useRunDocument, type Placement } from "@/lib/use-run-document";
 import { frameUrl, type Source } from "@/lib/sources-client";
 import { font, panel, primary, rise, t, w } from "@/lib/theme";
 import { Hov } from "@/components/ui/Hov";
-import { Button, Rail, TextArea } from "@/components/ui";
+import { Button, Chip, Rail, TextArea, type Tone } from "@/components/ui";
 import { PencilIcon } from "@/components/ui/Icons";
 import { UnwrittenTopic } from "@/components/views/UnwrittenTopic";
 import { ReadingMode } from "@/components/overlays/ReadingMode";
@@ -203,6 +208,84 @@ const STATUS_TONE = {
   },
 } as const;
 
+/**
+ * A place, as one word and one colour.
+ *
+ * `blocked` and `idle` are grey because neither is a problem: one is waiting
+ * its turn and the other is waiting for you. `waiting` is amber because it is
+ * an errand — somebody has to switch a machine on. `unroutable` is red and says
+ * NO MACHINE rather than FAILED, because Retry cannot fix it: the tool is not
+ * installed anywhere on the estate, and pressing Retry until it is would be
+ * the only thing the old wording invited.
+ */
+const PLACE_LABEL: Record<Placement["kind"], string> = {
+  done: "READY",
+  idle: "NOT STARTED",
+  blocked: "BLOCKED",
+  queued: "QUEUED",
+  waiting: "WAITING",
+  writing: "WRITING",
+  unroutable: "NO MACHINE",
+  failed: "FAILED",
+};
+
+const PLACE_TONE: Record<Placement["kind"], Tone> = {
+  done: "good",
+  idle: "mute",
+  blocked: "mute",
+  queued: "accent",
+  waiting: "warn",
+  writing: "accent",
+  unroutable: "bad",
+  failed: "bad",
+};
+
+/**
+ * The sentence under the row, when there is something worth saying.
+ *
+ * Empty for the ordinary states — a row that is written, being written, or
+ * plainly not started yet explains itself, and a line of prose under every one
+ * of twelve sections is noise that hides the two that matter.
+ *
+ * The two that matter read as opposite instructions on purpose. "whisper is
+ * not installed on any machine" is a command to run; "that machine has not
+ * been seen recently" is a laptop to open. They were the same grey QUEUED chip
+ * before, which is how a run could sit all afternoon while everybody assumed
+ * the other thing.
+ */
+function placementNote(at: Placement | undefined): string {
+  if (!at) return "";
+  switch (at.kind) {
+    case "blocked":
+      return `Needs ${at.on.join(" and ")} first.`;
+    case "writing":
+      /*
+       * Whose machine is typing it. The page could not say this at all until
+       * the queue became readable: `run_sections` records `wroteWith` on
+       * success, so mid-flight there was no name anywhere, and a run spread
+       * across four laptops looked exactly like a run on one.
+       */
+      return at.machine ? `Being written on ${at.machine}.` : "";
+    case "waiting":
+      /*
+       * The server's own sentence first, because it names every machine the
+       * job could go to and the browser has no list of machines to rebuild
+       * that from. The fallbacks cover a job pinned to one machine — a name
+       * and no sentence — and a section the poll has not caught up with yet.
+       */
+      return at.message
+        ? `${at.message} Opening it starts this.`
+        : at.machine
+          ? `Waiting for ${at.machine}, which has not been seen recently — opening it starts this.`
+          : "On the queue. No machine has picked it up yet.";
+    case "unroutable":
+    case "failed":
+      return at.message;
+    default:
+      return "";
+  }
+}
+
 export function DocumentView({
   slug,
   runId,
@@ -229,13 +312,27 @@ export function DocumentView({
     setFetched,
     serverWriting,
     setServerWriting,
+    waitingForMachine,
+    placements,
   } = useRunDocument({ slug, runId });
 
   const [openSections, setOpenSections] = useState<Set<string>>(
     new Set(["03"]),
   );
   const [filter, setFilter] = useState("");
-  const [busy, setBusy] = useState<Set<string>>(new Set());
+  /*
+   * Sections whose request is in the air, by id.
+   *
+   * It used to be "sections this tab is writing", held for the length of the
+   * model call, because the tab WAS the driver: it asked for a section and
+   * waited minutes for the text. The request is a database write now and comes
+   * back in milliseconds with the row already saying `writing`, so this covers
+   * only the gap between the click and that answer — it stops a second click
+   * queueing the same section and gives the button something to say meanwhile.
+   */
+  const [queuing, setQueuing] = useState<Set<string>>(new Set());
+  /** True between pressing Stop and the server confirming the jobs are gone. */
+  const [stopping, setStopping] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
   /*
@@ -264,70 +361,126 @@ export function DocumentView({
   const [reading, setReading] = useState(false);
 
   /**
-   * Is it writing, waiting, or stopped?
+   * Is it writing, waiting on a machine, unrunnable, or stopped?
    *
    * The page showed "0/12 written" and twelve QUEUED chips whether the run was
    * mid-flight, finished with nothing, or had never been started — three very
-   * different situations that all look identical while you watch them. With
-   * auto-approve off a new run does not start on its own, so the honest answer
-   * for most of them is "waiting for you", and that was the one thing nothing
-   * on the page said.
+   * different situations that all look identical while you watch them. The
+   * split into workers added two more that look identical to those: a run
+   * whose sections are on the queue with every machine switched off, and a run
+   * that can never move because nothing on the estate has the tool. Those two
+   * have opposite answers — open a laptop, or install something — so the line
+   * says which.
    */
   const status = useMemo(() => {
     if (!run) return null;
 
+    const placed = run.sections.map((x) => ({
+      row: x,
+      at: placements.get(x.id),
+    }));
+
     /*
-     * In flight here, or in flight anywhere.
+     * Something is actually being written.
      *
-     * `busy` is this tab's own loop; the row's state is what the server
-     * recorded. A run driven from another tab moves the second and not the
-     * first, and reading only the local set would report "not running" while
-     * the machine was busy writing.
+     * The row's own state, not this tab's: the writing happens on somebody
+     * else's machine now, so there is no local fact to prefer.
      */
-    const serverBusy = run.sections.find((x) => x.state === "writing");
-    if (busy.size || serverBusy || serverWriting) {
-      const now =
-        doc?.sections.find((x) => busy.has(x.n)) ??
-        doc?.sections.find((x) => x.id === serverBusy?.id);
-      /*
-       * Between two sections there is nothing being written, and the honest
-       * word for that is not "Writing…" with no object. The one about to go is
-       * the next queued, which is what the server picks the moment the last one
-       * lands — so the pill names it rather than going vague for a second and a
-       * half every time a section finishes.
-       */
+    const writing = placed.find((x) => x.at?.kind === "writing");
+    if (writing || queuing.size) {
+      const now = doc?.sections.find((x) => x.id === writing?.row.id);
       const next = doc?.sections.find((x) => x.state === "queued");
+      // Which machine, once one has claimed it. This said "a worker machine"
+      // to everybody, always, because nothing named one until the section had
+      // already landed and `wroteWith` was written.
+      const on = writing?.at?.kind === "writing" ? writing.at.machine : "";
       return {
         tone: "busy" as const,
+        pulse: true,
         text: now
           ? `Writing ${now.n} · ${now.name}…`
           : next
             ? `Starting ${next.n} · ${next.name}…`
             : "Writing…",
-        // It runs from whichever tab started it: the browser asks for one
-        // section, waits, then asks for the next. Closing that tab stops it
-        // between sections.
-        note: busy.size ? "Keep this tab open" : "Running on the server",
+        note: on
+          ? `On ${on} — you can close this tab`
+          : "On a worker machine — you can close this tab",
       };
     }
 
-    const failed = run.sections.filter((x) => x.state === "failed");
-    if (failed.length) {
+    /*
+     * On the queue, and nothing has picked it up.
+     *
+     * The state that did not exist before and that the old page had no word
+     * for: it read "Writing…" and pulsed at a run where nothing was happening
+     * at all, forever, because a laptop was shut. Naming the machine when the
+     * server told us which turns it into an errand somebody can run.
+     */
+    const asleep = placed.find(
+      (x) => x.at?.kind === "waiting" && (x.at.machine || x.at.message),
+    )?.at;
+    if (waitingForMachine || asleep) {
+      return {
+        tone: "idle" as const,
+        pulse: false,
+        text: "Queued — waiting for a machine",
+        // The row's own sentence rather than a second wording of it: two
+        // copies of one fact, written in two places, drift apart — and this
+        // one already names the machines and says what opening one does.
+        note: placementNote(asleep) || "No machine has picked this up yet.",
+      };
+    }
+
+    /*
+     * Nothing here can ever run it. Not a failure to retry — an install.
+     *
+     * `advance` fails the section with the sentence naming the tool and the
+     * command, so the note is the server's own words rather than a second copy
+     * of them written here and gone stale.
+     */
+    const unroutable = placed.filter((x) => x.at?.kind === "unroutable");
+    if (unroutable.length) {
+      const first = unroutable[0]?.at;
       return {
         tone: "bad" as const,
-        text: `Stopped — ${failed.length} section${failed.length === 1 ? "" : "s"} failed`,
-        note: failed[0]?.error?.slice(0, 90) || "Open the section to see why",
+        pulse: false,
+        text: `${unroutable.length} section${unroutable.length === 1 ? "" : "s"} no machine can write`,
+        note:
+          first?.kind === "unroutable"
+            ? first.message
+            : "Nothing here has the tool it needs.",
       };
     }
 
-    if (!unwritten) return { tone: "good" as const, text: "All written", note: "" };
+    const failed = placed.filter((x) => x.at?.kind === "failed");
+    if (failed.length) {
+      const first = failed[0]?.at;
+      return {
+        tone: "bad" as const,
+        pulse: false,
+        text: `Stopped — ${failed.length} section${failed.length === 1 ? "" : "s"} failed`,
+        note:
+          (first?.kind === "failed" ? first.message.slice(0, 90) : "") ||
+          "Open the section to see why",
+      };
+    }
+
+    if (!unwritten) {
+      return {
+        tone: "good" as const,
+        pulse: false,
+        text: "All written",
+        note: "",
+      };
+    }
 
     return {
       tone: "idle" as const,
+      pulse: false,
       text: `Not running — ${unwritten} queued`,
       note: 'Press "Write the rest"',
     };
-  }, [run, busy, doc, unwritten, serverWriting]);
+  }, [run, queuing, doc, unwritten, placements, waitingForMachine]);
 
   /*
    * Whether it carries on by itself.
@@ -346,59 +499,114 @@ export function DocumentView({
   }, [settings, unwritten]);
 
   /**
-   * Write these sections, by id, in order.
+   * Ask for these sections, by id.
    *
-   * One request each, because the model behind them is a single local process
-   * and parallel requests raced it into returning an error page instead of
-   * JSON. Slower, and it finishes.
+   * It used to be a driver: one request per section, awaited, in order,
+   * because the model was a child process of the request and the answer WAS
+   * the text. `POST /runs/:id/sections/:id` enqueues now and comes straight
+   * back with the run, so awaiting it in a loop asked for the second section
+   * while the first had not been written — and the page believed text had
+   * landed when nothing had.
+   *
+   * So: ask, take the run each answer carries, and let the watcher follow the
+   * rest. The server cascades on its own — a section landing runs `advance`,
+   * which queues whatever that unblocked — so this is only ever "please start
+   * this one".
    */
-  const writeIds = useCallback(async (ids: string[]) => {
-    if (!run || !ids.length) return;
-    const ns = ids
-      .map((id) => doc?.sections.find((x) => x.id === id)?.n)
-      .filter((n): n is string => Boolean(n));
-
-    setBusy((prev) => new Set([...prev, ...ns]));
-    for (const id of ids) {
-      try {
-        const after = await writeSection(run.id, id);
-        // The server's copy, straight away: the driver reads `run` to decide
-        // what is ready next, and waiting for a list reload to tell it would
-        // stall between every section.
-        if (runId) setFetched(after);
-      } catch {
-        // The row shows what the server recorded on the next read; a failed
-        // one must not stop the sections queued behind it.
+  const writeIds = useCallback(
+    async (ids: string[]) => {
+      if (!run || !ids.length) return;
+      setQueuing((prev) => new Set([...prev, ...ids]));
+      /*
+       * Poll fast from this instant rather than from the first answer: the run
+       * IS on the queue the moment the request is accepted, and a page sitting
+       * on "Not running" for six seconds after a click reads as a click that
+       * missed.
+       */
+      setServerWriting(true);
+      for (const id of ids) {
+        try {
+          const after = await queueSection(run.id, id);
+          // The server's copy, straight away — it already says `writing`, and
+          // waiting for a list reload to say so is a second of dead page.
+          setFetched(after);
+        } catch {
+          // Whatever the server recorded shows on the next poll; one section
+          // being refused must not stop the ones asked for behind it.
+        }
+        setQueuing((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
       }
-      setBusy((prev) => {
-        const next = new Set(prev);
-        const n = doc?.sections.find((x) => x.id === id)?.n;
-        if (n) next.delete(n);
-        return next;
-      });
-    }
-    await reloadRuns();
-  }, [run, doc, runId, reloadRuns, setFetched]);
+      await reloadRuns();
+    },
+    [run, reloadRuns, setFetched, setServerWriting],
+  );
 
-  // The local driver, for "Write next" and for the auto-approve preference.
-  // The whole-run case is the server's job now — see `serverWriting` below.
-  useEffect(() => {
-    if (!auto || !run || busy.size || !pending.length) return;
-    const timer = setTimeout(() => void writeIds([pending[0]]), 150);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auto, run, pending, busy.size]);
-
-  /** Write the lot, on the server, and start watching straight away. */
+  /**
+   * Write the lot.
+   *
+   * The answer used to be held onto: its `waiting` list carried the only
+   * machine names the browser ever saw, so it was kept in a hook and drawn
+   * under sections it may already have stopped describing — and only ever in
+   * the tab that pressed this button, never for a colleague opening the same
+   * run and never for a single-section write. `GET /runs/:id/jobs` says all of
+   * that for every section, to everybody, however the run was started, so this
+   * is back to what it looks like: start it, and let the watcher follow.
+   */
   const writeEverything = useCallback(async () => {
     if (!run) return;
     setServerWriting(true);
     try {
-      await startWriting(run.id);
+      const answer = await startWriting(run.id);
+      setServerWriting(answer.running);
     } catch {
       setServerWriting(false);
     }
   }, [run, setServerWriting]);
+
+  /**
+   * Stop a run that is writing.
+   *
+   * Queued jobs stop being work at once; a machine already part way through a
+   * section finds out at its next heartbeat, within about fifteen seconds, so
+   * a row can still say `writing` for a moment after this returns. Which is
+   * why the run is re-read afterwards rather than assumed idle.
+   */
+  const stop = useCallback(async () => {
+    if (!run || stopping) return;
+    setStopping(true);
+    try {
+      await stopRun(run.id);
+      setServerWriting(false);
+      await reloadRuns();
+    } catch {
+      // It is still running, and the next poll will say so.
+    } finally {
+      setStopping(false);
+    }
+  }, [run, stopping, setServerWriting, reloadRuns]);
+
+  /*
+   * Auto-approve: carry on without being asked.
+   *
+   * One press of Start rather than a section at a time. The old loop drove the
+   * run from this tab — write one, wait, pick the next — which is exactly the
+   * job the server took over: `advance` queues everything ready, and every
+   * section that lands queues whatever it unblocked. Driving it from here as
+   * well would only race the server to enqueue the same section, and would
+   * stop the moment the tab was closed.
+   */
+  useEffect(() => {
+    if (!auto || !run || serverWriting || queuing.size || !pending.length) {
+      return;
+    }
+    const timer = setTimeout(() => void writeEverything(), 150);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto, run, pending, serverWriting, queuing.size]);
 
   /*
    * Two ways to have nothing to show, and they are different problems.
@@ -504,10 +712,28 @@ export function DocumentView({
 
   const written = writtenCount(doc);
   const stateOf = (s: DocSection): SectionState =>
-    busy.has(s.n) ? "writing" : s.state;
+    s.id && queuing.has(s.id) ? "writing" : s.state;
+
+  /**
+   * Where this row's work is, as opposed to what state it is in.
+   *
+   * `state` is one of four words the database keeps; this is the sentence a
+   * person can act on — which machine, awake or not, or nothing at all. See
+   * lib/use-run-document.ts for how the two are told apart.
+   */
+  const placeOf = (s: DocSection): Placement | undefined =>
+    s.id ? placements.get(s.id) : undefined;
 
   /** The one being written this second, if any, and how many gave up. */
   const nowWriting = doc.sections.find((s) => stateOf(s) === "writing") ?? null;
+  /*
+   * And on which machine, once one has claimed it. Empty for the second
+   * between the row being marked and a worker's long poll taking it, and for
+   * a section the server is writing itself on the workspace's API key.
+   */
+  const nowWritingAt = nowWriting ? placeOf(nowWriting) : undefined;
+  const nowWritingOn =
+    nowWritingAt?.kind === "writing" ? nowWritingAt.machine : "";
   const failedCount = doc.sections.filter((s) => stateOf(s) === "failed").length;
 
   const rollUp = (sections: DocSection[]): SectionState => {
@@ -675,11 +901,32 @@ export function DocumentView({
 
         <div style={{ display: "flex", gap: 8, flex: "0 0 auto" }}>
           {/*
+            Stop, whenever there is anything on the queue for this run.
+
+            It is offered for a run that is merely queued as well as one being
+            written, and that is the point: a run parked behind a machine
+            nobody is going to switch on is the commonest reason to want out,
+            and before this there was no way to cancel it — the only control
+            was the one that started it.
+          */}
+          {serverWriting ? (
+            <Button
+              variant="danger"
+              onClick={() => void stop()}
+              disabled={stopping}
+              title="Cancel the queued sections. One already being written stops within about fifteen seconds."
+            >
+              {stopping ? "Stopping…" : "Stop"}
+            </Button>
+          ) : null}
+          {/*
             While a run still has sections to write, the header is about
             finishing it, not about redoing what is already there. Redo all
-            comes back once it is done.
+            comes back once it is done. Nothing that starts work is offered
+            while work is already queued: pressing it would be asking for the
+            same sections a second time.
           */}
-          {unwritten ? (
+          {serverWriting ? null : unwritten ? (
             auto ? (
               <Hov
                 onClick={() => setAuto(false)}
@@ -793,10 +1040,12 @@ export function DocumentView({
                 height: 7,
                 borderRadius: "50%",
                 background: "currentColor",
-                animation:
-                  status.tone === "busy"
-                    ? "os-pulse 1.1s ease-in-out infinite"
-                    : undefined,
+                // A run waiting on a shut laptop is amber and still; only
+                // work actually moving is allowed to pulse, or the page
+                // animates at you about something that is not happening.
+                animation: status.pulse
+                  ? "os-pulse 1.1s ease-in-out infinite"
+                  : undefined,
               }}
             />
             <span style={{ fontWeight: 600 }}>{status.text}</span>
@@ -917,10 +1166,22 @@ export function DocumentView({
             {nowWriting ? (
               <span style={{ color: "#6a9dff", fontWeight: 600 }}>
                 writing {nowWriting.n} · {nowWriting.name}
+                {nowWritingOn ? ` on ${nowWritingOn}` : ""}
               </span>
-            ) : serverWriting || busy.size ? (
+            ) : queuing.size ? (
               <span style={{ color: "#6a9dff", fontWeight: 600 }}>
-                picking the next section…
+                queueing…
+              </span>
+            ) : waitingForMachine ? (
+              /*
+               * Queued, and nothing has taken it. Not "picking the next
+               * section" — that sentence was written when picking took a
+               * second and a half and happened in the API process. It can now
+               * be until somebody gets back to their desk, and saying so is
+               * the difference between waiting and wondering.
+               */
+              <span style={{ color: "#c99a3f", fontWeight: 600 }}>
+                on the queue — no machine has taken it yet
               </span>
             ) : failedCount ? (
               <span style={{ color: "#d1656b", fontWeight: 600 }}>
@@ -1121,6 +1382,8 @@ export function DocumentView({
                 {g.sections.map((s) => {
                   const sState = stateOf(s);
                   const sSt = STATE_STYLE[sState];
+                  const at = placeOf(s);
+                  const said = placementNote(at);
                   const open = openSections.has(s.n) && s.body.length > 0;
                   return (
                     <div key={s.n}>
@@ -1204,24 +1467,38 @@ export function DocumentView({
                                 {s.lang}
                               </span>
                             ) : null}
+                            {/*
+                              One word for where the work is, not for what the
+                              row's column says.
+
+                              Four situations shared the word QUEUED: nobody
+                              has asked; a machine is about to take it; a
+                              machine that is switched off is meant to take it;
+                              nothing anywhere can take it. The first two are
+                              fine, the third is an errand and the fourth is an
+                              install — so they get different words and
+                              different colours.
+                            */}
                             {sState !== "written" ? (
-                              <span
-                                style={{
-                                  fontFamily: font.mono,
-                                  fontSize: 8.5,
-                                  letterSpacing: "0.1em",
-                                  padding: "2px 6px",
-                                  borderRadius: 20,
-                                  background: sSt.bg,
-                                  color: sSt.fg,
-                                  animation:
-                                    sState === "writing"
-                                      ? "os-pulse 1.1s ease-in-out infinite"
-                                      : "none",
-                                }}
-                              >
-                                {sSt.label}
-                              </span>
+                              at ? (
+                                <Chip
+                                  mono
+                                  tone={PLACE_TONE[at.kind]}
+                                  pulse={at.kind === "writing"}
+                                  title={said || undefined}
+                                >
+                                  {PLACE_LABEL[at.kind]}
+                                </Chip>
+                              ) : (
+                                <Chip
+                                  mono
+                                  bg={sSt.bg}
+                                  fg={sSt.fg}
+                                  pulse={sState === "writing"}
+                                >
+                                  {sSt.label}
+                                </Chip>
+                              )
                             ) : null}
                             {/* Quiet, because it is a note about provenance
                                 rather than a state you have to act on. */}
@@ -1254,6 +1531,36 @@ export function DocumentView({
                           >
                             {s.purpose}
                           </div>
+                          {/*
+                            Why it is not written, in the server's own words.
+
+                            The failure text was carried all the way from
+                            `run_sections.error` into the document and then
+                            drawn nowhere, so a section that could not run said
+                            FAILED and nothing else — and the sentence that says
+                            WHICH tool to install was sitting in the object the
+                            row was rendered from. It wraps, because an install
+                            command truncated at one line is not an install
+                            command.
+                          */}
+                          {said ? (
+                            <div
+                              style={{
+                                marginTop: 3,
+                                fontSize: 11,
+                                lineHeight: 1.45,
+                                color:
+                                  at?.kind === "unroutable" ||
+                                  at?.kind === "failed"
+                                    ? "#d1656b"
+                                    : at?.kind === "waiting"
+                                      ? "#c99a3f"
+                                      : t(0.45),
+                              }}
+                            >
+                              {said}
+                            </div>
+                          ) : null}
                         </div>
 
                         <div style={{ display: "flex", gap: 6, flex: "none" }}>

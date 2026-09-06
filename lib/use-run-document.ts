@@ -5,8 +5,45 @@ import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import { latestRunFor, runToDoc, topicSlug } from "@/lib/run-doc";
 import { getPack, type ApiPack } from "@/lib/packs-client";
-import { getSource, type Source } from "@/lib/sources-client";
+import { followSource, getSource, isMoving, type Source } from "@/lib/sources-client";
 import { useRunWatch } from "@/lib/use-run-watch";
+import type { RunJob } from "@/lib/runs-client";
+
+/**
+ * Where one section's work actually is.
+ *
+ * Since the writing moved off the API process, "queued" covers four situations
+ * a person would act on completely differently: nobody has asked for it yet;
+ * it is on the queue and a machine is about to take it; it is on the queue
+ * behind a machine that is switched off; or it can never run because nothing
+ * on this estate has the tool. The row said QUEUED for all four.
+ *
+ * The two that matter most are the last two, and they are opposite answers:
+ * "whisper is not installed on that machine" is an install command, and "that
+ * machine has not been seen since Tuesday" is somebody opening their laptop.
+ */
+export type Placement =
+  | { kind: "done" }
+  /** Nothing has been asked for. The answer is a button. */
+  | { kind: "idle" }
+  /** Waiting on a section that has to be written first. */
+  | { kind: "blocked"; on: string[] }
+  /** On the queue, with machines awake to take it. */
+  | { kind: "queued" }
+  /**
+   * On the queue behind a machine that has not been seen recently.
+   *
+   * `machine` is its name when the job names one, `message` the server's own
+   * sentence about the wait. Either can be empty; between them there is
+   * normally something to say, and the page falls back to "nobody has picked
+   * this up yet" when there is not.
+   */
+  | { kind: "waiting"; machine: string; message: string }
+  /** A machine is holding it, and `machine` is which — see the note below. */
+  | { kind: "writing"; machine: string }
+  /** No machine anywhere advertises the tool. `message` says which, and how. */
+  | { kind: "unroutable"; message: string }
+  | { kind: "failed"; message: string };
 
 /**
  * The run a document page is about, resolved from either kind of address.
@@ -48,8 +85,35 @@ export function useRunDocument({
     return mine ? (latestRunFor(runs, mine.id)?.id ?? null) : null;
   }, [runId, seriesList, slug, runs]);
 
-  const { fetched, setFetched, serverWriting, setServerWriting } =
-    useRunWatch(watchId);
+  const {
+    fetched,
+    setFetched,
+    jobs,
+    serverWriting,
+    setServerWriting,
+    waitingForMachine,
+  } = useRunWatch(watchId);
+
+  /*
+   * The queue, per section.
+   *
+   * `jobsForRun` comes back oldest first, so the last entry for a section
+   * wins — and the last one is the live one whenever there is a live one,
+   * because `enqueue` converges on the existing queued-or-claimed job for a
+   * section rather than inserting a second. So a section retried after a
+   * failure reads from its retry, not from the failure it replaced.
+   *
+   * This is what a routing report retained from `POST :id/start` used to
+   * stand in for, badly: that answer belonged to one press of one button in
+   * one tab, so a machine's name appeared only for whoever pressed "Write the
+   * rest", never for a colleague opening the same run, and never at all for a
+   * single-section write. The queue is the same for everybody looking.
+   */
+  const jobBySection = useMemo(() => {
+    const out = new Map<string, RunJob>();
+    for (const job of jobs) if (job.sectionId) out.set(job.sectionId, job);
+    return out;
+  }, [jobs]);
 
   const run = useMemo(() => {
     /*
@@ -116,18 +180,34 @@ export function useRunDocument({
   /** The reel this run was given, when it was given one. */
   const [source, setSource] = useState<Source | null>(null);
 
+  /*
+   * Read once, then follow it if it has not landed yet.
+   *
+   * An ingest is a job now: opening a run seconds after Fetch means a source
+   * that is still `fetching`, with no stills and no transcript on it. Read
+   * once and the strip says "no stills" for ever — the row DID fill in, on a
+   * machine, and this page was the only thing still holding the version from
+   * before. `followSource` is the same loop the researcher uses, and it stops
+   * on its own the moment the row settles.
+   */
   useEffect(() => {
     const sid = run?.sourceId;
     if (!sid) return;
-    let cancelled = false;
+    const stop = new AbortController();
+
     void getSource(sid)
-      .then((x) => {
-        if (!cancelled) setSource(x);
+      .then(async (first) => {
+        if (stop.signal.aborted) return;
+        setSource(first);
+        if (!isMoving(first)) return;
+        await followSource(first, (step) => setSource(step), stop.signal);
       })
+      // A source that cannot be read is not news the document page can act on:
+      // the run and its sections are what this screen is for, and they are
+      // already on it. Abort on navigation lands here too.
       .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+
+    return () => stop.abort();
   }, [run?.sourceId]);
 
   /*
@@ -157,6 +237,123 @@ export function useRunDocument({
     ? run.sections.filter((x) => x.state !== "done").length
     : 0;
 
+  /*
+   * Where each section's work is, as one lookup the page can read per row.
+   *
+   * Two sources, and they answer different halves. `run_sections` says what
+   * has been written and what failed; the queue says where the work IS — which
+   * machine has it, whether anything can ever take it, and whether it is
+   * parked behind a laptop that is shut. Neither half can be derived from the
+   * other, which is why all three of the page's old workarounds were guesses.
+   */
+  const placements = useMemo(() => {
+    const out = new Map<string, Placement>();
+    if (!run) return out;
+
+    const done = new Set(
+      run.sections.filter((x) => x.state === "done").map((x) => x.id),
+    );
+    const ready = new Set(pending);
+    const titleOf = (id: string) =>
+      run.sections.find((x) => x.id === id)?.title ?? id;
+
+    for (const row of run.sections) {
+      const job = jobBySection.get(row.id);
+
+      if (row.state === "done") {
+        out.set(row.id, { kind: "done" });
+        continue;
+      }
+      if (row.state === "failed") {
+        /*
+         * Unroutable is a state on the job, not a shape of sentence.
+         *
+         * This was `/^No machine here has /` tested against `row.error` — the
+         * browser matching, by its first six words, a sentence written by
+         * `advance()` on the server. Rewording it there turned a red NO
+         * MACHINE chip into a plain FAILED one silently, and invited somebody
+         * to press Retry at a tool nobody has installed until they gave up.
+         * The job's `state` cannot be reworded into meaning something else.
+         */
+        out.set(
+          row.id,
+          job?.state === "unroutable"
+            ? { kind: "unroutable", message: row.error || job.error }
+            : { kind: "failed", message: row.error || "It did not say why." },
+        );
+        continue;
+      }
+      if (row.state === "writing" || job?.state === "claimed") {
+        /*
+         * Which machine is holding it — a thing the page could not say at all.
+         *
+         * `run_sections.wroteWith` is written on success, so while a section
+         * is in flight the row knows nothing about where it is; the job has
+         * named the machine since the moment it was claimed. Still "" for the
+         * second between `advance` marking the row and a worker's long poll
+         * claiming it, and the page says nothing rather than guessing.
+         */
+        out.set(row.id, {
+          kind: "writing",
+          machine: job?.state === "claimed" ? job.workerName : "",
+        });
+        continue;
+      }
+
+      // Queued, which is the word that hid four different situations.
+      const deps = runtime?.sections.find((d) => d.id === row.id)?.dependsOn ?? [];
+      const missing = deps.filter((d) => !done.has(d));
+      if (missing.length) {
+        out.set(row.id, { kind: "blocked", on: missing.map(titleOf) });
+        continue;
+      }
+      if (job?.state === "queued") {
+        /*
+         * Queued behind a machine that was not awake when it was enqueued.
+         *
+         * `waitUntil` is the tell and it is a field: `advance` sets it in that
+         * one case and nowhere else, so nothing here depends on how a sentence
+         * is worded. The machine's NAME is in the job's `error`, which IS that
+         * sentence — read only while the job has never been attempted, because
+         * a retryable failure overwrites `error` and leaves `waitUntil` where
+         * it was, and "waiting for Rifat's laptop" must not quietly become a
+         * CLI stack trace under an amber WAITING chip.
+         *
+         * `workerName` is empty here today, because `advance` does not pin the
+         * job to the machine it is waiting for. The day it does, this says the
+         * name on its own and the sentence stops mattering.
+         */
+        out.set(
+          row.id,
+          job.waitUntil
+            ? {
+                kind: "waiting",
+                machine: job.workerName,
+                message: job.attempts === 0 ? job.error : "",
+              }
+            : { kind: "queued" },
+        );
+        continue;
+      }
+      /*
+       * No job of its own, but the run has work on the queue and this section
+       * is next in line — the gap between pressing the button and the poll
+       * that sees what it enqueued.
+       */
+      if (serverWriting && ready.has(row.id)) {
+        out.set(
+          row.id,
+          waitingForMachine
+            ? { kind: "waiting", machine: "", message: "" }
+            : { kind: "queued" },
+        );
+        continue;
+      }
+      out.set(row.id, { kind: "idle" });
+    }
+    return out;
+  }, [run, runtime, pending, jobBySection, serverWriting, waitingForMachine]);
+
   return {
     run,
     runtime,
@@ -169,5 +366,7 @@ export function useRunDocument({
     setFetched,
     serverWriting,
     setServerWriting,
+    waitingForMachine,
+    placements,
   };
 }

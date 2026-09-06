@@ -8,11 +8,25 @@ because it is one database, not because a copy was handed out.
 
 ## What changes on a server
 
-**The model.** Your laptop writes with the `claude` CLI, billed to your Claude
-subscription. A server has no CLI and no login, so it needs an
-`ANTHROPIC_API_KEY` — the app already falls back to the API when the command is
-missing. That is a real cost per run, and the reason to keep an eye on who runs
-what.
+**The model stays on your machines.** This used to say a server has no CLI and
+no login, so it needs an `ANTHROPIC_API_KEY` at real money per run. That is no
+longer the shape. The server holds the UI, the API, Postgres and the frames,
+and makes every decision; the writing happens on a **worker** — a process on
+each teammate's own computer, signed in under their own CLI, using their own
+GPU. See `docs/WORKER.md`.
+
+So the server needs no key, no `claude`, no ffmpeg for a link, and no GPU.
+What it needs is at least one enrolled machine, or nothing can run: **Settings
+→ Machines**, mint a token, paste it into that computer's worker. A run with
+no capable machine says so by name and by install command rather than quietly
+spending money.
+
+`ANTHROPIC_API_KEY` still works, and is still off by default. A workspace can
+switch on **API fallback**, which lets the server write a section itself when
+no machine is awake. It is per workspace and opt-in on purpose: a fallback
+that fired by itself would spend real money at exactly the moment nobody was
+watching. `run_sections.wrote_with` records which machine — or `server:api` —
+wrote each section, and `runs.created_by` who pressed the button.
 
 **Two hostnames.** The web app answers on `APP_HOST` and the NestJS API on
 `API_HOST`; the browser calls the API directly, cross-origin. The session
@@ -20,13 +34,41 @@ cookie is set by the API and read by both, which works because both hosts sit
 under `COOKIE_DOMAIN` (`.content.yourcompany.com`). Put them on unrelated
 domains and you need `COOKIE_SAMESITE=none` — and you should not.
 
-**Not Vercel.** A run is a loop inside the API process (`driveRun`) that
-takes minutes and shells out to local binaries. Serverless kills both. A small
-VPS — Hetzner, DigitalOcean, anything with 2GB of RAM — is the shape this wants.
+`WEB_ORIGIN` now carries a second job. It is still the CORS allow-list, and it
+is also what the desktop app's one-time sign-in hand-off is allowed to redirect
+to — an endpoint that sets a session cookie and then redirects is worth more to
+an attacker than either half, so `next` is refused unless it matches. It has to
+be the **exact** origin the app was built with as `CONTENTOS_CONSOLE_URL`:
+scheme, host and port. Get it wrong and nothing breaks loudly — teammates just
+quietly get asked to sign in a second time, in the webview, having already
+signed in to the app.
+
+**Not Vercel, and now for a smaller reason.** A run is no longer a loop inside
+the API: `advance()` enqueues jobs and returns, and a worker claims them. But
+the API still holds long-poll connections for workers claiming work, runs a
+reaper on a timer, and serves frame uploads — none of which survives a
+function that is frozen between requests.
+
+The box is much cheaper than it was, though. It no longer downloads video,
+cuts frames for a link, or runs a model; it serves pages and holds rows. A
+small VPS — Hetzner, DigitalOcean, 2GB of RAM — is comfortable rather than
+tight. `ffmpeg` is still in the API image because a **browser upload** is cut
+on the server, where its bytes already are; whisper is not, because
+transcription is a job over a 16 kHz WAV that goes to a machine with a GPU.
 
 **Secrets travel with the data.** `CONTENTOS_SECRET` encrypts the API keys in
 the settings table. Move the database without moving that value and every saved
 key becomes unreadable, which looks like the keys vanished.
+
+In production it is now **required**: the API refuses to start without it,
+rather than falling back to a key derived from `DATABASE_URL`. That fallback
+was the quieter failure of the two — it works until the day somebody rotates
+the database password, and then every key saved under the old one decrypts to
+nothing and reads on the page as though it had never been pasted. An install
+that has been running on the fallback needs `CONTENTOS_SECRET` set before it
+will boot again, and the keys saved under the fallback have to be re-entered
+once; there is no way to recover them, because the value that encrypted them
+was never written down.
 
 ## First deploy
 
@@ -49,7 +91,59 @@ the `app` image, not restarting it.
 
 Open `https://APP_HOST`. The first account you make is the owner.
 
-Then, from your laptop, ask the API the six questions that matter:
+### Then enrol a machine, or nothing can run
+
+The server writes nothing by itself. Until one computer is enrolled, every run
+ends `unroutable` with a sentence naming the tool nobody has.
+
+**Settings → Machines → Enrol.** The token is shown once and kept only as a
+sha256 — losing it means revoking and enrolling again. On that computer:
+
+```bash
+CONTENTOS_API_URL=https://API_HOST CONTENTOS_WORKER_TOKEN=<the token> npm run worker
+```
+
+It registers, reports what it has (`claude`, `yt-dlp`, `ffmpeg`, `whisper`, …),
+and starts asking for work. Integrations then shows that machine's tools, and
+the row goes green. Anything missing is an install command on **that**
+computer, not on the server — which is the distinction the page is built to
+draw. Full options are in `docs/WORKER.md`.
+
+One machine is enough to start. A second is how a run gets faster: sections in
+the same dependency wave go to different computers, which is why
+`max_concurrency` defaults to 1 — one machine is one CLI login.
+
+### The desktop app, for people who do not use a terminal
+
+The command above is the developer's way in. Everyone else gets an installer,
+and the two addresses on this page are **baked into it at build time** so that
+nobody is asked to type a hostname:
+
+```bash
+CONTENTOS_CONSOLE_URL=https://APP_HOST \
+CONTENTOS_API_URL=https://API_HOST \
+  npm run desktop:installer
+```
+
+Both, and neither derived from the other. `api.` in front of the web host is
+this repo's compose convention rather than a rule — this page says plainly the
+two may live anywhere — and a guess that is usually right fails on somebody
+else's DNS long after whoever guessed has stopped looking.
+
+Build it without them and it still works, but every teammate is asked for the
+addresses at install time, which is the thing this removes. The script says so,
+loudly, before and after the build.
+
+What a teammate then does: run the installer, click through SmartScreen's
+warning (it is unsigned — see `docs/DECISIONS.md`), and **sign in with their
+own email and password**. The app mints its own machine token from that
+session and starts the worker; nobody pastes anything.
+
+The **Settings → Machines** flow above is still there and still works — it is
+the way to enrol a machine that is not running the desktop app, and the way to
+revoke one. It is no longer what an ordinary install involves.
+
+Then, from your laptop, ask the API the questions that matter:
 
 ```bash
 API_URL=https://API_HOST WEB_ORIGIN=https://APP_HOST SESSION=<your cookie value> npm run api:smoke
@@ -58,6 +152,144 @@ API_URL=https://API_HOST WEB_ORIGIN=https://APP_HOST SESSION=<your cookie value>
 It says whether the API is up, refuses a missing and a forged cookie, answers
 for yours, and allows the web origin through CORS. The cookie value is in your
 browser's devtools under Application → Cookies → `contentos_session`.
+
+Four of its lines are about the second credential, and they are the ones worth
+reading twice. A worker holds a bearer token rather than a cookie, and the
+entire reason it has its own credential is that neither reaches the other's
+routes: a **session must not be able to claim jobs**, and a **stolen worker
+token must not read the content library**. Both are one decorator away from
+being wrong, neither shows up on any screen, so both are asserted here.
+
+It also prints how many machines are enrolled. Zero is not a failed deploy,
+but it is the reason nothing runs.
+
+## Deploying on Dokploy
+
+Dokploy runs its own Traefik on :80 and :443. `docker-compose.prod.yml` ships
+one too, so those two fight for a socket — use **`docker-compose.dokploy.yml`**
+instead. It is the API and the console, no proxy, no published ports, and **no
+database**: the database is Dokploy's own Database service, so it gets backups
+and credential handling from the platform rather than from a volume nobody
+remembers to dump.
+
+### 1. The database
+
+**Create Service → Database → PostgreSQL 17.** Nothing else to set; it needs no
+domain, because only the API talks to it and they meet on Dokploy's network.
+When it is up, copy the **internal** connection string from its page — the one
+with a container hostname in it, not a public address.
+
+### 2. The compose
+
+**Create Service → Compose**, pointed at this repository.
+
+| Field | Value |
+| --- | --- |
+| Compose Path | `docker-compose.dokploy.yml` |
+| Branch | `main`, or whichever branch you deploy |
+
+Its **Environment** is the compose's `.env`. Five lines:
+
+```bash
+DATABASE_URL=postgres://…            # copied from the database's page, whole
+CONTENTOS_SECRET=                    # any long random string, then never change it
+APP_HOST=portal.yourcompany.com      # the console
+API_HOST=api.yourcompany.com         # the API
+COOKIE_DOMAIN=.yourcompany.com
+
+# Optional: the first account, made at boot instead of by hand.
+CONTENTOS_OWNER_EMAIL=you@yourcompany.com
+CONTENTOS_OWNER_PASSWORD=
+```
+
+Generate the secret where you are, not anywhere it gets written down twice:
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
+```
+
+`COOKIE_DOMAIN` has to be a parent of **both** hosts, because the API sets the
+session cookie and the console's proxy reads it. `portal.` and `api.` under one
+company domain means `.yourcompany.com` — which is every subdomain you have, so
+if you host other things there, putting both under a shared middle name
+(`portal.contentos.…` and `api.contentos.…`, with `COOKIE_DOMAIN=.contentos.…`)
+keeps the cookie to this app.
+
+### The first account
+
+Two ways, and the first needs nothing:
+
+**Sign up.** While `users` is empty the console offers it, and the first account
+made becomes the owner. Open `https://APP_HOST` after the deploy and claim it.
+
+**Or seed it.** Set `CONTENTOS_OWNER_EMAIL` and `CONTENTOS_OWNER_PASSWORD` and
+the API makes that account as it starts, so the console is usable the moment the
+deploy finishes with no human step in the middle.
+
+It runs **only while `users` is empty** — not "if this email is missing", which
+would recreate the account every time somebody removed it, a back door that
+reappears after being closed. Once there is one account it never runs again for
+the life of that database, and changing the variables afterwards does nothing.
+
+Both variables or neither; one alone is skipped with a line saying so. There is
+no default password anywhere in the repository, deliberately: a password in the
+code is a password in git, readable by everyone who can clone it. Put it in
+Dokploy's Environment, and change it once you are in.
+
+`DATABASE_URL` is taken whole rather than assembled from a host, a user and a
+password, because Dokploy owns those and can rotate them; a second copy is a
+second thing to keep in step.
+
+`CONTENTOS_SECRET` encrypts the API keys in the settings table and the API
+refuses to start without it. Do not change it later: everything already saved
+was encrypted with it, and a new value makes those keys read as though they had
+never been pasted.
+
+`COOKIE_DOMAIN` has to be the parent of both hosts, or the session cookie the
+API sets never reaches the console.
+
+### 3. Domains and the one build argument
+
+| Where | What |
+| --- | --- |
+| Domains | `APP_HOST` → service **app**, port **3333** |
+| Domains | `API_HOST` → service **api**, port **4000** |
+| Build arguments, on **app** | `NEXT_PUBLIC_API_URL=https://API_HOST` |
+
+That last row is a **build argument, not an environment variable**. The browser
+bundle is compiled with the API's address inside it, so changing `API_HOST`
+means rebuilding the app image rather than restarting it — and Dokploy's two
+fields look alike while only one of them reaches a `next build`.
+
+Deploy, open `https://APP_HOST`, and make the first account. It is the owner.
+
+### Then build the desktop app, on your own machine
+
+Dokploy builds the server. The app is built where you are and handed to people:
+
+```bash
+CONTENTOS_CONSOLE_URL=https://APP_HOST \
+CONTENTOS_API_URL=https://API_HOST \
+  npm run desktop:installer
+```
+
+→ `src-tauri/target/release/bundle/nsis/Content OS_<version>_x64-setup.exe`.
+
+**The one setting that breaks quietly.** `WEB_ORIGIN` on the server is set from
+`APP_HOST`, and it is also the only origin the desktop app's sign-in hand-off
+may redirect to. It must equal `CONTENTOS_CONSOLE_URL` **exactly** — scheme,
+host and port, no trailing slash. Get it wrong and nothing errors anywhere:
+teammates simply get asked to sign in a second time inside the app, having
+already signed in to it, and there is no message saying why.
+
+Everything else a teammate needs is inside the installer. They run it, click
+through SmartScreen (it is unsigned, deliberately — `docs/DECISIONS.md`), and
+sign in with their own email and password. No address to type, no token to
+paste.
+
+Rebuild and re-send the installer when the addresses change or the worker does.
+A change to a prompt, a template or a screen needs no new installer at all —
+that is the server's, and it is why the console stays hosted.
 
 ## Bringing your existing work across
 
@@ -97,9 +329,15 @@ read, that is a feature to build, not a setting to find.
 
 ## Keeping it
 
-The workspace is the `pgdata` volume. Videos and the stills cut from them are
-in `sourcedata` — big, and re-fetchable from the links they came from, which is
-why it is a second volume rather than something in the dump below.
+The workspace is the `pgdata` volume. `sourcedata` holds what a source left
+behind, and it is smaller than it used to be: a **fetched link** downloads its
+video on the worker and sends back only the stills and a 16 kHz WAV, so the
+server never stores the video at all. An **upload** is the exception — those
+bytes arrived here and stay here.
+
+Either way it is a second volume rather than part of the dump below, because
+it is bulk that a re-fetch can rebuild while the database is the part that
+cannot be.
 
 ```bash
 docker compose -f docker-compose.prod.yml exec -T postgres \
@@ -120,10 +358,22 @@ The app runs pending migrations as it starts. If you would rather run them
 first — before anything serves — `npm run db:migrate` does exactly that against
 whatever `DATABASE_URL` points at.
 
-## The alternative, if the API cost is the problem
+## What used to be here
 
-Keep the app on each person's machine and put **only the database** online
-(Neon, Supabase, Railway): every laptop sets the same `DATABASE_URL`, everyone
-sees the same data live, and each person writes with their own `claude` login,
-so there is no API bill. The cost is that everyone needs the repo, Node and the
-CLI installed, and everyone holds a database URL that can drop every table.
+This section offered an alternative for when the API bill was the problem: put
+only the database online, keep the app on every laptop, and let each person
+write with their own `claude` login. It is gone because the worker split is
+that idea done properly.
+
+It bought no API bill at the price of handing everyone the repo, a Node
+toolchain, and a `DATABASE_URL` that can drop every table. The worker gets the
+same thing — each person's own subscription, their own GPU — while the
+database stays behind the API, the UI is one URL nobody has to install, and a
+teammate holds a token that reaches six endpoints instead of credentials that
+reach everything.
+
+If the server itself is the objection rather than its cost, the honest small
+setup is one always-on computer running the whole thing behind a tunnel
+(Cloudflare Tunnel, Tailscale), with the worker beside it. Same code, same
+enrolment, no VPS. The trade is that when that computer sleeps, so does the
+console.

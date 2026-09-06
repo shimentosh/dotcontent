@@ -1,6 +1,7 @@
 import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 
 import { id, iso, one, q } from "@/lib/server/db/client";
+import { hashToken } from "@/lib/server/repos/workers";
 import { SESSION_COOKIE } from "@/lib/session";
 
 /**
@@ -396,6 +397,196 @@ export async function endOtherSessions(userId: string, keep: string) {
 /** Expired rows are dead weight; cleared whenever a session is read. */
 export const sweepSessions = () =>
   q("DELETE FROM sessions WHERE expires_at <= now()");
+
+/* ── The hand-off ───────────────────────────────────────────────────────── */
+
+/**
+ * One sign-in, carried from the desktop app into the console window beside it.
+ *
+ * The app signs in from Rust and keeps the session id in the OS credential
+ * store, because its webview is on `tauri://localhost` and the API's cookie is
+ * third-party there — `api/src/common/session.guard.ts` sets that out at
+ * length. Then it opens the console, which is an ordinary navigation to the
+ * team's server carrying no cookie at all, and the person signs in a *second*
+ * time: same email, same password, same account, ten seconds after the first.
+ * That second form is the only thing this exists to remove.
+ *
+ * A hand-off code is a one-shot bearer of one existing session. The app mints
+ * one over the session it already holds, opens the webview at
+ * `GET /api/auth/adopt?code=…` instead of at the console's own URL, and that
+ * route spends the code and sets the ordinary session cookie. The console is
+ * then signed in exactly the way every browser is signed in.
+ *
+ * Four rules, and each of them is preventing something specific:
+ *
+ * 1. **It buys the session it was minted from, and nothing else.** Spending a
+ *    code calls no `startSession` and extends no expiry. Two session rows for
+ *    one sign-in would mean "sign out everywhere" and Settings → Team could
+ *    each end one and leave the other alive — a person who revoked their
+ *    laptop and watched it keep working.
+ * 2. **Minutes, not hours.** For as long as a code is live it is a session in
+ *    a URL, and a URL is the least private thing in the system: webview
+ *    history, a proxy log, the `Referer` on whatever the console loads next.
+ *    Two minutes is a navigation, generously.
+ * 3. **Stored as a hash.** The `handoffs` table holds a sha256 and never the
+ *    code, for the reason `workers.token_hash` does: a database dump must not
+ *    be a list of live credentials. It is worth more here than there, because
+ *    what a hand-off code opens is a person's whole console rather than nine
+ *    queue routes.
+ * 4. **Single use, decided by Postgres.** The spend is one `UPDATE ... WHERE
+ *    used_at IS NULL` returning a row, the same trick `createUser` uses to
+ *    stop an invite link being redeemed twice by two people racing it. A read
+ *    followed by a write would let a replayed URL and the real navigation both
+ *    pass the read.
+ */
+
+/**
+ * How long a code is good for.
+ *
+ * It is spent by the very next request the app makes — it exists to survive
+ * one navigation, not a coffee break — so this is generous already. What it
+ * has to absorb is a slow window opening and a clock a minute out of step
+ * between the app's machine and the API's.
+ */
+const HANDOFF_SECONDS = 120;
+
+/**
+ * 32 random bytes, base64url.
+ *
+ * The same size and the same encoding as a session id, because it is a
+ * credential for the same thing for two minutes. base64url rather than
+ * `inviteToken`'s hand-rolled substitution because this one is always going
+ * into a query string, and a `+` in a URL is a space by the time it is read
+ * back.
+ */
+const handoffCode = () => randomBytes(32).toString("base64url");
+
+/**
+ * Mint a code for a session that already exists.
+ *
+ * `sessionId` is the caller's own, taken off the request by the guard, so
+ * there is no way to ask for a code for somebody else's session: the only
+ * session a caller can name is the one it authenticated with.
+ *
+ * `hashToken` is deliberately the worker repo's function rather than a second
+ * `createHash` call written here. It says so itself: one place that turns a
+ * credential into what the database stores is what stops two places getting
+ * the encoding subtly different, which would show up as a hand-off that mints
+ * fine and can never be spent.
+ */
+export async function createHandoff(sessionId: string) {
+  const code = handoffCode();
+  const row = await one<{ expires_at: string }>(
+    `INSERT INTO handoffs (code_hash, session_id, expires_at)
+     VALUES ($1, $2, now() + ($3 || ' seconds')::interval)
+     RETURNING expires_at`,
+    [hashToken(code), sessionId, String(HANDOFF_SECONDS)],
+  );
+  return { code, expiresAt: iso(row!.expires_at) };
+}
+
+/**
+ * Spend a code, and get back the session it was minted from.
+ *
+ * `null` for spent, expired, unknown, and for a code whose session has since
+ * been ended — one answer, on purpose. Telling those apart would tell whoever
+ * is guessing which half of their guess was right, and there is nothing a
+ * caller could usefully do differently with the distinction anyway: every one
+ * of them means "this navigation is not signed in".
+ *
+ * The `UPDATE` is the whole single-use rule. Two requests carrying the same
+ * code race each other inside one statement, and exactly one of them gets a
+ * row back — so a replayed URL, out of a webview's history or a log, finds
+ * `used_at` already set and is refused.
+ */
+export async function spendHandoff(code: string): Promise<string | null> {
+  if (!code) return null;
+  const row = await one<{ session_id: string }>(
+    `UPDATE handoffs SET used_at = now()
+      WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now()
+      RETURNING session_id`,
+    [hashToken(code)],
+  );
+  if (!row) return null;
+
+  /*
+   * And the session it names has to still be alive.
+   *
+   * The cascade takes codes with a deleted session, but expiry is not a
+   * delete: a session row sits there past `expires_at` until the sweep runs,
+   * and `sessionUser` is the one place that decides what "still signed in"
+   * means. Setting a cookie for a session this same module would refuse a
+   * moment later is a console that loads and immediately bounces to /login.
+   */
+  const sid = String(row.session_id);
+  return (await sessionUser(sid)) ? sid : null;
+}
+
+/** Spent and expired codes are dead weight; cleared whenever one is minted. */
+export const sweepHandoffs = () =>
+  q("DELETE FROM handoffs WHERE expires_at <= now() OR used_at IS NOT NULL");
+
+/**
+ * The origins a hand-off is allowed to land on: the console's, and no others.
+ *
+ * Read from `WEB_ORIGIN` — the same variable, parsed the same way, as the CORS
+ * list in `api/src/main.ts` — because that is already this deployment's
+ * statement of where the console is. A second variable would be a second thing
+ * to keep in step, and the failure of drifting apart would be a hand-off that
+ * works in dev and refuses on the server.
+ */
+const consoleOrigins = () =>
+  (process.env.WEB_ORIGIN ?? "http://localhost:3333")
+    .split(",")
+    .map((o) => {
+      try {
+        return new URL(o.trim()).origin;
+      } catch {
+        return "";
+      }
+    })
+    .filter(Boolean);
+
+/**
+ * Where a hand-off may redirect to, or `null`.
+ *
+ * **This is the sharp edge of the whole feature.** `/auth/adopt` sets a
+ * session cookie and then redirects, and an open redirect that also hands out
+ * a session is worth more to an attacker than either half on its own: send
+ * somebody a link, and their browser arrives at your page signed in as
+ * themselves, with whatever the console renders into the URL along for the
+ * ride. So `next` is checked against an allowlist and anything else is
+ * refused outright — not trimmed, not stripped back to a path, not quietly
+ * replaced with the console's front page. A silent fallback would make a
+ * misconfigured `WEB_ORIGIN` look like it worked, and the one time it mattered
+ * would be the time somebody was probing it.
+ *
+ * The rule is one line and covers every trick by construction, because
+ * `origin` is a scheme, a host and a port and nothing else: `//evil.example`
+ * resolves to evil's origin, `javascript:…` has no origin any allowlist can
+ * hold, `https://console@evil.example` is evil's origin with the console's
+ * name as a username. All three miss the list.
+ *
+ * An absent `next` is not a refusal — there is nothing to refuse — and means
+ * the console's front door.
+ */
+export function adoptTarget(next: string): string | null {
+  const allowed = consoleOrigins();
+  if (!allowed.length) return null;
+
+  const raw = (next ?? "").trim();
+  if (!raw) return allowed[0];
+
+  try {
+    // Resolved against the console, so `/runs/run_x` is a thing the app can
+    // send; the origin check below is what makes that safe rather than the
+    // parsing.
+    const url = new URL(raw, allowed[0]);
+    return allowed.includes(url.origin) ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
 
 /* ── The current request ────────────────────────────────────────────────── */
 

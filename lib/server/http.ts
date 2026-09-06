@@ -1,3 +1,4 @@
+import { assertSecret } from "@/lib/server/repos/settings";
 import { seedIfEmpty } from "@/lib/server/services/seed";
 
 /**
@@ -16,7 +17,19 @@ const store = globalThis as unknown as { __contentosSeed?: Promise<void> };
 
 export function ready(): Promise<void> {
   if (!store.__contentosSeed) {
-    store.__contentosSeed = seedIfEmpty().catch((e) => {
+    store.__contentosSeed = (async () => {
+      // Before anything writes: a production server without CONTENTOS_SECRET
+      // encrypts API keys under a value derived from DATABASE_URL, and loses
+      // every one of them the day that password is rotated. Checked here so a
+      // misconfigured deploy dies at boot with a sentence saying what to set,
+      // rather than looking healthy and dropping keys weeks later.
+      //
+      // Inside the async body rather than above it so a bad config comes back
+      // as a rejected promise like every other boot failure — and, like them,
+      // is not cached: fix the env var, restart, and the next call retries.
+      assertSecret();
+      await seedIfEmpty();
+    })().catch((e) => {
       // A failed seed must not be cached as done — the next request retries.
       store.__contentosSeed = undefined;
       throw e;

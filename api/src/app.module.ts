@@ -15,6 +15,9 @@ import { IntegrationsController } from "./integrations/integrations.controller";
 import { RunsController } from "./runs/runs.controller";
 import { SourcesController } from "./sources/sources.controller";
 import { ResearchController } from "./research/research.controller";
+import { WorkersController } from "./workers/workers.controller";
+import { MachinesController } from "./machines/machines.controller";
+import { Reaper } from "./workers/reaper";
 
 /**
  * One module, because there is one database and one set of rules.
@@ -22,8 +25,8 @@ import { ResearchController } from "./research/research.controller";
  * Nest's usual shape is a module per feature, each with its own providers.
  * Here the "providers" are the functions in `lib/server` — repos and services
  * shared with the repo root — and a controller is a thin translation from HTTP
- * to those. Ten controllers in one module is honest about that; ten modules
- * each importing nothing would be ceremony.
+ * to those. Thirteen controllers in one module is honest about that;
+ * thirteen modules each importing nothing would be ceremony.
  *
  * The session guard is global. Every route is behind it unless the handler
  * says otherwise with `@Public()` — the auth gap that the audit found was
@@ -43,7 +46,22 @@ import { ResearchController } from "./research/research.controller";
     RunsController,
     SourcesController,
     ResearchController,
+    WorkersController,
+    /*
+     * The console's view of the machines, not the machines' own protocol.
+     * `MachinesController` is behind the global session guard like every other
+     * console route; `WorkersController` above is bearer-token only. Two
+     * controllers because they are two principals — see docs/WORKER.md.
+     */
+    MachinesController,
   ],
-  providers: [{ provide: APP_GUARD, useClass: SessionGuard }],
+  /*
+   * The reaper is a provider rather than something started in `main`, so that
+   * its interval is owned by the application: Nest constructs it once and,
+   * with shutdown hooks on, clears it on the way out. A `setInterval` in
+   * `main` would survive `app.close()` and hold a database pool open forever
+   * in tests and on a dev reload.
+   */
+  providers: [{ provide: APP_GUARD, useClass: SessionGuard }, Reaper],
 })
 export class AppModule {}

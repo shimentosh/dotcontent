@@ -5,7 +5,6 @@ import type { NestExpressApplication } from "@nestjs/platform-express";
 import cookieParser from "cookie-parser";
 
 import { ready } from "@/lib/server/http";
-import { resumeOrphans } from "@/lib/server/services/runs";
 
 import { AppModule } from "./app.module";
 import { ErrorsFilter } from "./common/errors.filter";
@@ -56,11 +55,24 @@ async function main() {
    */
   await ready();
 
-  // Whatever the last process was writing when it stopped, this one finishes.
-  const resumed = await resumeOrphans();
-  if (resumed.length) {
-    console.log(`Resuming ${resumed.length} run(s) left mid-write: ${resumed.join(", ")}`);
-  }
+  /*
+   * Nothing at boot touches a section's state. This is where `resumeOrphans()`
+   * used to run, requeueing every `writing` row on the reasoning that its
+   * driver died with the last process. That was true while there was one
+   * process and the model was its own child; once the writing happens on
+   * somebody's laptop it is false, and a deploy would requeue a section a
+   * machine was four minutes into — written twice, paid for twice, the second
+   * answer overwriting the first. With two API replicas every boot would steal
+   * the other's in-flight work.
+   *
+   * Migration 0015 swept the genuine orphans of the old world once, and that
+   * was the last time. From here `jobs.lease_until` decides, per job, on
+   * evidence — a lease that ran out — and the reaper acts on it.
+   */
+
+  // So the reaper's interval is cleared on SIGTERM rather than left holding a
+  // database pool open while the container waits to be killed.
+  app.enableShutdownHooks();
 
   const port = Number(process.env.PORT ?? 4000);
   await app.listen(port);

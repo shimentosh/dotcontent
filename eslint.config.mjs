@@ -22,6 +22,10 @@ const eslintConfig = defineConfig([
     // CommonJS tsc writes into dist is not ours to style.
     "api/node_modules/**",
     "api/dist/**",
+    // Rust build output. Tauri generates a JS shim in here for the webview,
+    // and linting a file the toolchain writes is three warnings about code
+    // nobody can edit.
+    "src-tauri/target/**",
   ]),
 ]);
 

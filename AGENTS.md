@@ -10,11 +10,17 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Read these first
 
-Four short files, written so a session does not have to rediscover the same
-things by grepping and clicking. Read the one that matches the job.
+Written so a session does not have to rediscover the same things by grepping
+and clicking. Read the one that matches the job.
 
-- **`docs/ARCHITECTURE.md`** — what lives where, the routes, the data flow, and
-  the vocabulary (the UI says "Template" where the code says `pack`).
+- **`docs/ARCHITECTURE.md`** — what lives where, the routes, the two data flows,
+  and the vocabulary (the UI says "Template" where the code says `pack`, and
+  "Machine" where it says `worker`).
+- **`docs/WORKER.md`** — why writing a section and fetching a reel became jobs
+  on a queue that teammates' laptops claim: the `workers` and `jobs` tables, the
+  claim query, the leases, and what a machine's bearer token may reach. Read it
+  before touching `worker/`, `api/src/workers/`, `lib/server/repos/jobs.ts` or
+  `advance()` in `lib/server/services/runs.ts`.
 - **`docs/DEVELOPING.md`** — how to start it (port 3333), what to run to check
   work, why `next build` must not touch the dev server, and what to do when
   another session is editing the same files.
@@ -42,3 +48,25 @@ Compose from the UI kit in `components/ui` — `Page`, `PageHeader`, `Toolbar`,
   listed in `components/ui/README.md` — read that file before adding anything.
 - Every icon-only control takes a `label`, which becomes its tooltip and its
   accessible name.
+
+# Code that runs on somebody else's machine
+
+`worker/` is a sidecar on a teammate's laptop. It claims jobs over HTTPS, spawns
+the CLIs, and posts the results back. It has no database and must never look
+like it wants one.
+
+- From `lib/server` it may import `tools.ts`, `brain-defs.ts` and
+  `brain-transports.ts`, and **nothing else**. Everything else there reaches a
+  repo, and an import of a repo puts `pg` on somebody's desktop. That is how the
+  worker ended up carrying a hand-copied brain table once already — and the copy
+  drifted, on the half of the system that does the work.
+- Use relative specifiers in anything the worker imports, not `@/`. It runs
+  under Node's own type stripping through `worker/resolve-ts.mjs`, which knows
+  nothing about tsconfig `paths`: an `@/` import typechecks, passes review, and
+  is a module-not-found the first time somebody starts the sidecar.
+- The server decides and the worker executes. A payload carries finished text
+  and a command — never a pack, a rule, a dependency graph or the brand voice —
+  and a worker that cannot honour what it was told fails the job rather than
+  quietly answering some other way.
+- `npm run worker` starts it; there is no build step. `docs/WORKER.md` lists the
+  environment it takes and why two of the variables have no default.

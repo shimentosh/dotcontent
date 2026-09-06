@@ -61,3 +61,14 @@ next-env.d.ts
 # the NestJS API has its own install and build output
 api/node_modules
 api/dist
+
+# the Tauri desktop app: Rust build output, and the ACL schemas tauri-build
+# writes from tauri.conf.json on every compile. Cargo.lock is NOT here — this
+# is an application, so the exact versions it was built against are part of it.
+src-tauri/target
+src-tauri/gen/schemas
+
+# The Node the desktop app ships. ~90 MB, fetched and checksummed by
+# src-tauri/scripts/fetch-node.mjs at build time — a runtime is not a thing to
+# keep in a repository.
+src-tauri/binaries

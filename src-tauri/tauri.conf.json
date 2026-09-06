@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Content OS",
+  "version": "0.1.0",
+  "identifier": "com.contentos.desktop",
+  "build": {
+    "frontendDist": "ui",
+    "devUrl": "http://localhost:1421"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": []
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [],
+      "pubkey": ""
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/32x32.png", "icons/icon.png", "icons/icon.ico"],
+    "publisher": "Content OS",
+    "shortDescription": "The Content OS console, and the worker for this machine",
+    "externalBin": ["binaries/node"],
+    "resources": {
+      "../worker/*.ts": "worker/",
+      "../worker/*.mjs": "worker/",
+      "../lib/server/tools.ts": "lib/server/tools.ts",
+      "../lib/server/brain-defs.ts": "lib/server/brain-defs.ts",
+      "../lib/server/brain-transports.ts": "lib/server/brain-transports.ts",
+      "../package.json": "package.json"
+    },
+    "windows": {
+      "signCommand": {
+        "cmd": "powershell",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "scripts/sign.ps1",
+          "%1"
+        ]
+      }
+    }
+  }
+}

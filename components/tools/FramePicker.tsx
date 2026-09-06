@@ -324,8 +324,10 @@ export function FramePicker({
         </div>
       ) : (
         <p style={{ margin: "0 0 12px", fontSize: 12.5, color: "#c99a3f" }}>
-          No frames were cut — the video itself was not downloaded, or
-          ffmpeg is off in Integrations. It can still read the transcript.
+          No frames were cut — the video itself was not downloaded, or the
+          machine that fetched it has ffmpeg switched off. That switch is per
+          machine now, on Settings → Machines. It can still read the
+          transcript.
         </p>
       )}
 
