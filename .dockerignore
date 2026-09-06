@@ -1,0 +1,55 @@
+# What never goes into an image.
+#
+# There was no such file, and its absence is why a broken build passed here and
+# failed on the server. `COPY . .` took the working tree whole — including
+# `api/node_modules`, which happened to be lying around — so a Next build that
+# should have failed for want of the API's dependencies found them anyway. The
+# deployment builds from a clean checkout, where they are not there.
+#
+# So this exists for correctness first and size second: an image that depends on
+# what somebody happened to have on disk is not reproducible, and the same
+# oversight was carrying hundreds of megabytes of node_modules, .next output and
+# Rust build artefacts into every layer.
+#
+# Every dependency an image needs is installed inside it, from the lockfile.
+
+# Installed in the image, never copied into it.
+node_modules
+*/node_modules
+**/node_modules
+
+# Build output, all of it produced inside the image or not wanted there.
+.next
+.next-check
+out
+api/dist
+src-tauri/target
+src-tauri/binaries
+src-tauri/gen
+
+# The desktop app is built on somebody's machine and handed over; the server
+# images have no use for its sources.
+src-tauri
+
+# Downloads, frames, audio and the tools the installer fetches. Runtime data on
+# a volume, not something to bake in.
+.data
+.data-*
+
+# Local and personal.
+.git
+.github
+.env
+.env.*
+!.env.production.example
+.vscode
+*.log
+npm-debug.log*
+
+# Documentation and tests do not run in production. They stay in the repository,
+# which is where they are read.
+docs
+design
+tests
+*.md
+!README.md

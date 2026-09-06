@@ -8,49 +8,19 @@ import {
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 
-import { SESSION_COOKIE, sessionUser, type User } from "@/lib/server/auth";
+import {
+  SESSION_COOKIE,
+  SESSION_SCHEME,
+  sessionFromHeader,
+  sessionUser,
+  type User,
+} from "@/lib/server/auth";
+
+export { SESSION_SCHEME, sessionFromHeader };
 
 /** Marks a handler reachable without a session — the sign-in routes. */
 export const PUBLIC = "contentos:public";
 export const Public = () => SetMetadata(PUBLIC, true);
-
-/**
- * The scheme a client that is not a browser sends its session under:
- * `Authorization: Session <id>`.
- *
- * **Not `Bearer`.** `WorkerGuard` owns that word, and the two credentials it
- * would then share a spelling with are the two that must never be confused:
- * a session is a person and reaches the whole console, a worker token is a
- * machine and reaches nine queue routes. Two credentials that look alike at a
- * glance is how one ends up pasted where the other belongs — into a support
- * message, a `.env`, or the wrong field of a setup window — and the paste that
- * matters is the one that hands somebody's whole console to a machine's
- * credential store. A different scheme name costs one word and makes the two
- * impossible to mistake in a log line, a proxy rule or a curl command.
- *
- * `Session` is not on the IANA scheme registry and does not need to be: it is
- * read by this guard and sent by this repository's own desktop app, and a
- * registered name would only invite something else to assume it means what it
- * means somewhere else.
- */
-export const SESSION_SCHEME = "Session";
-
-const SESSION_HEADER = /^Session\s+(.+)$/i;
-
-/**
- * The session id an `Authorization` header carries, or an empty string.
- *
- * Split out so it can be tested without a database, a request or a window
- * system, and so there is exactly one place that decides what counts: the
- * important half of this function is what it *refuses*. A `Bearer` header is
- * a worker token and must read as no session at all, or the desktop app's two
- * credentials would each be accepted in the other's place — precisely the
- * merge `docs/WORKER.md` argues against in "The desktop app holds two
- * credentials, on purpose".
- */
-export function sessionFromHeader(header: string | undefined): string {
-  return SESSION_HEADER.exec(String(header ?? "").trim())?.[1]?.trim() ?? "";
-}
 
 /** The request, once the guard has run: the user rides on it. */
 export type SessionRequest = Request & { user?: User; sessionId: string };
