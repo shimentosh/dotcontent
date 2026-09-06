@@ -91,7 +91,11 @@ async function main() {
   if (!enrolled) return;
 
   log(
-    `Registered as ${enrolled.workerId} (${cfg.name}). Claiming for ${enrolled.claimMs}ms at a time, heartbeat every ${enrolled.heartbeatMs}ms.`,
+    // The console's name for this machine, not the one we guessed. A machine is
+    // named by a person in Settings -> Machines and that is what every screen
+    // shows; announcing a hostname here gave one computer two names in front of
+    // somebody working out which of them had stopped claiming.
+    `Registered as ${enrolled.workerId} (${enrolled.name || cfg.name}). Claiming for ${enrolled.claimMs}ms at a time, heartbeat every ${enrolled.heartbeatMs}ms.`,
   );
 
   /*

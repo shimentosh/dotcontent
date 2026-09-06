@@ -113,6 +113,18 @@ export class WorkersController {
     });
     return {
       workerId: saved.id,
+      /*
+       * The name the CONSOLE has for this machine, handed back so the worker
+       * can say it.
+       *
+       * The worker knows only what it was configured with, which is usually a
+       * hostname; the console knows what a person typed in Settings → Machines,
+       * and that is the name every screen shows. Without this the sidecar's own
+       * log announced itself as "Shifa" while the machine picker called it
+       * "Shakhawat's PC" — two names for one computer, in front of somebody
+       * trying to work out which one is not claiming jobs.
+       */
+      name: saved.name,
       heartbeatMs: HEARTBEAT_MS,
       claimMs: CLAIM_HOLD_MS,
     };

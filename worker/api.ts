@@ -114,7 +114,13 @@ export class Api {
     tools: ToolStatus[];
     enabled: string[];
   }) {
-    return this.send<{ workerId: string; heartbeatMs: number; claimMs: number }>(
+    return this.send<{
+      workerId: string;
+      /** What the console calls this machine — not what we called ourselves. */
+      name?: string;
+      heartbeatMs: number;
+      claimMs: number;
+    }>(
       "POST",
       "/api/workers/register",
       body,
