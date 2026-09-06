@@ -96,7 +96,6 @@ lib/packs/           the shipped template(s), as code
 tests/               vitest. Pure functions, except queue.test.ts, which builds
                      and drops a Postgres of its own and skips when there is
                      none. `npm run check` runs them.
-.github/workflows/   the same checks, on every push
 ```
 
 ## How a change reaches the screen

@@ -70,6 +70,13 @@ mistake a screenshot never will — a renamed identifier, a filter key that no
 longer matches its type, a status that stops being derived the way the list
 expects.
 
+**Nothing runs it but you.** There is no CI: this is a small team that builds
+the desktop app on its own machines and deploys the server from a branch, so a
+second machine repeating the same four commands was paying for a signal nobody
+was waiting on. The cost is that an unrun check is an unknown one — `npm run
+check` before a push, and `npm run build:check` before a deploy, are the whole
+discipline.
+
 The tests are `tests/*.test.ts` and deliberately narrow: no components, no
 database. They cover the pure functions everything stands on — what status a
 row shows, what slug a URL resolves by, what an imported template turns into,
