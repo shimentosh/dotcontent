@@ -620,3 +620,59 @@ export const cookieOptions = (maxAgeDays = SESSION_DAYS) => ({
   secure: process.env.NODE_ENV === "production",
   maxAge: maxAgeDays * 24 * 60 * 60,
 });
+
+/* ── The Authorization header ──────────────────────────────────── */
+
+/*
+ * Here rather than in the guard that uses it, and the reason is a build.
+ *
+ * It lived in `api/src/common/session.guard.ts`, which imports NestJS. The
+ * test for it therefore imported NestJS too, transitively — and the root
+ * tsconfig excludes `api` but not `tests`, so `next build` followed that one
+ * import into the API and failed on a machine where the API's dependencies
+ * are not installed. Which is every clean checkout, including the one the
+ * deployment builds from. It passed locally only because there was an
+ * `api/node_modules` lying around to be copied into the image.
+ *
+ * Nothing about parsing a header needed a web framework. It is a string in
+ * and a string out, it belongs beside the sessions it names, and from here
+ * it can be tested without dragging a server in behind it.
+ */
+
+/**
+ * The scheme a client that is not a browser sends its session under:
+ * `Authorization: Session <id>`.
+ *
+ * **Not `Bearer`.** `WorkerGuard` owns that word, and the two credentials it
+ * would then share a spelling with are the two that must never be confused:
+ * a session is a person and reaches the whole console, a worker token is a
+ * machine and reaches nine queue routes. Two credentials that look alike at a
+ * glance is how one ends up pasted where the other belongs — into a support
+ * message, a `.env`, or the wrong field of a setup window — and the paste that
+ * matters is the one that hands somebody's whole console to a machine's
+ * credential store. A different scheme name costs one word and makes the two
+ * impossible to mistake in a log line, a proxy rule or a curl command.
+ *
+ * `Session` is not on the IANA scheme registry and does not need to be: it is
+ * read by this guard and sent by this repository's own desktop app, and a
+ * registered name would only invite something else to assume it means what it
+ * means somewhere else.
+ */
+export const SESSION_SCHEME = "Session";
+
+const SESSION_HEADER = /^Session\s+(.+)$/i;
+
+/**
+ * The session id an `Authorization` header carries, or an empty string.
+ *
+ * Split out so it can be tested without a database, a request or a window
+ * system, and so there is exactly one place that decides what counts: the
+ * important half of this function is what it *refuses*. A `Bearer` header is
+ * a worker token and must read as no session at all, or the desktop app's two
+ * credentials would each be accepted in the other's place — precisely the
+ * merge `docs/WORKER.md` argues against in "The desktop app holds two
+ * credentials, on purpose".
+ */
+export function sessionFromHeader(header: string | undefined): string {
+  return SESSION_HEADER.exec(String(header ?? "").trim())?.[1]?.trim() ?? "";
+}

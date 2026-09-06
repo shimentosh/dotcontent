@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { sessionFromHeader } from "@/api/src/common/session.guard";
+import { sessionFromHeader } from "@/lib/server/auth";
 
 /**
  * Which credential is which.
