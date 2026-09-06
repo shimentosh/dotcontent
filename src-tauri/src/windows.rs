@@ -88,11 +88,13 @@ pub fn setup(app: &AppHandle) {
     // is what prevents.
     let _ = WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("setup.html".into()))
         .title("Content OS — this machine")
-        // Tall enough for the three panels — status, sign in, addresses — on a
-        // first run, because the one that matters on a first run is the middle
-        // one, and a window that opens with the sign-in below the fold is a
-        // window somebody reads as "nothing here to do".
-        .inner_size(560.0, 780.0)
+        // Sized for the sign-in, which on a first run is the whole screen: a
+        // mark, a heading, two fields and a button. It used to be 780 tall for
+        // three stacked panels, and everything but the sign-in is behind one
+        // disclosure now — so the height was measuring content that is no
+        // longer there, and an empty half-window reads as a screen still
+        // loading. It grows on its own when somebody opens the diagnostics.
+        .inner_size(460.0, 560.0)
         .build();
 }
 

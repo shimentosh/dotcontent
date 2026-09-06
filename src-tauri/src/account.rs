@@ -660,11 +660,7 @@ mod tests {
     /// Machines with a row per launch, each holding a live credential.
     #[test]
     fn a_machine_that_is_still_listed_is_kept() {
-        assert!(already_enrolled(
-            "wrk_1",
-            true,
-            &ids(&["wrk_9", "wrk_1"])
-        ));
+        assert!(already_enrolled("wrk_1", true, &ids(&["wrk_9", "wrk_1"])));
     }
 
     /// Revoked in Settings → Machines. The row is gone, so the token in the
@@ -742,7 +738,9 @@ mod tests {
         tauri::async_runtime::block_on(async move {
             let http = client().expect("a client");
 
-            let me = login(&http, &api, &email, &password).await.expect("sign in");
+            let me = login(&http, &api, &email, &password)
+                .await
+                .expect("sign in");
             let session = me
                 .session
                 .clone()
@@ -788,7 +786,9 @@ mod tests {
              */
             let console = std::env::var("CONTENTOS_TEST_CONSOLE")
                 .unwrap_or_else(|_| "http://localhost:3333".into());
-            let code = handoff(&http, &api, &header).await.expect("a hand-off code");
+            let code = handoff(&http, &api, &header)
+                .await
+                .expect("a hand-off code");
             let url = adopt_url(&api, &code, &console).expect("an adopt url");
 
             let webview = reqwest::Client::builder()
@@ -837,7 +837,9 @@ mod tests {
             // And the password still has to be right, over the same client
             // against the same server — a login that accepts anything would
             // pass every assertion above.
-            assert!(login(&http, &api, &email, "not-the-password").await.is_err());
+            assert!(login(&http, &api, &email, "not-the-password")
+                .await
+                .is_err());
         });
     }
 

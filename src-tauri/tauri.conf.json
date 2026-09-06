@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "identifier": "com.contentos.desktop",
   "build": {
-    "frontendDist": "ui"
+    "frontendDist": "ui",
+    "devUrl": "http://localhost:1421"
   },
   "app": {
     "withGlobalTauri": true,

@@ -174,23 +174,83 @@
         -webkit-user-select: text;
         user-select: text;
       }
+
+      /*
+        The console's own sign-in, in the values this window can reach.
+        components/views/AuthView.tsx is the screen it is matching: the mark
+        beside the wordmark, a 27px tight heading, one sentence, then the
+        panel. The kit is not importable here — this is plain HTML in a Tauri
+        window — so the numbers are copied, not the components.
+      */
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin-bottom: 22px;
+      }
+      .mark {
+        width: 30px;
+        height: 30px;
+        border-radius: 9px;
+        background: linear-gradient(150deg, #5b93ff, #0057fc);
+      }
+      .wordmark {
+        font-size: 17px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+      h1#title {
+        font-size: 27px;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        margin: 0 0 6px;
+      }
+
+      /*
+        One line, and everything that is not signing in behind it. Quiet on
+        purpose: a person who needs it is looking for it, and a person who does
+        not should not be reading it.
+      */
+      .diag {
+        margin-top: 22px;
+      }
+      .diag > summary {
+        cursor: pointer;
+        font-size: 12.5px;
+        color: rgba(255, 255, 255, 0.45);
+        padding: 6px 0;
+      }
+      .diag > summary:hover {
+        color: rgba(255, 255, 255, 0.72);
+      }
+      .diag[open] > summary {
+        margin-bottom: 10px;
+      }
     </style>
   </head>
   <body>
-    <h1>This machine</h1>
-    <p class="sub">
-      The console runs on your team's server. This app opens it, and runs the
-      worker that does the writing and the video work here, on this computer.
-    </p>
+    <!--
+      The first thing a teammate sees, and it is a sign-in.
 
-    <div class="panel">
-      <div class="status"><span class="dot" id="dot"></span><span id="state">Starting…</span></div>
-      <p id="message"></p>
-      <details>
-        <summary>What the worker is saying</summary>
-        <pre id="log"></pre>
-      </details>
+      This screen used to open with a title, an explanatory paragraph, a status
+      card, the sign-in, two addresses with their provenance, two disclosures
+      and three buttons — for a person whose whole job here is to type an email
+      and a password. Everything else is diagnostics, and diagnostics belong
+      where somebody goes looking for them.
+
+      It is shaped like the console's own sign-in (components/views/AuthView)
+      on purpose: the same person meets both, and two different-looking front
+      doors to one product is a reason to wonder which one is real.
+    -->
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <span class="wordmark">Content OS</span>
     </div>
+
+    <h1 id="title">Sign in</h1>
+    <p class="sub" id="subtitle">
+      This app opens your team's console and runs the worker on this computer.
+    </p>
 
     <!--
       The way in, and the only one a teammate should need.
@@ -204,14 +264,9 @@
       credential store.
     -->
     <div class="panel" id="account">
-      <p class="name">Sign in to Content OS</p>
 
       <div id="signed-in" hidden>
         <p class="value" id="account-email"></p>
-        <p class="hint">
-          This app is signed in to your console and has this machine's own
-          token. Nothing else is needed here.
-        </p>
         <div class="row">
           <button id="re-enrol">Set this machine up again</button>
           <div class="spacer"></div>
@@ -224,17 +279,38 @@
         <input id="email" type="email" spellcheck="false" autocomplete="off" placeholder="you@yourteam.com" />
         <label for="password">Password</label>
         <input id="password" type="password" placeholder="Your Content OS password" />
-        <p class="hint">
-          The same email and password you use for Content OS. This machine is
-          set up for you — there is no token to find and nothing to paste.
-        </p>
         <div class="row">
-          <button class="primary" id="sign-in">Sign in and set up this machine</button>
+          <button class="primary" id="sign-in">Sign in</button>
         </div>
       </div>
 
       <p id="account-error"></p>
       <p id="account-said"></p>
+    </div>
+
+    <!--
+      Everything that is not signing in, one click away.
+
+      Somebody diagnosing a machine that will not connect needs every one of
+      these — which server the worker called, who told it to call that one,
+      what it said, and the token path for a machine being set up by whoever
+      runs the console rather than the person sitting at it. None of it is
+      gone. It is simply not the first thing in front of somebody who has not
+      signed in yet.
+
+      Open by itself once the machine is set up: whoever comes back to this
+      window then is checking or repairing, not signing in.
+    -->
+    <details class="diag" id="diagnostics">
+      <summary>This machine's setup and worker</summary>
+
+    <div class="panel">
+      <div class="status"><span class="dot" id="dot"></span><span id="state">Starting…</span></div>
+      <p id="message"></p>
+      <details>
+        <summary>What the worker is saying</summary>
+        <pre id="log"></pre>
+      </details>
     </div>
 
     <div class="panel">
@@ -308,12 +384,20 @@
       </div>
       <p id="error"></p>
     </div>
+    </details>
 
     <script>
       const { invoke } = window.__TAURI__.core;
       const { listen } = window.__TAURI__.event;
 
       const el = (id) => document.getElementById(id);
+
+      /*
+        Whether the person opened or closed the diagnostics themselves. Without
+        it every poll would re-open a section somebody had just closed — the
+        screen arguing with the person using it.
+      */
+      let diagnosticsTouched = false;
 
       /*
         Whether the sign-in fields are on screen for somebody who is already
@@ -351,6 +435,40 @@
         el("signed-in").hidden = !signedIn;
         el("account-email").textContent = view.signedInAs;
         el("signed-out").hidden = signedIn && !switching;
+
+        /*
+          The window has two jobs and they are not the same shape.
+
+          Signed out it is a sign-in and should look like one. Signed in,
+          nobody opens it to sign in — they came to check this machine is
+          working or to fix it — so it leads with what is true and the
+          diagnostics are already open rather than one click further away.
+        */
+        el("title").textContent = signedIn ? "This machine" : "Sign in";
+        el("subtitle").textContent = signedIn
+          ? "The worker on this computer does the writing and the video work."
+          : "This app opens your team's console and runs the worker on this computer.";
+
+        /*
+          Not on screen at all until it is worth something.
+
+          Signed out and nothing wrong, there is nothing behind this a person
+          can act on: the worker has not been asked to do anything yet, and the
+          addresses were decided when the installer was built. Offering it
+          anyway is a second thing to read on a screen whose whole job is two
+          fields.
+
+          It appears the moment it can help — once this machine is set up, and
+          the instant anything fails, which is when the addresses, the worker's
+          own words and the token fallback are the answer. `NOT_WORKING` is the
+          set of states from worker.rs that a person has to do something about;
+          `starting` and `not-configured` are not among them, because neither
+          is news on a screen that has not been used yet.
+        */
+        const NOT_WORKING = ["offline", "node-missing", "worker-missing", "bad-token", "stopped"];
+        const wrong = NOT_WORKING.includes(view.state) || Boolean(el("account-error").textContent);
+        el("diagnostics").hidden = !signedIn && !wrong;
+        if ((signedIn || wrong) && !diagnosticsTouched) el("diagnostics").open = true;
         // The repair only means anything with a session behind it, and the
         // sentence for having none is in Rust, where the reason lives.
         el("re-enrol").disabled = !signedIn;
@@ -498,6 +616,7 @@
           }),
         );
 
+      el("diagnostics").addEventListener("toggle", () => (diagnosticsTouched = true));
       el("sign-in").addEventListener("click", signIn);
       el("re-enrol").addEventListener("click", () =>
         talk(el("re-enrol"), "Setting up…", () => invoke("enrol")),

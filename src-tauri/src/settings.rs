@@ -461,9 +461,9 @@ fn secret(account: &str) -> String {
 fn set_secret(account: &str, value: &str, what: &str) -> Result<(), String> {
     let entry = keyring::Entry::new(SERVICE, account)
         .map_err(|e| format!("Could not open this machine's credential store: {e}"))?;
-    entry.set_password(value).map_err(|e| {
-        format!("Could not save {what} to this machine's credential store: {e}")
-    })
+    entry
+        .set_password(value)
+        .map_err(|e| format!("Could not save {what} to this machine's credential store: {e}"))
 }
 
 /// Turn what somebody typed into the origin that will actually be used.

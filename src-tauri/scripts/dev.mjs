@@ -30,6 +30,8 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { serveUi } from "./ui-server.mjs";
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 /**
@@ -56,6 +58,26 @@ console.log(`CONTENTOS_CONSOLE_URL  ${env.CONTENTOS_CONSOLE_URL}   the window op
 console.log(`CONTENTOS_API_URL      ${env.CONTENTOS_API_URL}   the worker calls this (NestJS)`);
 console.log("");
 
+/*
+ * The setup window's HTML, served rather than embedded, so editing it is a
+ * save and not a `cargo build`. `tauri.conf.json` points `build.devUrl` here,
+ * and Tauri prefers it over the compiled-in copy in a debug build — release
+ * builds never see this file at all.
+ *
+ * A port already in use is not worth stopping for: the app still runs, it
+ * just uses the embedded copy, which is what it did before any of this.
+ */
+const UI_PORT = 1421;
+const ui = await serveUi(path.join(root, "src-tauri", "ui"), UI_PORT).catch((e) => {
+  console.log(`ui: not serving on ${UI_PORT} (${e.code ?? e.message}) — the window will use its built-in copy`);
+  console.log("");
+  return null;
+});
+if (ui) {
+  console.log(`ui                     http://localhost:${UI_PORT}   setup.html, reloading on save`);
+  console.log("");
+}
+
 const child = spawn(
   "cargo",
   ["run", "--manifest-path", "src-tauri/Cargo.toml", ...process.argv.slice(2)],
@@ -73,4 +95,9 @@ child.on("error", (e) => {
   process.exit(1);
 });
 
-child.on("exit", (code, signal) => process.exit(signal ? 1 : (code ?? 1)));
+child.on("exit", (code, signal) => {
+  // The server holds the process open on its own, so closing the window would
+  // otherwise leave a port bound and the next run quietly on the built-in copy.
+  ui?.close();
+  process.exit(signal ? 1 : (code ?? 1));
+});
