@@ -193,10 +193,48 @@ Its **Environment** is the compose's `.env`. Five lines:
 ```bash
 DATABASE_URL=postgres://…            # copied from the database's page, whole
 CONTENTOS_SECRET=                    # any long random string, then never change it
-APP_HOST=content.yourcompany.com     # the console
-API_HOST=api.content.yourcompany.com # the API
-COOKIE_DOMAIN=.content.yourcompany.com
+APP_HOST=portal.yourcompany.com      # the console
+API_HOST=api.yourcompany.com         # the API
+COOKIE_DOMAIN=.yourcompany.com
+
+# Optional: the first account, made at boot instead of by hand.
+CONTENTOS_OWNER_EMAIL=you@yourcompany.com
+CONTENTOS_OWNER_PASSWORD=
 ```
+
+Generate the secret where you are, not anywhere it gets written down twice:
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
+```
+
+`COOKIE_DOMAIN` has to be a parent of **both** hosts, because the API sets the
+session cookie and the console's proxy reads it. `portal.` and `api.` under one
+company domain means `.yourcompany.com` — which is every subdomain you have, so
+if you host other things there, putting both under a shared middle name
+(`portal.contentos.…` and `api.contentos.…`, with `COOKIE_DOMAIN=.contentos.…`)
+keeps the cookie to this app.
+
+### The first account
+
+Two ways, and the first needs nothing:
+
+**Sign up.** While `users` is empty the console offers it, and the first account
+made becomes the owner. Open `https://APP_HOST` after the deploy and claim it.
+
+**Or seed it.** Set `CONTENTOS_OWNER_EMAIL` and `CONTENTOS_OWNER_PASSWORD` and
+the API makes that account as it starts, so the console is usable the moment the
+deploy finishes with no human step in the middle.
+
+It runs **only while `users` is empty** — not "if this email is missing", which
+would recreate the account every time somebody removed it, a back door that
+reappears after being closed. Once there is one account it never runs again for
+the life of that database, and changing the variables afterwards does nothing.
+
+Both variables or neither; one alone is skipped with a line saying so. There is
+no default password anywhere in the repository, deliberately: a password in the
+code is a password in git, readable by everyone who can clone it. Put it in
+Dokploy's Environment, and change it once you are in.
 
 `DATABASE_URL` is taken whole rather than assembled from a host, a user and a
 password, because Dokploy owns those and can rotate them; a second copy is a
