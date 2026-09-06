@@ -59,7 +59,18 @@ fi
 # The API is its own process now, on API_PORT (4000). It is started here so
 # that one command still brings the whole thing up; stopping this script
 # stops both.
-API_PORT="${API_PORT:-4000}"
+API_PORT="${API_PORT:-4000}"
+
+# The origin the browser will be on, worked out BEFORE it is handed to
+# anything.
+#
+# It used to be written inline as `PORT="$API_PORT" WEB_ORIGIN="http://localhost:$PORT"`,
+# and bash performs command-prefix assignments left to right: PORT became
+# 4000, and only then was $PORT expanded. So the API was told to allow its
+# OWN origin, every browser call from :3333 was refused by CORS, and the page
+# said "The API is not running" about an API that was running and answering
+# curl perfectly. A variable that cannot be shadowed is the whole fix.
+WEB_APP_ORIGIN="http://localhost:$PORT"
 
 # The worker, which is the thing that actually writes.
 #
@@ -106,7 +117,7 @@ fi
 case "$MODE" in
   dev)
     echo "→ Content OS API (dev) on http://localhost:$API_PORT/api"
-    (cd api && PORT="$API_PORT" WEB_ORIGIN="http://localhost:$PORT" npm run dev) &
+    (cd api && PORT="$API_PORT" WEB_ORIGIN="$WEB_APP_ORIGIN" npm run dev) &
     API_PID=$!
     trap stop_all EXIT
     start_worker
@@ -119,7 +130,7 @@ case "$MODE" in
     echo "→ building Content OS"
     NEXT_PUBLIC_API_URL="http://localhost:$API_PORT" npm run build
     echo "→ Content OS API on http://localhost:$API_PORT/api"
-    (cd api && PORT="$API_PORT" WEB_ORIGIN="http://localhost:$PORT" CONTENTOS_DATA_DIR=../.data npm run start) &
+    (cd api && PORT="$API_PORT" WEB_ORIGIN="$WEB_APP_ORIGIN" CONTENTOS_DATA_DIR=../.data npm run start) &
     API_PID=$!
     trap stop_all EXIT
     start_worker
