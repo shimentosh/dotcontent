@@ -24,6 +24,18 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3333
 
+# Listen on every interface, not on whatever this container is called.
+#
+# Next's standalone server binds to `process.env.HOSTNAME`, and Docker sets
+# HOSTNAME to the container id — so it bound one interface and the log read
+# `Local: http://52a736554929:3333` rather than 0.0.0.0. On a host with one
+# network that still works, which is why it passed every local test. Behind a
+# proxy the container is on more than one network, the name another container
+# resolves is the OTHER address, and every request is refused by a server that
+# is up, healthy, and listening somewhere else. It reaches the browser as a
+# 502 with nothing in any log to explain it.
+ENV HOSTNAME=0.0.0.0
+
 # No ffmpeg or yt-dlp here any more: the ingest runs in the API's image.
 
 COPY --from=build /app/public ./public
