@@ -9,10 +9,19 @@
       Everything else in Content OS is served by the team's console and shown in
       a webview, deliberately: a second copy of the UI here would be a second
       thing to keep in step, and it would be the copy nobody remembered to
-      update. But the two answers below have to be given before there IS a
-      console to load, so they cannot come from one — and a person who has to
+      update. But this machine's token has to be given before there IS a
+      console to load, so it cannot come from one — and a person who has to
       open a terminal to fix their own machine is the failure this whole app
       exists to prevent, so the worker's status is on this page too.
+
+      The addresses used to be the second question here and mostly are not any
+      more: an installer is built with both, so the fields are folded away
+      unless this machine is being pointed somewhere else, or unless the app
+      genuinely has one of them from nowhere. There are two of them because
+      there are two servers — the console and the API on its own hostname —
+      and both are shown, provenance and all, because the one that is broken
+      is by definition not the one whose page you are looking at. See
+      src-tauri/src/settings.rs.
 
       Plain HTML and CSS on purpose. The colours are the console's own tokens
       from lib/theme.ts, copied rather than imported, because importing would
@@ -93,6 +102,47 @@
       #error:empty { display: none; }
       details { margin-top: 4px; }
       summary { color: var(--mute); cursor: pointer; }
+      /*
+        The address, when the app already knows it. Read-only text rather than
+        a filled-in field: a field invites a person to correct something that
+        is not theirs to correct, and this one is usually the installer's
+        answer, not theirs.
+      */
+      .value {
+        margin: 0;
+        font: 13px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+        -webkit-user-select: text;
+        user-select: text;
+        word-break: break-all;
+      }
+      /*
+        Nothing is known, so the disclosure stops being one: no summary to
+        open, just the label and the field, which is the screen as it was
+        before any of this.
+      */
+      details.bare > summary { display: none; }
+      details.bare { margin-top: 0; }
+      .built-in { margin: 8px 0 0; }
+      .built-in code { -webkit-user-select: text; user-select: text; word-break: break-all; }
+      /*
+        The two addresses read as one thing with two rows, not as two
+        settings: they are always a pair, and a person who sees them as
+        unrelated is a person who moves one of them.
+      */
+      .name { margin: 0 0 4px; font-weight: 500; }
+      .name .mute { color: var(--mute); font-weight: 400; }
+      .address + .address { margin-top: 14px; }
+      .addresses { margin-bottom: 4px; }
+      button.link {
+        padding: 0;
+        border: none;
+        background: none;
+        color: var(--accent-text);
+        font: inherit;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+      button.link:hover { background: none; color: var(--text); }
       pre {
         margin: 12px 0 0;
         padding: 12px;
@@ -125,9 +175,47 @@
     </div>
 
     <div class="panel">
-      <label for="url">Console address</label>
-      <input id="url" type="url" spellcheck="false" placeholder="https://contentos.yourteam.com" />
-      <p class="hint">Where your team's Content OS is. Ask whoever set up the server.</p>
+      <!--
+        Two addresses, because there are two servers: the console is the web
+        app and the API is the NestJS service beside it, on its own hostname
+        in production (docs/DEPLOYING.md) and on :4000 in a checkout. Both are
+        shown, and both say where they came from, because "my machine will not
+        connect" is answered by knowing which server the worker was calling
+        and who told it to call that one — and the console cannot answer it,
+        since the window in front of the person is proof that one is fine.
+      -->
+      <div class="addresses">
+        <div class="address" id="console-block">
+          <p class="name">Console address <span class="mute">— the pages this app opens</span></p>
+          <p class="value" id="console-known"></p>
+          <p class="hint" id="console-source"></p>
+        </div>
+        <div class="address" id="api-block">
+          <p class="name">API address <span class="mute">— what the worker calls for jobs</span></p>
+          <p class="value" id="api-known"></p>
+          <p class="hint" id="api-source"></p>
+        </div>
+      </div>
+
+      <details id="override">
+        <summary>Use different addresses on this machine</summary>
+
+        <label for="console-url">Console address</label>
+        <input id="console-url" type="url" spellcheck="false" placeholder="https://contentos.yourteam.com" />
+        <p class="hint" id="console-url-hint"></p>
+        <p class="hint built-in" id="console-built-in" hidden>
+          This copy of Content OS was built with <code id="console-built-in-url"></code>.
+          <button type="button" class="link" id="console-use-built-in">Go back to it</button>
+        </p>
+
+        <label for="api-url">API address</label>
+        <input id="api-url" type="url" spellcheck="false" placeholder="https://api.contentos.yourteam.com" />
+        <p class="hint" id="api-url-hint"></p>
+        <p class="hint built-in" id="api-built-in" hidden>
+          This copy of Content OS was built with <code id="api-built-in-url"></code>.
+          <button type="button" class="link" id="api-use-built-in">Go back to it</button>
+        </p>
+      </details>
 
       <label for="token">This machine's token</label>
       <input id="token" type="password" spellcheck="false" placeholder="Paste the token you were shown" />
@@ -157,26 +245,125 @@
         el("state").textContent = view.title;
         el("message").textContent = view.message;
         el("log").textContent = view.log.join("\n") || "Nothing yet.";
-        // Only ever fill a field the person is not currently typing in: a live
-        // status push must not overwrite a half-pasted token.
-        if (document.activeElement !== el("url") && !el("url").dataset.dirty) {
-          el("url").value = view.consoleUrl;
-        }
+        addresses(view);
         if (view.hasToken && !el("token").value) {
           el("token").placeholder = "Saved — leave blank to keep it";
         }
       }
 
-      el("url").addEventListener("input", () => (el("url").dataset.dirty = "1"));
+      /*
+        The two addresses, described once.
+
+        A table rather than two copies of the same twenty lines, because the
+        pair has to stay a pair: a change to how one of them is drawn that
+        misses the other is exactly the drift that leaves a person reading a
+        provenance line about the wrong server. Only the words differ, so only
+        the words are written twice.
+      */
+      const ADDRESSES = [
+        {
+          key: "console",
+          url: "consoleUrl",
+          source: "consoleSource",
+          words: "consoleSourceWords",
+          builtIn: "builtInConsoleUrl",
+          keep: "This machine only. Leave it blank to keep the console address above.",
+          ask: "Where your team's Content OS is. Ask whoever set up the server.",
+        },
+        {
+          key: "api",
+          url: "apiUrl",
+          source: "apiSource",
+          words: "apiSourceWords",
+          builtIn: "builtInApiUrl",
+          keep: "This machine only. Leave it blank to keep the API address above.",
+          ask: "The server the worker asks for jobs. It is a different host from the console — usually api. in front of it, but not always. Ask whoever set up the server.",
+        },
+      ];
+
+      /*
+        What the person is meant to do about them.
+
+        Two genuinely different screens, not one screen with values in it. When
+        the app already knows an address — because it was built in, saved here,
+        or exported into a development environment — it is shown as text with a
+        line saying where it came from, and the field that would change it is
+        folded away behind a summary: it is not a question, and a filled field
+        reads like one that needs checking. When neither is known there is no
+        summary to open and the fields are exactly what they always were,
+        because then they genuinely are the question.
+
+        The in-between is real and worth drawing properly: a copy built before
+        this app knew there were two addresses, or built by somebody who set
+        only one, knows its console and not its API. That one keeps the
+        summary — something here IS settled — but opens itself, so the field
+        that is still a question is on screen without being hunted for.
+
+        Nothing here ever writes a resolved address into a field. Blank means
+        "leave it alone" on the way back to Rust, and pre-filling would turn
+        every Save into a save of the addresses as well — which on a build that
+        knows its own would quietly write a copy of them into settings.json and
+        pin this machine to today's answer forever.
+      */
+      function addresses(view) {
+        let anyMissing = false;
+        let allMissing = true;
+
+        for (const spec of ADDRESSES) {
+          const known = view[spec.source] !== "none";
+          anyMissing = anyMissing || !known;
+          allMissing = allMissing && !known;
+
+          // The whole row goes, heading and all. A label over an empty line
+          // says "this is broken" without saying what to do; the field below,
+          // which is open and waiting, says it.
+          el(`${spec.key}-block`).hidden = !known;
+          el(`${spec.key}-known`).textContent = view[spec.url];
+          el(`${spec.key}-source`).textContent = view[spec.words];
+          el(`${spec.key}-url-hint`).textContent = known ? spec.keep : spec.ask;
+
+          // The way back, offered only to the person who needs it: somebody
+          // who has overridden this address here. Without it, one typo in an
+          // override hides the address this copy was built with and nothing on
+          // the screen ever mentions it again. Per address, because the two
+          // are overridden separately and a link that put back the wrong one
+          // would be worse than no link.
+          const strayed =
+            view[spec.source] === "this-machine" &&
+            view[spec.builtIn] &&
+            view[spec.builtIn] !== view[spec.url];
+          el(`${spec.key}-built-in`).hidden = !strayed;
+          el(`${spec.key}-built-in-url`).textContent = view[spec.builtIn];
+        }
+
+        const override = el("override");
+        override.classList.toggle("bare", allMissing);
+        if (anyMissing) override.open = true;
+      }
+
+      // Fills the field rather than saving, so that going back to a built-in
+      // address is the same two steps as any other change to it, and is
+      // visible before it happens.
+      for (const spec of ADDRESSES) {
+        el(`${spec.key}-use-built-in`).addEventListener("click", () => {
+          el(`${spec.key}-url`).value = el(`${spec.key}-built-in-url`).textContent;
+          el(`${spec.key}-url`).focus();
+        });
+      }
 
       el("save").addEventListener("click", async () => {
         el("error").textContent = "";
         try {
           render(
-            await invoke("save", { consoleUrl: el("url").value, token: el("token").value }),
+            await invoke("save", {
+              consoleUrl: el("console-url").value,
+              apiUrl: el("api-url").value,
+              token: el("token").value,
+            }),
           );
           el("token").value = "";
-          delete el("url").dataset.dirty;
+          el("console-url").value = "";
+          el("api-url").value = "";
         } catch (e) {
           // Every failure here is something the person can act on — a typo in
           // the address, a credential store that said no — so it is shown as a

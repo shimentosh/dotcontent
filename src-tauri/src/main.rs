@@ -13,8 +13,8 @@
 //!
 //! What it deliberately is not: a second frontend. `docs/WORKER.md` settles
 //! that the server keeps the UI and every decision, and this app keeps only
-//! what cannot live there — where the console is, this machine's token, and
-//! whether the worker beside it is actually running.
+//! what cannot live there — where the console and the API are, this machine's
+//! token, and whether the worker beside it is actually running.
 
 mod settings;
 mod tray;
@@ -31,21 +31,55 @@ fn status(app: AppHandle, worker: State<'_, Worker>) -> View {
     worker.view(&app)
 }
 
-/// Take the two answers, keep them, and start.
+/// Take what the person filled in, keep it, and start.
 ///
-/// A blank token means "leave the one you have". The console shows a worker
-/// token exactly once, so a person who came back to correct a typo in the
-/// address will not have it any more, and demanding it again would send them
-/// to Settings → Machines to mint a new one for no reason.
+/// Blank means "leave it as it is", for all three fields and for two different
+/// reasons.
+///
+/// The console shows a worker token exactly once, so a person who came back to
+/// change something else will not have it any more, and demanding it again
+/// would send them to Settings → Machines to mint a new one for no reason.
+///
+/// The two addresses are blank far more often, because most people never see
+/// those fields: they are behind a disclosure, and the app already knows both
+/// from the build or from the environment. Writing an empty string over that
+/// would turn "I did not touch it" into "point this machine at nothing".
 #[tauri::command]
 fn save(
     app: AppHandle,
     worker: State<'_, Worker>,
     console_url: String,
+    api_url: String,
     token: String,
 ) -> Result<View, String> {
-    let url = settings::normalise(&console_url)?;
-    settings::set_console_url(&app, &url)?;
+    /*
+     * The same rule twice, over the pair, rather than once per address written
+     * out: they are saved by the same code so that a change to what "blank
+     * means" cannot land on one of them and not the other.
+     *
+     * Each is saved only when there is something to save, or when there is
+     * nothing to fall back on — and the second case is deliberately routed
+     * through `normalise` too, because the sentence explaining what that
+     * address is already lives there and should not be written twice.
+     *
+     * Both are checked before either is written, so a typo in the second field
+     * does not leave the machine holding a saved first one and an error
+     * message; the person fixes what they typed and Saves the pair they meant.
+     */
+    let fields = [
+        (settings::Which::Console, console_url),
+        (settings::Which::Api, api_url),
+    ];
+    let mut to_save = Vec::new();
+    for (which, raw) in &fields {
+        let raw = raw.trim();
+        if !raw.is_empty() || settings::address(&app, *which).url.is_empty() {
+            to_save.push((*which, settings::normalise(*which, raw)?));
+        }
+    }
+    for (which, url) in to_save {
+        settings::set_url(&app, which, &url)?;
+    }
 
     let typed = token.trim();
     if !typed.is_empty() {
@@ -95,10 +129,14 @@ fn main() {
             let app = app.handle().clone();
             tray::install(&app)?;
 
-            // First run has nothing to load, so it gets the only screen this
-            // app owns. Every run after that opens the console itself, which
-            // is what somebody double-clicked the icon for.
-            if settings::console_url(&app).is_empty() || settings::token().is_empty() {
+            // First run has something missing, so it gets the only screen this
+            // app owns. On an installer built with both addresses that is the
+            // token and nothing else. Every run after that opens the console
+            // itself, which is what somebody double-clicked the icon for.
+            if settings::console_url(&app).is_empty()
+                || settings::api_url(&app).is_empty()
+                || settings::token().is_empty()
+            {
                 windows::setup(&app);
             } else {
                 windows::console(&app);

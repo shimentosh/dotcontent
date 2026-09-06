@@ -767,7 +767,7 @@ npm run worker
 
 | Variable | |
 |---|---|
-| `CONTENTOS_API_URL` | **Required.** The console this machine works for. |
+| `CONTENTOS_API_URL` | **Required.** The **API** this machine works for — NestJS, on its own hostname (`API_HOST` in `docs/DEPLOYING.md`, `:4000` in a checkout). Not the address of the console you open in a browser; there is no `/api` under Next, so that one 404s everything. |
 | `CONTENTOS_WORKER_TOKEN` | **Required.** Minted in Settings → Machines and shown once. |
 | `CONTENTOS_WORKER_NAME` | What the machine picker calls it. Defaults to the hostname; "Shakhawat's desktop" reads better than `DESKTOP-7F2K1`. |
 | `CONTENTOS_WORKER_ALLOW_FRAME_READ` | `1` to let Claude's CLI be granted `Read` for frame files **on this machine**. Off by default, and checked in addition to `workers.can_read_frames` — the grant lands on this filesystem, so whoever owns it gets the last word. |
@@ -995,8 +995,9 @@ with music and no speech genuinely has no words in it.
 Built, and small on purpose. It lives in `src-tauri/` — Tauri 2, Windows
 first — and it is two things in one process: **a window onto the console the
 team already runs**, and **the worker running beside it**. A teammate who is
-not a developer installs one app, gives it two answers, and their machine
-starts taking jobs. Nobody opens a terminal.
+not a developer installs one app, pastes in the token for their machine, and it
+starts taking jobs. Nobody opens a terminal, and nobody is asked where the
+console is — the installer was built knowing.
 
 **What it is not**, and this is the part worth defending:
 
@@ -1004,10 +1005,12 @@ starts taking jobs. Nobody opens a terminal.
   `src-tauri`, and there must not be. The console is served by the server, so a
   template change or a fix reaches every teammate the moment it is deployed
   instead of needing fifteen desktops updated. The one screen this app draws
-  itself is `src-tauri/ui/setup.html`, and it exists only because the console
-  address and this machine's token have to be given *before* there is a console
-  to ask, and because a worker that cannot start needs somewhere to say so that
-  is not a console window.
+  itself is `src-tauri/ui/setup.html`, and it exists only because this
+  machine's token has to be given *before* there is a console to ask — as do
+  the console and API addresses, on the builds that were not compiled with them
+  — and
+  because a worker that cannot start needs somewhere to say so that is not a
+  console window.
 - **Not a second identity system.** The webview signs in as a person, with the
   console's own cookie, exactly as a browser does. The worker holds the machine
   token. Two credentials, for the reasons in "The desktop app holds two
@@ -1017,23 +1020,104 @@ starts taking jobs. Nobody opens a terminal.
   If the two ever drift, this app is running a worker nobody can reproduce from
   a terminal, which is the one thing that would make a bug report useless.
 
-### Where the two settings live
+### Where the settings live
 
 | | |
 |---|---|
-| Console address | `%APPDATA%\com.contentos.desktop\settings.json`. Not a secret — it is the URL a browser would show — and a person debugging their own machine should be able to read it. |
+| Console address | Compiled in, or in the environment, or in `%APPDATA%\com.contentos.desktop\settings.json` — three places in a fixed order, below. Not a secret in any of them: it is the URL a browser would show, and a person debugging their own machine has to be able to read it. |
+| API address | The same three places, the same order, its own value. It is what the worker calls; the console address is not. Why they are two, and why neither is guessed from the other, is the next section. |
 | Worker token | The **OS credential store**: Windows Credential Manager, under the target `worker-token.com.contentos.desktop`. The console keeps only its sha256 so that a database dump is not a list of live credentials; writing the plaintext into `%APPDATA%` would undo that at the other end, where anything running as that user can read it and the first backup of the profile carries it off the machine. |
 | Session cookie | The webview's own data directory, which is WebView2's business and not this app's. |
 
-The token is passed to the worker as `CONTENTOS_WORKER_TOKEN` in its
-environment and nowhere else — never a file next to the binary, never an
-argument, which is why `worker/config.ts` reads it from the environment in the
-first place.
+### Where the two addresses come from
+
+**There are two, and the app is told both.**
+
+| | What it is | Production (`docs/DEPLOYING.md`) | A checkout |
+|---|---|---|---|
+| `CONTENTOS_CONSOLE_URL` | The console — the pages the app opens in its webview. Next. | `https://content.yourcompany.com` (`APP_HOST`) | `http://localhost:3333` |
+| `CONTENTOS_API_URL` | The API — what the worker calls for jobs, and the only one of the two it ever touches. NestJS. | `https://api.content.yourcompany.com` (`API_HOST`) | `http://localhost:4000` |
+
+**Why two.** `docs/DEPLOYING.md` puts the web app on `APP_HOST` and the API on
+`API_HOST`, on two hostnames under one `COOKIE_DOMAIN`, and the browser calls
+the API cross-origin — which is why `lib/api-base.ts` reads
+`NEXT_PUBLIC_API_URL` and why `docker-compose.prod.yml` has to pass it as a
+*build* arg. There is no `/api` under Next. An app that resolved one address
+and handed the worker the console's origin would 404 every request that worker
+made on any real deployment, while the window beside it worked perfectly — the
+hardest kind of failure to report, because everything the person can see is
+fine.
+
+**Why neither is derived from the other.** Putting `api.` in front of the
+console's host is this repository's compose convention, not a rule;
+`docs/DEPLOYING.md` says the two may be anywhere. A guess that is usually right
+is worse than a value that is always stated, because it does not fail for the
+person who made it — it fails months later, on somebody else's DNS, as a
+teammate whose machine will not connect.
+
+**Nobody installing this app should have to type either.** The team has one
+console and one API, whoever built the installer already knew both, and free
+text in a setup window is a typo that ends as a support question weeks later on
+somebody else's laptop. So both are compiled in, and the fields are gone from
+the screen unless there is genuinely nothing else to go on.
+
+Three places each, highest first, and the first one with a usable answer wins.
+`pick` in `src-tauri/src/settings.rs` is the whole rule, in **one** function
+that takes which address it is resolving — the two differ in what they name,
+not in how they are found — with its candidates passed in so it can be tested
+without a window system.
+
+| | Where | Why it sits here |
+|---|---|---|
+| 1 | The variable in the **running app's** environment | Development. `npm run desktop` sets both, so a checkout works with no setup at all. It beats the two below on purpose: a debug build compiled against the team's servers, or one with a `settings.json` left from testing an installer, would otherwise point a debug worker at production and let it claim real jobs. |
+| 2 | **Saved on this machine** — `consoleUrl` and `apiUrl` in `%APPDATA%\com.contentos.desktop\settings.json`, written by the setup window | The escape hatch: one machine pointed at a second team's servers, or at staging. It beats the compiled-in value so that it survives reinstalling the same installer — if it did not, moving one machine would mean building a second installer for it. Saving one address reads the file and puts the other back, so a machine cannot end up holding half a pair. |
+| 3 | The variable at **compile time**, read with `option_env!` | What a production installer ships with, and what nearly everybody actually runs. The floor, not the ceiling. |
+
+Every candidate goes through the same `normalise` the setup window's fields do,
+and one that is not a usable address is skipped rather than accepted — so an
+`apiUrl: ""` in a `settings.json` written before there was one does not shadow
+the address the installer was built with.
+
+**What the setup window shows.** Both addresses, one under the other, each with
+its own provenance line — because "my machine will not connect" is answered by
+knowing which server the worker was calling and who told it to call that one,
+and the console can never answer it: the window the person is looking at is
+proof that *that* address is fine.
+
+| The address came from | The row |
+|---|---|
+| The build | The address as text, under *Built in when this copy of Content OS was made*. |
+| This machine | The address as text, under *Set on this machine*. If the copy was also built with this address and it differs, a line naming the built-in one and a *Go back to it* link — otherwise one typo in an override would hide the correct address with no way back but deleting the file. |
+| The environment | The address as text, under *From CONTENTOS\_CONSOLE\_URL* (or *CONTENTOS\_API\_URL*) *in this window's environment — a development setting, which wins over everything below*. It names the variable it means, because that line exists to say which one has to go before anything saved here takes effect. |
+| Nowhere | The row is not drawn at all. A heading over an empty line says "broken" without saying what to do; the field below, already open, says it. |
+
+*Use different addresses on this machine* is a disclosure under the pair:
+closed and out of the way when both are known, and it writes to place 2.
+Leaving a field blank means "leave that one alone" — nothing ever pre-fills
+them, because a Save that also wrote a copy of the built-in addresses into
+`settings.json` would pin the machine to today's answer forever. Both fields
+are validated before either is written, so a typo in the second does not leave
+the machine holding a saved first one.
+
+Two edges are drawn on purpose. When **neither** address is known the
+disclosure stops being one — no summary, just the fields, which is the screen
+as it was before any of this. When **one** is known and the other is not — an
+installer built before this app knew there were two, or built by somebody who
+set only the first — it keeps its summary but opens itself, and the worker says
+*This copy knows the console but not the API*, so nobody goes to check the
+address that was already right.
+
+The worker is handed exactly two things: `CONTENTOS_WORKER_TOKEN` and
+`CONTENTOS_API_URL`, in its environment — the same two variables the
+`npm run worker` line in `docs/DEPLOYING.md` sets by hand, which is the point.
+Never the console's address, which it has no use for. And never a file next to
+the binary and never an argument, which is why `worker/config.ts` reads them
+from the environment in the first place.
 
 ### Running it in development
 
 ```
-npm run desktop          # cargo run --manifest-path src-tauri/Cargo.toml
+npm run desktop          # src-tauri/scripts/dev.mjs, then cargo run
 npm run desktop:build    # a release binary
 ```
 
@@ -1042,8 +1126,30 @@ It needs the Rust MSVC toolchain and the WebView2 runtime, which every Windows
 a devDependency and is needed only to produce an installer, which is the next
 section.
 
-First run has no console address, so it opens the setup window. After that it
-opens the console and starts the worker.
+`npm run desktop` is a launcher rather than a line in package.json because npm
+runs scripts through `sh` on a Mac and `cmd.exe` on Windows, and `VAR=x cargo
+run` parses in only one of them. It sets two variables, and anything already
+exported wins:
+
+| | |
+|---|---|
+| `CONTENTOS_CONSOLE_URL` | `http://localhost:3333` — the console, which is Next, on the port `start.sh` uses. The window opens this. |
+| `CONTENTOS_API_URL` | `http://localhost:4000` — the API, which is NestJS on its own origin (`lib/api-base.ts`). The worker calls this. |
+
+It prints both on every start with what each is for beside it, because the two
+lines look nearly identical and exporting one and not the other gives you a
+hybrid — a window on staging beside a worker on localhost.
+
+It is deliberately **not** an `[env]` block in `src-tauri/.cargo/config.toml`,
+which would have looked tidier. That applies to every cargo invocation under
+`src-tauri`, including the one inside `tauri build` — and since both addresses
+are read at compile time with `option_env!`, development addresses would have
+been compiled into production installers, silently, which is the exact failure
+this is all here to prevent.
+
+First run opens the setup window when it is missing the token or has either
+address from nowhere; on a build that carries both, that is the token and
+nothing else. After that it opens the console and starts the worker.
 
 **A checkout runs the checkout's worker.** The app looks for `worker/index.ts`
 in its own resource directory first — where an installed copy keeps it — and
@@ -1054,7 +1160,7 @@ against the same files. `CONTENTOS_WORKER_DIR` names the folder when it is
 somewhere else.
 
 The status is in the tray menu and in the setup window, in these words:
-*Connected*, *Cannot reach the console*, *This app's copy of Node is missing*,
+*Connected*, *Cannot reach the server*, *This app's copy of Node is missing*,
 *Node is too old*, *This machine's token was refused*, *The worker's files are
 missing*, *Not set up yet*, *The worker is not running*. They are separate
 states because they are separate actions — one is wifi, one is a trip to
@@ -1062,6 +1168,12 @@ Settings → Machines, one is installing the app again — and a single "error"
 would hide all of them behind the same shrug. Anything the worker prints that
 this app does not recognise is still shown verbatim, under "What the worker is
 saying".
+
+*Cannot reach the server* is the API, not the console — that is the host the
+worker calls, and a person reading the tray very often has the console open in
+the window behind it, where "cannot reach the console" would be a sentence they
+can see is false. The address it is calling is on the setup window above the
+message.
 
 Two of those changed meaning when Node moved inside the installer. *This app's
 copy of Node is missing* used to mean "this computer has no Node", which was a
@@ -1073,12 +1185,66 @@ all — the Node inside the installer is pinned well above the 22.18 floor.
 
 ### Building the installer
 
-```
+```powershell
+# PowerShell. Both, every time — the pair from docs/DEPLOYING.md.
+$env:CONTENTOS_CONSOLE_URL = "https://content.yourcompany.com"       # APP_HOST
+$env:CONTENTOS_API_URL     = "https://api.content.yourcompany.com"   # API_HOST
 npm run desktop:installer
 ```
 
+```bash
+export CONTENTOS_CONSOLE_URL=https://content.yourcompany.com
+export CONTENTOS_API_URL=https://api.content.yourcompany.com
+npm run desktop:installer
+```
+
+**Set both addresses first.** They are the only things about the artifact that
+cannot be seen by looking at it, and getting one wrong is not felt by the
+person building — it is felt by fifteen people individually, later, each of
+them typing a URL. `src-tauri/build.rs` emits
+`cargo:rerun-if-env-changed` for **each** of them so that changing one actually
+rebuilds; without those lines the second installer of the day carries the first
+one's addresses and nothing says so. Two lines rather than one because moving
+only `API_HOST` is an ordinary thing to do, and that build would otherwise look
+fine while carrying the old API.
+
+Building **without** one — or without either — is a **loud warning, not a
+refusal**, naming the variables that are missing and what each is for, printed
+before the build and again after it, because `tauri build` puts several hundred
+lines in between and a warning nobody scrolls back to was not given. When both
+are set they are printed the same way, so the artifact's two addresses are on
+screen at both ends of the build. Two reasons the absence is not a hard
+failure:
+
+- An installer with no addresses still works. It falls back to asking, exactly
+  as this app did before, and that is sometimes the right build — a smoke test,
+  or a copy for a team whose servers this machine does not know.
+- An installer with the **wrong** address is worse than one with none: the
+  missing one asks, the wrong one confidently sends a machine at a server that
+  is not its team's and folds away the field that would fix it. A hard failure
+  is one a hurried person gets past by typing any string that parses, which
+  manufactures exactly that.
+
+An address that is set but **malformed** does stop the build, for the same
+reason — it can only be a mistake, and it is the wrong-address case. The
+message names the variable it means, so nobody goes and corrects the one that
+was already right.
+
+**Check what a build actually carries** rather than trusting that a variable
+reached the compiler:
+
+```
+cargo test --manifest-path src-tauri/Cargo.toml -- --nocapture says_which_addresses
+```
+
+It prints both `option_env!` values through the same function the app resolves
+them with, so a build that prints an address there is a build that ships one.
+
 Two steps, and it is worth knowing which: `src-tauri/scripts/fetch-node.mjs`
 puts the pinned Node in `src-tauri/binaries/`, then `tauri build` bundles it.
+`src-tauri/scripts/installer.mjs` runs both with this repository's own Node and
+its own copy of the Tauri CLI, so neither step depends on a shell resolving a
+name; extra arguments are passed through to `tauri build`.
 The fetch is a separate step because a 90 MB runtime is not a thing to keep in
 a repository — `src-tauri/binaries` is in `.gitignore`, and running the script
 is how a fresh clone gets one. Repeating it is cheap: a file that is already

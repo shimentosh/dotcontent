@@ -104,6 +104,31 @@ One machine is enough to start. A second is how a run gets faster: sections in
 the same dependency wave go to different computers, which is why
 `max_concurrency` defaults to 1 — one machine is one CLI login.
 
+### The desktop app, for people who do not use a terminal
+
+The command above is the developer's way in. Everyone else gets an installer,
+and the two addresses on this page are **baked into it at build time** so that
+nobody is asked to type a hostname:
+
+```bash
+CONTENTOS_CONSOLE_URL=https://APP_HOST \
+CONTENTOS_API_URL=https://API_HOST \
+  npm run desktop:installer
+```
+
+Both, and neither derived from the other. `api.` in front of the web host is
+this repo's compose convention rather than a rule — this page says plainly the
+two may live anywhere — and a guess that is usually right fails on somebody
+else's DNS long after whoever guessed has stopped looking.
+
+Build it without them and it still works, but every teammate is asked for the
+addresses at install time, which is the thing this removes. The script says so,
+loudly, before and after the build.
+
+What a teammate then does: run the installer, click through SmartScreen's
+warning (it is unsigned — see `docs/DECISIONS.md`), and paste the one token
+minted for their machine. Nothing else.
+
 Then, from your laptop, ask the API the questions that matter:
 
 ```bash

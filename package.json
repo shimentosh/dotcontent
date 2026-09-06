@@ -23,10 +23,10 @@
     "start": "next start",
     "worker": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./worker/register.mjs worker/index.ts",
     "worker:setup": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./worker/register.mjs worker/setup.ts",
-    "desktop": "cargo run --manifest-path src-tauri/Cargo.toml",
+    "desktop": "node src-tauri/scripts/dev.mjs",
     "desktop:build": "cargo build --release --manifest-path src-tauri/Cargo.toml",
     "desktop:node": "node src-tauri/scripts/fetch-node.mjs",
-    "desktop:installer": "npm run desktop:node && tauri build",
+    "desktop:installer": "node src-tauri/scripts/installer.mjs",
     "lint": "eslint"
   },
   "dependencies": {

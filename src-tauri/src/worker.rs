@@ -103,7 +103,12 @@ impl Health {
             Health::NotConfigured => "Not set up yet",
             Health::Starting => "Starting…",
             Health::Connected => "Connected",
-            Health::Offline => "Cannot reach the console",
+            // The API rather than the console, because that is the host the
+            // worker calls and they are two on any real deployment. A person
+            // reading this in the tray very often has the console open in the
+            // window behind it, and "cannot reach the console" would be a
+            // sentence they can see is false.
+            Health::Offline => "Cannot reach the server",
             Health::NodeMissing => "This app's copy of Node is missing",
             Health::NodeTooOld => "Node is too old",
             Health::WorkerMissing => "The worker's files are missing",
@@ -121,6 +126,32 @@ pub struct View {
     pub title: &'static str,
     pub message: String,
     pub console_url: String,
+    /// Which of the three places that address came from. The page draws an
+    /// address it was given differently from one somebody typed here, and it
+    /// cannot tell them apart on its own.
+    pub console_source: &'static str,
+    /// And the sentence saying so, written where the places are decided rather
+    /// than in the page, so that adding a fourth one cannot leave the screen
+    /// describing three.
+    pub console_source_words: &'static str,
+    /// The console address this copy was built with, empty when it was built
+    /// with none. Shown only to somebody who has overridden it on this machine
+    /// — otherwise an override typed with a typo would hide the correct
+    /// address with no way back to it but deleting settings.json.
+    pub built_in_console_url: &'static str,
+    /// And the same four fields for the API, which is the host the worker
+    /// actually calls.
+    ///
+    /// It is on the screen for one reason, and it is the reason this app has a
+    /// screen at all: "my machine will not connect" is answered by knowing
+    /// which server it was trying and who told it to try that one. An app that
+    /// showed only the console would be showing the address that is working —
+    /// the window in front of them is proof of it — and hiding the one that is
+    /// not.
+    pub api_url: String,
+    pub api_source: &'static str,
+    pub api_source_words: &'static str,
+    pub built_in_api_url: &'static str,
     /// Never the token itself — only whether there is one. The page has no
     /// reason to hold a credential it cannot do anything with, and a webview's
     /// DOM is the last place it should be sitting.
@@ -149,11 +180,20 @@ pub struct Worker {
 impl Worker {
     pub fn view(&self, app: &AppHandle) -> View {
         let inner = self.inner.lock().unwrap();
+        let console = settings::address(app, settings::Which::Console);
+        let api = settings::address(app, settings::Which::Api);
         View {
             state: inner.health.id(),
             title: inner.health.title(),
             message: inner.message.clone(),
-            console_url: settings::console_url(app),
+            console_source: console.source.id(),
+            console_source_words: console.words(),
+            built_in_console_url: console.built_in(),
+            console_url: console.url,
+            api_source: api.source.id(),
+            api_source_words: api.words(),
+            built_in_api_url: api.built_in(),
+            api_url: api.url,
             has_token: !settings::token().is_empty(),
             log: inner.log.iter().cloned().collect(),
         }
@@ -182,13 +222,46 @@ impl Worker {
     pub fn start(&self, app: &AppHandle) {
         self.halt();
 
-        let url = settings::console_url(app);
+        let console = settings::console_url(app);
+        let api = settings::api_url(app);
         let token = settings::token();
-        if url.is_empty() || token.is_empty() {
+        if console.is_empty() || api.is_empty() || token.is_empty() {
+            /*
+             * Four sentences rather than one, because they are four different
+             * things to go and do — and because a teammate with an installer
+             * that knows where both servers are has exactly one of them left,
+             * and asking them for an address the app already has would send
+             * them to find out something nobody needs them to know.
+             *
+             * The API gets its own sentence for the case that will actually
+             * happen: an installer built before this app knew about a second
+             * address, or built by somebody who set only the first. That copy
+             * has a console and no API, and "fill in the address" would send
+             * its owner to check the one that is already right.
+             */
             return self.set(
                 app,
                 Health::NotConfigured,
-                "Fill in the console address and this machine's token below, then choose Save and start.",
+                match (console.is_empty(), api.is_empty()) {
+                    (true, true) => {
+                        "Fill in the console and API addresses and this machine's token below, then \
+                         choose Save and start."
+                    }
+                    (true, false) => {
+                        "Fill in the console address and this machine's token below, then choose \
+                         Save and start."
+                    }
+                    (false, true) => {
+                        "This copy knows the console but not the API — the server the worker asks \
+                         for jobs, which is a different host. Fill it in below, then choose Save \
+                         and start."
+                    }
+                    (false, false) => {
+                        "Paste this machine's token below, then choose Save and start. On the \
+                         console it is Settings → Machines → add this machine, and it is shown \
+                         once."
+                    }
+                },
             );
         }
 
@@ -214,8 +287,26 @@ impl Worker {
             .arg("--import")
             .arg("./worker/register.mjs")
             .arg("worker/index.ts")
-            .env("CONTENTOS_API_URL", &url)
             .env("CONTENTOS_WORKER_TOKEN", &token)
+            /*
+             * The API's address, and never the console's.
+             *
+             * They are two hosts on every real deployment — `docs/DEPLOYING.md`
+             * puts the web app on APP_HOST and NestJS on API_HOST, and there is
+             * no `/api` under Next — so a worker handed the console's origin
+             * would 404 on everything while the window beside it worked
+             * perfectly, which is the failure that is hardest to report. A
+             * checkout is the same shape at :3333 and :4000, see
+             * `lib/api-base.ts`.
+             *
+             * An inherited `CONTENTOS_API_URL` still wins, and no longer needs
+             * a check of its own for it to: it is the first place
+             * `settings::api_url` looks, so this is the same value the child
+             * would have inherited, tidied. That check moved into `pick`
+             * rather than being deleted — one rule, in the one place, for both
+             * addresses.
+             */
+            .env("CONTENTOS_API_URL", &api)
             // Nothing is ever asked of this process on stdin, and a child that
             // inherits a console's stdin can block on it forever.
             .stdin(Stdio::null())
@@ -261,7 +352,10 @@ impl Worker {
             inner.generation += 1;
             inner.pid = Some(child.id());
             inner.health = Health::Starting;
-            inner.message = format!("Starting the worker for {url}.");
+            // The API, because that is the host this process is about to
+            // start calling and therefore the one a failure in the next few
+            // seconds will be about.
+            inner.message = format!("Starting the worker, which calls {api}.");
             inner.generation
         };
         self.announce(app);
@@ -455,7 +549,8 @@ fn classify(line: &str) -> Option<(Health, String)> {
     if line.contains("Cannot reach ") || line.contains("No answer from ") {
         return Some((
             Health::Offline,
-            "The console is not answering. This is usually the network; it keeps trying, and nothing is lost."
+            "The server this machine's worker calls is not answering. This is usually the network; it keeps \
+             trying, and nothing is lost. The address it is calling is shown above."
                 .into(),
         ));
     }
@@ -538,7 +633,7 @@ impl Layout {
                     Health::NodeMissing,
                     "Content OS installs its own copy of Node and that copy is not here, so this \
                      installation is damaged — nothing is missing from your computer. Install Content OS \
-                     again over the top of this one; the console address and this machine's token are kept."
+                     again over the top of this one; both addresses and this machine's token are kept."
                         .to_string(),
                 ))
             }
