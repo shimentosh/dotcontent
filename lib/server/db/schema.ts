@@ -730,4 +730,61 @@ export const MIGRATIONS: { name: string; sql: string }[] = [
     DELETE FROM settings WHERE key IN ('brain', 'enabled', 'cliCanReadFrames');
     `,
   },
+
+  {
+    /*
+     * One sign-in, carried from the desktop app into its webview.
+     *
+     * The app signs in from Rust and holds the session as a header credential;
+     * the console window beside it is an ordinary navigation to somebody
+     * else's origin and carries no cookie. So a teammate signed in twice on
+     * first setup — once in the setup window, once in the console — for the
+     * same account, on the same machine, a second apart.
+     *
+     * A hand-off code is the bridge. The app mints one over the session it
+     * already holds, the webview is opened at `/api/auth/adopt?code=…`, and
+     * that route spends the code and sets the cookie the ordinary way. See
+     * "Hand-off" in lib/server/auth.ts for the rules and docs/WORKER.md for
+     * what this deliberately is not.
+     */
+    name: "0017_handoff_codes",
+    sql: `
+    CREATE TABLE handoffs (
+      -- The sha256 of the code, never the code. For the two minutes it lives
+      -- a hand-off code IS a session: whoever holds it can spend it and be
+      -- signed in as that person. Storing it raw would make a database dump a
+      -- list of live logins, which is the same argument workers.token_hash
+      -- makes about a machine's token, and it is worth more here because the
+      -- thing on the other end is a person's whole console.
+      code_hash  TEXT PRIMARY KEY,
+
+      -- The session this code hands over. NOT the user: spending a code must
+      -- not mint a second session, or one sign-in would leave two rows and
+      -- revoking either would leave the other alive. Cascaded, so signing out
+      -- — or Settings → Team removing somebody — takes any un-spent codes
+      -- with it rather than leaving a live one pointing at a dead session.
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+      -- Minutes, not days. A code that outlives the navigation it was minted
+      -- for is a session sitting in a URL — in a webview's history, in a
+      -- proxy log, in whatever a screen recorder caught — waiting to be
+      -- replayed.
+      expires_at TIMESTAMPTZ NOT NULL,
+
+      -- Set by the UPDATE that spends it, so single use is decided by
+      -- Postgres rather than by a read followed by a write that two
+      -- navigations can interleave. The row is kept rather than deleted so a
+      -- replay is a row that says "already used" instead of a row that is
+      -- missing for two different reasons.
+      used_at    TIMESTAMPTZ
+    );
+
+    -- The sweep's index. Spent and expired rows are dead weight and are
+    -- cleared whenever a code is minted, and that pass must not become a
+    -- sequential scan of every hand-off this console has ever made.
+    CREATE INDEX handoffs_sweep ON handoffs(expires_at);
+    `,
+  },
 ];

@@ -26,7 +26,7 @@
 use std::time::Duration;
 
 use serde::Deserialize;
-use tauri::AppHandle;
+use tauri::{AppHandle, Url};
 
 use crate::settings;
 
@@ -34,6 +34,16 @@ use crate::settings;
 /// that a person who typed the wrong address is told so while they still
 /// remember typing it.
 const TIMEOUT: Duration = Duration::from_secs(20);
+
+/// And a much shorter one for the hand-off, because nobody asked for it.
+///
+/// Signing in is a thing a person pressed a button for and will wait on. The
+/// hand-off happens on the way to opening a window they asked to *see*, and
+/// every second of it is a second of nothing appearing after a click. It has a
+/// fallback that is merely worse rather than broken — the console, opened the
+/// ordinary way — so giving up early costs a second sign-in and giving up late
+/// costs an app that looks hung.
+const HANDOFF_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// How a session travels when it is not in a cookie: `Authorization: Session
 /// <id>`, read by `SessionGuard` in `api/src/common/session.guard.ts`.
@@ -301,6 +311,117 @@ fn machine_name() -> String {
     "A teammate's machine".into()
 }
 
+/* ── Opening the console without a second sign-in ───────────────────────── */
+
+/// Where the console window should be pointed, given what this app is holding.
+///
+/// **The problem.** The person signs in here, in Rust, and this app keeps the
+/// session in the credential store — it has to, because the window beside it
+/// is on `tauri://localhost` and the API's cookie would be third-party there.
+/// Then the console window opens, which is an ordinary navigation to the
+/// team's server carrying nothing at all, and asks them to sign in again: same
+/// email, same password, same account, seconds after the first. One sign-in,
+/// two forms, and the second one is the one people write support messages
+/// about.
+///
+/// **The fix.** `POST /api/auth/handoff`, over the session this app already
+/// holds, returns a one-time code; the window is opened at
+/// `GET /api/auth/adopt?code=…&next=<console>` instead, which spends the code,
+/// sets the cookie for *that same session*, and redirects. The cookie lands in
+/// the webview the ordinary way — a `Set-Cookie` on a top-level navigation —
+/// and the console is signed in before it draws anything.
+///
+/// **And when anything at all goes wrong, the console's own URL.** Every
+/// branch here falls back to it: no session held, no API address, the API
+/// unreachable, a server too old to have the route, a body this cannot read. A
+/// second sign-in is a worse experience; a window that refuses to open is a
+/// broken app, and this must never turn the first into the second.
+///
+/// This runs on **every** opening of the console, not only the first after a
+/// sign-in, and that is deliberate. The webview's cookie and this app's stored
+/// session are two credentials with two lifetimes, and they come apart in
+/// ordinary use: somebody clears the WebView2 profile, Windows restores a
+/// backup without it, or — the one that actually matters — a computer is
+/// handed to a colleague who chooses *Sign in as somebody else*, after which
+/// the app holds their session while the webview still holds the last person's
+/// cookie. Going through the hand-off every time makes the window show whoever
+/// this app is signed in as, which is the only answer that is ever right.
+pub async fn console_entry(app: &AppHandle) -> String {
+    let console = settings::console_url(app);
+    let session = settings::session();
+    if console.is_empty() || session.is_empty() {
+        return console;
+    }
+
+    let Ok(api) = api(app) else { return console };
+    let Ok(http) = client_with(HANDOFF_TIMEOUT) else {
+        return console;
+    };
+
+    match handoff(&http, &api, &authorization(SCHEME, &session)).await {
+        Ok(code) => adopt_url(&api, &code, &console).unwrap_or(console),
+        // Deliberately silent. There is nowhere to say it — this is a window
+        // opening, not a form being submitted — and the outcome the person
+        // sees is the console asking them to sign in, which is what they would
+        // have got anyway. The setup window is still where a session that has
+        // run out is explained, because that is where it can be fixed.
+        Err(_) => console,
+    }
+}
+
+/// Ask for a one-time code for the session this app is holding.
+///
+/// Short, and it stays short: the app sends a credential it already has and
+/// gets back a credential it is about to spend. It does not read the person,
+/// does not store anything, and does not decide anything — every rule about
+/// what a code is worth lives on the server, in `lib/server/auth.ts`, because
+/// a client that enforced its own idea of "single use" would be enforcing it
+/// on the one copy that is not the one being replayed.
+async fn handoff(http: &reqwest::Client, api: &str, header: &str) -> Result<String, String> {
+    #[derive(Deserialize)]
+    struct Code {
+        code: String,
+    }
+
+    let sent = http
+        .post(format!("{api}/api/auth/handoff"))
+        .header("authorization", header)
+        .send()
+        .await
+        .map_err(|e| unreachable(api, &e))?;
+
+    let status = sent.status().as_u16();
+    let body = sent.text().await.unwrap_or_default();
+    if !(200..300).contains(&status) {
+        // Includes the 404 from an API older than this route, which is the
+        // ordinary reason a team's server would say no. All of them come out
+        // as "open the console the plain way".
+        return Err(complained(status, &body, api));
+    }
+
+    let code: Code = serde_json::from_str(&body).map_err(|_| unreadable(api))?;
+    if code.code.is_empty() {
+        return Err(unreadable(api));
+    }
+    Ok(code.code)
+}
+
+/// The adopt URL, built with a URL parser rather than by pasting strings.
+///
+/// Both values go through `query_pairs_mut`, which percent-encodes them. The
+/// code is base64url and would survive being pasted in raw; the console
+/// address would not — a `?` or a `&` in it, or a path with a space, would
+/// silently truncate `next` and leave the API redirecting somewhere other than
+/// where the app meant, which the server would then refuse and turn into a
+/// second sign-in nobody could explain.
+fn adopt_url(api: &str, code: &str, console: &str) -> Option<String> {
+    let mut url = Url::parse(&format!("{api}/api/auth/adopt")).ok()?;
+    url.query_pairs_mut()
+        .append_pair("code", code)
+        .append_pair("next", console);
+    Some(url.to_string())
+}
+
 /* ── Talking to the API ─────────────────────────────────────────────────── */
 
 #[derive(Deserialize)]
@@ -394,6 +515,16 @@ async fn signup_open(http: &reqwest::Client, api: &str) -> bool {
 }
 
 fn client() -> Result<reqwest::Client, String> {
+    client_with(TIMEOUT)
+}
+
+/// The same client, waited on for as long as the caller is prepared to wait.
+///
+/// One builder rather than two, because the crypto provider below is the kind
+/// of setup that must not exist in two places: a second builder written later,
+/// without it, would work in every build that had already signed in and fail
+/// as "could not open a connection" in the one that had not.
+fn client_with(timeout: Duration) -> Result<reqwest::Client, String> {
     /*
      * The one thing `rustls-no-provider` leaves to the application: which
      * cryptography actually runs. It is not chosen by the dependency so that
@@ -413,7 +544,7 @@ fn client() -> Result<reqwest::Client, String> {
     }
 
     reqwest::Client::builder()
-        .timeout(TIMEOUT)
+        .timeout(timeout)
         // The console records this against the session and shows it in
         // Settings → Team, so a person looking at their own sessions can tell
         // the desktop app from a browser and end the right one.
@@ -640,11 +771,105 @@ mod tests {
                 .collect();
             assert!(already_enrolled(&minted.machine.id, true, &mine));
 
+            /*
+             * And the hand-off, which is the other half of one sign-in.
+             *
+             * Mint a code over the session just used, spend it the way the
+             * webview would — a plain GET, redirects NOT followed so the
+             * `Set-Cookie` and the `Location` can actually be looked at — and
+             * then send exactly the same URL a second time. The second one is
+             * the assertion that matters: a code that could be replayed is a
+             * session sitting in a webview's history.
+             *
+             * `next` has to be an origin the API's own WEB_ORIGIN names, which
+             * is what CONTENTOS_TEST_CONSOLE is for; its default is the API's
+             * own default, so a throwaway console started with neither set
+             * still runs this.
+             */
+            let console = std::env::var("CONTENTOS_TEST_CONSOLE")
+                .unwrap_or_else(|_| "http://localhost:3333".into());
+            let code = handoff(&http, &api, &header).await.expect("a hand-off code");
+            let url = adopt_url(&api, &code, &console).expect("an adopt url");
+
+            let webview = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .expect("a client that does not follow redirects");
+
+            let first = webview.get(&url).send().await.expect("adopt");
+            assert_eq!(first.status().as_u16(), 302, "a redirect to the console");
+            assert!(
+                first
+                    .headers()
+                    .get("location")
+                    .and_then(|l| l.to_str().ok())
+                    .unwrap_or_default()
+                    .starts_with(&console),
+                "the redirect goes to the console it was given"
+            );
+            assert!(
+                first.headers().get("set-cookie").is_some(),
+                "the session cookie is what the webview came for"
+            );
+
+            let again = webview.get(&url).send().await.expect("replay");
+            assert_eq!(again.status().as_u16(), 302, "still a window, not an error");
+            assert!(
+                again.headers().get("set-cookie").is_none(),
+                "a spent code must hand out nothing at all"
+            );
+
+            // A code for somewhere that is not the console is refused before
+            // anything is spent — the open redirect and the session cookie
+            // are only dangerous together.
+            let elsewhere = handoff(&http, &api, &header).await.expect("a second code");
+            let bad = adopt_url(&api, &elsewhere, "https://evil.example.com").unwrap();
+            let sent = webview.get(&bad).send().await.expect("adopt elsewhere");
+            assert_eq!(sent.status().as_u16(), 400);
+            assert!(sent.headers().get("set-cookie").is_none());
+
+            // And the code it refused is still live, because refusing a target
+            // must not cost the app the credential it was about to use.
+            let good = adopt_url(&api, &elsewhere, &console).unwrap();
+            let retry = webview.get(&good).send().await.expect("adopt properly");
+            assert!(retry.headers().get("set-cookie").is_some());
+
             // And the password still has to be right, over the same client
             // against the same server — a login that accepts anything would
             // pass every assertion above.
             assert!(login(&http, &api, &email, "not-the-password").await.is_err());
         });
+    }
+
+    /// Both halves of the adopt URL go through a URL parser, so neither can
+    /// end the query string early. `next` is the one that would: a console
+    /// address with a `?` or an `&` anywhere in it would truncate silently,
+    /// the API would refuse the mangled target, and the person would get the
+    /// second sign-in this whole thing exists to remove — with nothing on any
+    /// screen saying why.
+    #[test]
+    fn the_adopt_url_encodes_what_it_carries() {
+        assert_eq!(
+            adopt_url(
+                "https://api.example.com",
+                "aBc-_123",
+                "https://console.example.com"
+            )
+            .unwrap(),
+            "https://api.example.com/api/auth/adopt\
+             ?code=aBc-_123&next=https%3A%2F%2Fconsole.example.com"
+        );
+    }
+
+    /// A base64url code is unreserved from end to end, so it arrives at the
+    /// server byte-for-byte — which matters, because the server compares its
+    /// sha256 and a single re-encoded character is a code that mints fine and
+    /// can never be spent.
+    #[test]
+    fn a_code_survives_the_query_string_unchanged() {
+        let code = "Zm9vYmFy-_0123456789abcXYZ";
+        let url = adopt_url("https://api.example.com", code, "https://c.example.com").unwrap();
+        assert!(url.contains(&format!("code={code}&")));
     }
 
     /// The scheme is the server's word, but only if it is a word.

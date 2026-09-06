@@ -34,6 +34,15 @@ cookie is set by the API and read by both, which works because both hosts sit
 under `COOKIE_DOMAIN` (`.content.yourcompany.com`). Put them on unrelated
 domains and you need `COOKIE_SAMESITE=none` — and you should not.
 
+`WEB_ORIGIN` now carries a second job. It is still the CORS allow-list, and it
+is also what the desktop app's one-time sign-in hand-off is allowed to redirect
+to — an endpoint that sets a session cookie and then redirects is worth more to
+an attacker than either half, so `next` is refused unless it matches. It has to
+be the **exact** origin the app was built with as `CONTENTOS_CONSOLE_URL`:
+scheme, host and port. Get it wrong and nothing breaks loudly — teammates just
+quietly get asked to sign in a second time, in the webview, having already
+signed in to the app.
+
 **Not Vercel, and now for a smaller reason.** A run is no longer a loop inside
 the API: `advance()` enqueues jobs and returns, and a worker claims them. But
 the API still holds long-poll connections for workers claiming work, runs a

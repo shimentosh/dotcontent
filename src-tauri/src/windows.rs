@@ -5,7 +5,9 @@
 //! `src-tauri`: the console is served by whoever runs the server, so a
 //! template change or a bug fix reaches every teammate the moment it is
 //! deployed, without fifteen desktops needing an update. The webview signs in
-//! as a person, with the console's own cookie, exactly as a browser does.
+//! as a person, with the console's own cookie, exactly as a browser does — and
+//! that cookie now arrives by hand-off rather than by a second login form. See
+//! `account::console_entry`.
 //!
 //! **The setup window is the one screen this app draws**, because the console
 //! address and this machine's worker token have to be given before there is a
@@ -14,19 +16,53 @@
 
 use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindowBuilder};
 
-use crate::settings;
+use crate::{account, settings};
 
+/// Open the console, signed in as whoever this app is signed in as.
+///
+/// Returns straight away and finishes on a background task, because getting
+/// the session into that window costs one HTTP request — see
+/// `account::console_entry` for what it is and why it is worth a round trip.
+/// The alternative shapes are both worse: blocking would freeze whichever
+/// button or tray item was clicked, and opening the window first and
+/// navigating afterwards would show the console's login form for a moment
+/// before replacing it, which reads as a sign-in that failed.
 pub fn console(app: &AppHandle) {
-    if let Some(open) = app.get_webview_window("console") {
-        let _ = open.show();
-        let _ = open.set_focus();
+    // The common case, and it must stay instant: the window is already there
+    // and the person is asking to look at it. Nothing to hand off — this
+    // webview signed in when it was opened.
+    if focus(app, "console") {
         return;
     }
 
     // Anything wrong with the address puts the person in front of the field
     // that holds it, rather than in front of an empty window or nothing at all.
-    let url = settings::console_url(app);
-    let Ok(url) = Url::parse(&url) else {
+    // Checked here, synchronously, so that the one failure a person can fix
+    // does not arrive five seconds later from a task they cannot see.
+    if Url::parse(&settings::console_url(app)).is_err() {
+        return setup(app);
+    }
+
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let entry = account::console_entry(&app).await;
+        open(&app, &entry);
+    });
+}
+
+/// Build the window, at whatever URL the hand-off settled on.
+///
+/// The existing-window check happens again here, and it is not paranoia: two
+/// clicks a second apart, or a tray item pressed while the first hand-off is
+/// still in flight, would otherwise each get to this point and this app would
+/// have two console windows — one of them signed in as the wrong person, since
+/// only one of the two codes can be spent.
+fn open(app: &AppHandle, entry: &str) {
+    if focus(app, "console") {
+        return;
+    }
+
+    let Ok(url) = Url::parse(entry) else {
         return setup(app);
     };
 
@@ -41,9 +77,7 @@ pub fn console(app: &AppHandle) {
 }
 
 pub fn setup(app: &AppHandle) {
-    if let Some(open) = app.get_webview_window("setup") {
-        let _ = open.show();
-        let _ = open.set_focus();
+    if focus(app, "setup") {
         return;
     }
 
@@ -60,4 +94,16 @@ pub fn setup(app: &AppHandle) {
         // window somebody reads as "nothing here to do".
         .inner_size(560.0, 780.0)
         .build();
+}
+
+/// Bring a window that already exists to the front, and say whether there was
+/// one. Written once because both windows want it and the console now wants it
+/// twice.
+fn focus(app: &AppHandle, label: &str) -> bool {
+    let Some(open) = app.get_webview_window(label) else {
+        return false;
+    };
+    let _ = open.show();
+    let _ = open.set_focus();
+    true
 }

@@ -43,6 +43,12 @@ fn status(app: AppHandle, worker: State<'_, Worker>) -> View {
 /// The console is opened at the end because that is what the person came for.
 /// A window that stayed on the setup screen after a successful sign-in would
 /// be a window that looks like nothing happened.
+///
+/// And it opens *signed in*. `windows::console` carries the session this app
+/// has just been given into the webview through the hand-off — see
+/// `account::console_entry` — so the form the person has just filled in is the
+/// only one they ever see. Before that, the window that opened here asked them
+/// for the same email and the same password a second time, seconds later.
 #[tauri::command]
 async fn sign_in(app: AppHandle, email: String, password: String) -> Result<Done, String> {
     let done = account::sign_in(&app, &email, &password).await?;

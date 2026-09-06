@@ -512,6 +512,11 @@ starts carrying a credential it does not need and might log.
 So: still two principals. A person, who may now arrive by cookie or by header,
 and a machine, which arrives by bearer token and by nothing else.
 
+There is a hand-off code as well, and it is not a fourth credential in any
+sense that matters: it is a two-minute, single-use ticket that can be exchanged
+for one specific existing session and for nothing else, by the one route that
+accepts it. See **One sign-in, and the hand-off that carries it** below.
+
 | | | |
 |---|---|---|
 | **Register** | `POST /api/workers/register` | `{ name, platform, version, tools: ToolStatus[], enabled: string[], canReadFrames, maxConcurrency }` → `{ workerId, heartbeatMs, claimMs }`. Idempotent on the token: the same machine re-registering after an update replaces its tool report rather than creating a second row. Re-registration is also how a newly installed `whisper` becomes visible — this is what replaces `toolStatuses(force)`. |
@@ -770,6 +775,93 @@ for has no hosted console, so Settings → Machines is not a page anybody can
 open, and "paste the token you were shown" was an instruction with nowhere to
 follow it. The field is still on the setup window, one disclosure down, for
 whoever is handed a token by a colleague.
+
+### One sign-in, and the hand-off that carries it
+
+Two credentials, and — until this — two *sign-ins*. The app signs in from Rust
+and keeps the session in the credential store, because its webview is on
+`tauri://localhost` and the API's cookie is third-party there. Then it opened
+the console window, which is an ordinary navigation to the team's server
+carrying nothing at all, and the first thing a teammate saw after signing in
+was a login form asking for the same email and the same password again. Same
+account, same machine, seconds apart. Nothing was broken; it just looked like
+the first sign-in had not counted.
+
+The fix is a route pair, and deliberately the smallest thing that closes it.
+
+| | | |
+|---|---|---|
+| **Mint** | `POST /api/auth/handoff` | Behind the global `SessionGuard` — **not** `@Public()`. Returns `{ code, expiresAt }` for the session the request arrived on, whichever transport carried it. There is no parameter naming a session or a user, so a caller can only ever ask for a code for the session it already holds: the route hands out no access the request did not arrive with. |
+| **Spend** | `GET /api/auth/adopt?code=…&next=…` | `@Public()`, because the whole point is a webview that has no cookie yet — that is the state it exists to fix. Validates `next`, spends the code, sets the session cookie with the same `setSession` every login uses, and redirects. |
+
+Four rules, each preventing something specific:
+
+- **It buys the session it was minted from, and nothing else.** Spending calls
+  no `startSession` and extends no expiry — it hands over the row the app
+  already holds. Two session rows for one sign-in would mean Settings → Team
+  and "sign out everywhere" could each end one and leave the other alive: a
+  person who revoked their laptop and watched it carry on working.
+- **Minutes, not hours** — two. For as long as a code is live it is a session
+  sitting in a URL, and a URL is the least private thing in the system: webview
+  history, a proxy log, the `Referer` on whatever the console loads next.
+- **Stored as a sha256**, through the same `hashToken` `workers.token_hash`
+  uses, so a database dump is not a list of live logins. It is worth more here
+  than there: what a hand-off code opens is a person's whole console, not nine
+  queue routes.
+- **Single use, decided by Postgres.** One `UPDATE … WHERE used_at IS NULL`
+  returning a row, the same trick that stops an invite link being redeemed
+  twice by two people racing it. A read followed by a write would let a
+  replayed URL and the real navigation both pass the read.
+
+**`next` is an allowlist, and a miss is a refusal.** A redirect that also sets
+a session cookie is worth more to an attacker than either half on its own: send
+somebody a link and their browser arrives on your page *already signed in as
+themselves*. So the target is checked against the origins in `WEB_ORIGIN` — the
+same variable, parsed the same way, as the CORS list, because a second
+statement of where the console is would be a second thing to keep in step — and
+anything else is a `400`, not a quiet fall back to the console's front page. A
+silent fallback would make a misconfigured `WEB_ORIGIN` look like it worked,
+and the one time it mattered would be the time somebody was probing it. The
+whole rule is that the *origin* of whatever `next` parses to must be on the
+list, which handles `//evil.example`, `javascript:…` and
+`https://console@evil.example` without any of them being recognised on its own.
+`tests/handoff.test.ts` pins it.
+
+**`next` is validated before the code is spent**, so a refusal does not also
+burn the app's one credential — it can open the console the ordinary way
+instead.
+
+**What it deliberately is not:**
+
+- **Not a second session.** See the first rule. This is the difference between
+  a hand-off and "log the webview in too", which is what any design that called
+  `startSession` here would be.
+- **Not a general-purpose redirect.** It goes to the console or it goes
+  nowhere. There is no `?url=` for a third party, no relative escape hatch, no
+  "trusted domains" list to grow.
+- **Not a way to get a session you did not have.** Minting is behind the guard
+  and names no principal; spending is a lookup on a hash, and a spent, expired,
+  unknown or since-revoked code is one indistinguishable answer — a redirect to
+  the console with no cookie set, which is the second sign-in, which is exactly
+  where this started.
+
+**A bad code still opens the window.** The person is mid-navigation and a JSON
+error in a webview is a dead end with nothing to click, so the response is the
+same `302` either way and the console's own login page is what they get. The
+app's side matches: `account::console_entry` falls back to the console's plain
+URL on *every* failure — no session held, no API address, the API unreachable,
+a server too old to have the route, a body it cannot read.
+
+**Every opening of the console goes through it, not only the first.** The
+webview's cookie and the app's stored session are two credentials with two
+lifetimes and they come apart in ordinary use: a cleared WebView2 profile, a
+restored backup, a cookie that expired while the app's session did not. The one
+that actually matters is a computer handed to a colleague who chooses *Sign in
+as somebody else* — after which the app holds their session and the webview
+still holds the last person's cookie, and a window opened without a hand-off
+would show the wrong person's console. Minting on every open costs one HTTP
+round trip before the window appears, on a five-second timeout, which is the
+price of the window never disagreeing with the app about who is signed in.
 
 ### Uploads stay on the server, and whisper stops needing the video
 
@@ -1073,8 +1165,9 @@ signing in.
 - **Not a second identity system.** It signs in with the console's own accounts,
   over the console's own `POST /auth/login`, and gets back the console's own
   session — the same row a browser would have held in a cookie, carried in a
-  header because a webview on a local origin cannot keep that cookie. No users
-  here, no passwords here, no second table anywhere. The worker holds the
+  header because a webview on a local origin cannot keep that cookie, and
+  handed to that webview as a cookie for *that same row* when the console
+  window opens. No users here, no passwords here, no second table anywhere. The worker holds the
   machine token. Two credentials, for the reasons in "The desktop app holds two
   credentials, on purpose" above.
 - **Not a rewrite of the worker.** It spawns `worker/index.ts` with the same
@@ -1092,7 +1185,7 @@ signing in.
 | The session | The same store, under `console-session.com.contentos.desktop`. A separate entry rather than a second field in one blob, because the two are separately replaced: signing in again writes this and leaves the token alone, re-enrolling writes the token and leaves this alone. It is in the credential store for the same reason the token is — a header credential in `%APPDATA%` is a credential in the next backup of the profile — and it is never given to the webview or to the worker. |
 | Who is signed in | `accountEmail` in `settings.json`, and it is only a label: the window shows it, `settings::account_email` returns it only while there is a session in the store to go with it, and nothing authenticates with it. |
 | This machine's row | `machineId` in `settings.json`. Not a credential — it is the id the machine picker shows beside a name — and it is what stops a second machine being minted on every sign-in. |
-| Session cookie | The webview's own data directory, which is WebView2's business and not this app's. The API's cookie never reaches it: the window is on a local origin, so that cookie is third-party. |
+| Session cookie | The webview's own data directory, which is WebView2's business and not this app's. It gets there by hand-off: the window is opened at `GET /api/auth/adopt?code=…`, which sets the cookie for the session this app already holds — see "One sign-in, and the hand-off that carries it". What it is *not* is this app writing a cookie, or the app's `fetch` earning one: the window is on a local origin, so a cookie the API set for a request made from here would be third-party. It is set on a top-level navigation to the API's own origin, which is the ordinary way every browser gets one. |
 
 ### Where the two addresses come from
 
@@ -1143,10 +1236,11 @@ and one that is not a usable address is skipped rather than accepted — so an
 `apiUrl: ""` in a `settings.json` written before there was one does not shadow
 the address the installer was built with.
 
-**What the setup window asks for.** An email and a password, and nothing else.
-Sign in, and the app keeps the session, mints this machine's worker token,
-stores it, and starts the worker — one button, and the person never sees a
-token at all. Afterwards the panel stops being a form and becomes a line saying
+**What the setup window asks for.** An email and a password, and nothing else,
+**once**. Sign in, and the app keeps the session, mints this machine's worker
+token, stores it, starts the worker, and opens the console *already signed in*
+through the hand-off above — one button, and the person never sees a token at
+all, nor a second login form. Afterwards the panel stops being a form and becomes a line saying
 who is signed in, with two things beside it: *Set this machine up again*, which
 mints a fresh token from the session already held and is the answer to a
 machine revoked or a credential store cleared, and *Sign in as somebody else*,
