@@ -252,8 +252,14 @@ API sets never reaches the console.
 
 | Where | What |
 | --- | --- |
-| Domains | `APP_HOST` → service **app**, port **3333** |
+| Domains | `APP_HOST` → service **app**, port **8080** |
 | Domains | `API_HOST` → service **api**, port **4000** |
+
+The app's port is **8080 in the deployed compose and 3333 in a checkout** — the
+Dockerfile's default is overridden there. Nothing is published, so the only
+thing that number has to match is Dokploy's Container Port field. Change one
+without the other and the result is a 502 with nothing anywhere saying which
+half is wrong.
 | Build arguments, on **app** | `NEXT_PUBLIC_API_URL=https://API_HOST` |
 
 That last row is a **build argument, not an environment variable**. The browser

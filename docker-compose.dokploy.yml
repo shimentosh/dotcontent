@@ -69,10 +69,21 @@ services:
         NEXT_PUBLIC_API_URL: https://${API_HOST:?set API_HOST}
     restart: unless-stopped
     environment:
-      PORT: "3333"
+      # 8080 here and 3333 in a checkout, on purpose.
+      #
+      # Nothing routes to this port from outside the container — there is no
+      # `ports:` mapping — so Traefik reaches it by the number in Dokploy's
+      # Container Port field and nothing else. The two have to agree, and
+      # that is the whole rule: change one and the other is a 502 with no
+      # message anywhere saying which half is wrong.
+      #
+      # It overrides the Dockerfile's own ENV PORT, so `./start.sh` and
+      # `npm run dev` still use 3333 and docs/DEVELOPING.md stays true.
+      PORT: "8080"
     depends_on:
       - api
-    # Attach the console's domain (APP_HOST) to port 3333 in Dokploy.
+    # Attach the console's domain (APP_HOST) to port 8080 in Dokploy —
+    # the same number as PORT above.
     networks: [dokploy-network]
 
 volumes:
