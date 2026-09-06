@@ -1,0 +1,101 @@
+# Content OS on Dokploy.
+#
+# The same three containers as docker-compose.prod.yml, minus the reverse
+# proxy — because Dokploy already runs one.
+#
+# That is the whole difference, and it is not optional: `docker-compose.prod.yml`
+# ships a Traefik that binds :80 and :443, which are the ports Dokploy's own
+# Traefik is already holding. Deploy that file here and the stack fights the
+# platform for a socket.
+#
+# So this file publishes no ports at all. Nothing here is reachable from the
+# internet by itself; Dokploy's proxy reaches the containers over the shared
+# network below, and the domains, the certificates and the routing are set in
+# Dokploy's UI rather than in labels here. Two places writing Traefik rules for
+# one service is how a deploy ends up serving the wrong container.
+#
+#   Dokploy → Create → Compose, point it at this repository and this file.
+#
+# See docs/DEPLOYING.md, "Deploying on Dokploy", for the fields to fill in and
+# the one setting that breaks the desktop app quietly if it is wrong.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: contentos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: contentos
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contentos -d contentos"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # Deliberately not published. Only the API talks to it, over the compose
+    # network; a database on a public port is a database somebody finds.
+    networks: [internal]
+
+  # The backend the browser and every worker call.
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://contentos:${POSTGRES_PASSWORD}@postgres:5432/contentos
+      PORT: "4000"
+      CONTENTOS_SECRET: ${CONTENTOS_SECRET:?set CONTENTOS_SECRET}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      NODE_ENV: production
+      # The console's origin, and it does two jobs. It is the CORS allow-list,
+      # and it is the only place the desktop app's sign-in hand-off may
+      # redirect to. It has to be the EXACT origin the app was built with as
+      # CONTENTOS_CONSOLE_URL — scheme, host, port. Wrong and nothing errors:
+      # teammates are simply asked to sign in a second time, in the app.
+      WEB_ORIGIN: https://${APP_HOST:?set APP_HOST}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # Frames and the audio a worker sends back. Without this a redeploy loses
+      # them and every still the researcher already read 404s.
+      - sourcedata:/app/.data
+    # Attach the API's domain (API_HOST) to port 4000 in Dokploy.
+    networks: [internal, dokploy-network]
+
+  # The console: Next.js, frontend only.
+  app:
+    build:
+      context: .
+      args:
+        # Read by the browser bundle, so it is fixed when the image is built,
+        # not when it starts. Change API_HOST and this has to be rebuilt —
+        # restarting it will not do. Dokploy needs this under the service's
+        # build arguments, not its environment variables; the two look alike in
+        # the UI and only one of them reaches a `next build`.
+        NEXT_PUBLIC_API_URL: https://${API_HOST:?set API_HOST}
+    restart: unless-stopped
+    environment:
+      PORT: "3333"
+    depends_on:
+      - api
+    # Attach the console's domain (APP_HOST) to port 3333 in Dokploy.
+    networks: [internal, dokploy-network]
+
+volumes:
+  pgdata:
+  # Frames and audio. Big, re-fetchable, and worth keeping across a deploy —
+  # which is why it is a volume rather than something inside the container.
+  sourcedata:
+
+networks:
+  # Between our own containers. Postgres is only on this one.
+  internal:
+  # Dokploy's proxy network, created by Dokploy itself — hence `external`.
+  # If your install named it something else, this is the line to change.
+  dokploy-network:
+    external: true

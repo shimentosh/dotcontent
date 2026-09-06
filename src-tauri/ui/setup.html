@@ -53,11 +53,20 @@
       body {
         margin: 0;
         padding: 24px;
+        min-height: 100vh;
+        box-sizing: border-box;
+        display: grid;
+        place-items: center;
         background: var(--bg);
         color: var(--text);
         font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
         -webkit-user-select: none;
         user-select: none;
+      }
+      .sheet {
+        width: 100%;
+        max-width: 360px;
+        margin: auto;
       }
       h1 { font-size: 15px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
       p.sub { color: var(--mute); margin: 0 0 24px; }
@@ -230,6 +239,18 @@
   </head>
   <body>
     <!--
+      One sheet, centred.
+
+      The window is sized for the sign-in, so on a first run the content is
+      shorter than the window and used to sit against the top-left corner with
+      the rest of the frame empty below it. Centring is `place-items` on the
+      body with `margin: auto` here: the pair centres the sheet while there is
+      room and lets it scroll normally when the diagnostics are open and there
+      is not — which `place-items` alone does not, because a grid item taller
+      than its track gets clipped at the top rather than scrolled to.
+    -->
+    <main class="sheet">
+    <!--
       The first thing a teammate sees, and it is a sign-in.
 
       This screen used to open with a title, an explanatory paragraph, a status
@@ -385,6 +406,7 @@
       <p id="error"></p>
     </div>
     </details>
+    </main>
 
     <script>
       const { invoke } = window.__TAURI__.core;

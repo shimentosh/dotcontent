@@ -163,6 +163,62 @@ being wrong, neither shows up on any screen, so both are asserted here.
 It also prints how many machines are enrolled. Zero is not a failed deploy,
 but it is the reason nothing runs.
 
+## Deploying on Dokploy
+
+Dokploy runs its own Traefik on :80 and :443. `docker-compose.prod.yml` ships
+one too, so those two fight for a socket — use **`docker-compose.dokploy.yml`**
+instead. It is the same three containers with the proxy removed and no
+published ports at all: Dokploy's proxy reaches the containers over its own
+network, and the domains are set in its UI rather than in labels here. Two
+places writing Traefik rules for one service is how a deploy serves the wrong
+container.
+
+**Create → Compose**, point it at this repository and that file, then:
+
+| Where | What |
+| --- | --- |
+| Environment | `POSTGRES_PASSWORD`, `CONTENTOS_SECRET`, `APP_HOST`, `API_HOST`, `COOKIE_DOMAIN` |
+| Domains | `APP_HOST` → service **app**, port **3333** |
+| Domains | `API_HOST` → service **api**, port **4000** |
+| Build arguments, on **app** | `NEXT_PUBLIC_API_URL=https://API_HOST` |
+
+That last row is a build argument and not an environment variable. The browser
+bundle is compiled with the API's address inside it, so changing `API_HOST`
+means rebuilding the app image, not restarting it — and Dokploy's two fields
+look alike while only one of them reaches a `next build`.
+
+`COOKIE_DOMAIN` still has to be the parent of both hosts (`.content.example.com`
+for `content.example.com` and `api.content.example.com`), or the session cookie
+the API sets never reaches the console.
+
+### Then build the desktop app, on your own machine
+
+Dokploy builds the server. The app is built where you are and handed to people:
+
+```bash
+CONTENTOS_CONSOLE_URL=https://APP_HOST \
+CONTENTOS_API_URL=https://API_HOST \
+  npm run desktop:installer
+```
+
+→ `src-tauri/target/release/bundle/nsis/Content OS_<version>_x64-setup.exe`.
+
+**The one setting that breaks quietly.** `WEB_ORIGIN` on the server is set from
+`APP_HOST`, and it is also the only origin the desktop app's sign-in hand-off
+may redirect to. It must equal `CONTENTOS_CONSOLE_URL` **exactly** — scheme,
+host and port, no trailing slash. Get it wrong and nothing errors anywhere:
+teammates simply get asked to sign in a second time inside the app, having
+already signed in to it, and there is no message saying why.
+
+Everything else a teammate needs is inside the installer. They run it, click
+through SmartScreen (it is unsigned, deliberately — `docs/DECISIONS.md`), and
+sign in with their own email and password. No address to type, no token to
+paste.
+
+Rebuild and re-send the installer when the addresses change or the worker does.
+A change to a prompt, a template or a screen needs no new installer at all —
+that is the server's, and it is why the console stays hosted.
+
 ## Bringing your existing work across
 
 ```bash
