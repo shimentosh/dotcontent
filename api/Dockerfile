@@ -14,10 +14,21 @@ WORKDIR /app
 COPY --from=deps /app/api/node_modules ./api/node_modules
 # The shared code, and the root packages it imports (pg, the Anthropic SDK).
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev
+# Everything, including devDependencies — `tsc` needs them.
+#
+# This was `--omit=dev`, which looks right for an image and is not: the type
+# packages for what lib/server imports live in the root's devDependencies, so
+# `@types/pg` was absent and the build below failed with a screenful of
+# implicit-any on code that compiles fine on a laptop. The dev dependencies
+# are needed to BUILD and not to RUN, which is what `npm prune` is for.
+RUN npm ci
 COPY lib ./lib
 COPY api ./api
 RUN cd api && npm run build
+# Now that tsc is done, take them back out. The runtime stage copies this
+# node_modules wholesale, so pruning here is what keeps the shipped image to
+# what a request actually reaches.
+RUN npm prune --omit=dev
 
 FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
