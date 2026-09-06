@@ -156,6 +156,14 @@ pub struct View {
     /// reason to hold a credential it cannot do anything with, and a webview's
     /// DOM is the last place it should be sitting.
     pub has_token: bool,
+    /// Who this app is signed in to the console as, or empty when nobody is.
+    ///
+    /// The email and never the session, for the same reason as the line above:
+    /// the page draws a name, and a credential in the DOM is a credential in
+    /// whatever the page ever grows into. `settings::account_email` only
+    /// answers while there is a session in the credential store to go with it,
+    /// so this cannot say "signed in as Rakib" over a machine that is not.
+    pub signed_in_as: String,
     pub log: Vec<String>,
 }
 
@@ -195,6 +203,7 @@ impl Worker {
             built_in_api_url: api.built_in(),
             api_url: api.url,
             has_token: !settings::token().is_empty(),
+            signed_in_as: settings::account_email(app),
             log: inner.log.iter().cloned().collect(),
         }
     }
@@ -227,7 +236,7 @@ impl Worker {
         let token = settings::token();
         if console.is_empty() || api.is_empty() || token.is_empty() {
             /*
-             * Four sentences rather than one, because they are four different
+             * Five sentences rather than one, because they are five different
              * things to go and do — and because a teammate with an installer
              * that knows where both servers are has exactly one of them left,
              * and asking them for an address the app already has would send
@@ -238,28 +247,38 @@ impl Worker {
              * address, or built by somebody who set only the first. That copy
              * has a console and no API, and "fill in the address" would send
              * its owner to check the one that is already right.
+             *
+             * The last two are the ordinary first run, and they are two
+             * because a person who has already signed in must not be told to
+             * sign in. Signing in is what mints this machine's token now, so
+             * "no token" nearly always means "has not signed in yet"; when it
+             * does not — a store that was cleared, a machine revoked — the
+             * thing to do is the one-click repair, not a password.
              */
+            let signed_in = !settings::account_email(app).is_empty();
             return self.set(
                 app,
                 Health::NotConfigured,
                 match (console.is_empty(), api.is_empty()) {
                     (true, true) => {
-                        "Fill in the console and API addresses and this machine's token below, then \
-                         choose Save and start."
+                        "Fill in the console and API addresses below, then sign in with your email \
+                         and password."
                     }
                     (true, false) => {
-                        "Fill in the console address and this machine's token below, then choose \
-                         Save and start."
+                        "Fill in the console address below, then sign in with your email and \
+                         password."
                     }
                     (false, true) => {
                         "This copy knows the console but not the API — the server the worker asks \
-                         for jobs, which is a different host. Fill it in below, then choose Save \
-                         and start."
+                         for jobs, which is a different host. Fill it in below, then sign in."
+                    }
+                    (false, false) if signed_in => {
+                        "This app is signed in, but this machine has no worker token of its own. \
+                         Choose Set this machine up again below and it will get one."
                     }
                     (false, false) => {
-                        "Paste this machine's token below, then choose Save and start. On the \
-                         console it is Settings → Machines → add this machine, and it is shown \
-                         once."
+                        "Sign in below with the email and password you use for Content OS. This \
+                         app will set this machine up itself — there is nothing to paste."
                     }
                 },
             );
@@ -557,8 +576,16 @@ fn classify(line: &str) -> Option<(Health, String)> {
     if line.contains("did not recognise CONTENTOS_WORKER_TOKEN") {
         return Some((
             Health::BadToken,
-            "The console does not recognise this machine's token. On the console, go to Settings → Machines, \
-             add this machine again, and paste the new token below."
+            /*
+             * This used to be a trip to Settings → Machines on a web console
+             * to mint a token and paste it back. There may not be a console to
+             * go to — the deployment this is heading for is the API alone —
+             * and there does not need to be: this app can mint a new one for
+             * itself from the sign-in it already holds, which is one button.
+             */
+            "The console does not recognise this machine's token — it was probably revoked in \
+             Settings → Machines. Choose Set this machine up again below and this app will get a \
+             new one. If it asks you to sign in first, sign in."
                 .into(),
         ));
     }

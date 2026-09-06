@@ -126,8 +126,13 @@ addresses at install time, which is the thing this removes. The script says so,
 loudly, before and after the build.
 
 What a teammate then does: run the installer, click through SmartScreen's
-warning (it is unsigned — see `docs/DECISIONS.md`), and paste the one token
-minted for their machine. Nothing else.
+warning (it is unsigned — see `docs/DECISIONS.md`), and **sign in with their
+own email and password**. The app mints its own machine token from that
+session and starts the worker; nobody pastes anything.
+
+The **Settings → Machines** flow above is still there and still works — it is
+the way to enrol a machine that is not running the desktop app, and the way to
+revoke one. It is no longer what an ordinary install involves.
 
 Then, from your laptop, ask the API the questions that matter:
 

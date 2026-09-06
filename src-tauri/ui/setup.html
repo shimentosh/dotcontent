@@ -9,10 +9,19 @@
       Everything else in Content OS is served by the team's console and shown in
       a webview, deliberately: a second copy of the UI here would be a second
       thing to keep in step, and it would be the copy nobody remembered to
-      update. But this machine's token has to be given before there IS a
-      console to load, so it cannot come from one — and a person who has to
-      open a terminal to fix their own machine is the failure this whole app
-      exists to prevent, so the worker's status is on this page too.
+      update. But this machine has to be set up before there IS a console to
+      load, so it cannot be set up from one — and a person who has to open a
+      terminal to fix their own machine is the failure this whole app exists to
+      prevent, so the worker's status is on this page too.
+
+      What it asks for is an email and a password, and nothing else. It used to
+      ask for a worker token minted in Settings → Machines on a web console,
+      which is an instruction with nowhere to follow it once only the API is
+      deployed. So the app signs in, keeps the session, and mints this
+      machine's token for itself through POST /api/machines — see
+      src-tauri/src/account.rs. The token field is still here, one disclosure
+      down, because somebody handed a token by a colleague should not be
+      stopped; it is simply not the way in any more.
 
       The addresses used to be the second question here and mostly are not any
       more: an installer is built with both, so the fields are folded away
@@ -98,8 +107,17 @@
       button.primary { background: var(--accent); border-color: transparent; }
       button.primary:hover { background: #1a68ff; }
       .spacer { flex: 1; }
-      #error { color: var(--bad); margin: 12px 0 0; min-height: 0; }
-      #error:empty { display: none; }
+      #error, #account-error { color: var(--bad); margin: 12px 0 0; min-height: 0; }
+      #error:empty, #account-error:empty { display: none; }
+      /*
+        What just happened, in green, and only while it is news. It is a
+        separate line from the status panel above on purpose: that one says
+        what is true now, this one says what the button did, and a person who
+        pressed Sign in needs both — "connected" alone does not tell them
+        whether a machine was made or reused.
+      */
+      #account-said { color: var(--good); margin: 12px 0 0; }
+      #account-said:empty { display: none; }
       details { margin-top: 4px; }
       summary { color: var(--mute); cursor: pointer; }
       /*
@@ -174,6 +192,51 @@
       </details>
     </div>
 
+    <!--
+      The way in, and the only one a teammate should need.
+
+      Two fields, both of which they already know, and everything else — the
+      session, this machine's worker token, the machine's name on the console —
+      is the app's job from here. The panel has two faces because the questions
+      are different: somebody who has never signed in is asked to; somebody who
+      has is shown who they are and offered the one repair that needs no
+      password, which is the answer to a revoked machine or a cleared
+      credential store.
+    -->
+    <div class="panel" id="account">
+      <p class="name">Sign in to Content OS</p>
+
+      <div id="signed-in" hidden>
+        <p class="value" id="account-email"></p>
+        <p class="hint">
+          This app is signed in to your console and has this machine's own
+          token. Nothing else is needed here.
+        </p>
+        <div class="row">
+          <button id="re-enrol">Set this machine up again</button>
+          <div class="spacer"></div>
+          <button type="button" class="link" id="switch-account">Sign in as somebody else</button>
+        </div>
+      </div>
+
+      <div id="signed-out">
+        <label for="email">Email</label>
+        <input id="email" type="email" spellcheck="false" autocomplete="off" placeholder="you@yourteam.com" />
+        <label for="password">Password</label>
+        <input id="password" type="password" placeholder="Your Content OS password" />
+        <p class="hint">
+          The same email and password you use for Content OS. This machine is
+          set up for you — there is no token to find and nothing to paste.
+        </p>
+        <div class="row">
+          <button class="primary" id="sign-in">Sign in and set up this machine</button>
+        </div>
+      </div>
+
+      <p id="account-error"></p>
+      <p id="account-said"></p>
+    </div>
+
     <div class="panel">
       <!--
         Two addresses, because there are two servers: the console is the web
@@ -217,15 +280,28 @@
         </p>
       </details>
 
-      <label for="token">This machine's token</label>
-      <input id="token" type="password" spellcheck="false" placeholder="Paste the token you were shown" />
-      <p class="hint">
-        On the console: Settings → Machines → add this machine. The token is
-        shown once. It is kept in Windows Credential Manager, not in a file.
-      </p>
+      <!--
+        Still reachable, and out of the way.
+
+        Signing in above mints this machine's token by itself, so nobody
+        ordinarily comes here. But somebody does: a machine being set up by
+        whoever runs the console rather than by the person sitting at it, a
+        teammate whose account is not made yet, a support call. Removing the
+        field would turn those into "reinstall the app", so it is one
+        disclosure down rather than gone.
+      -->
+      <details id="token-details">
+        <summary>Set this machine up with a token instead</summary>
+        <label for="token">This machine's token</label>
+        <input id="token" type="password" spellcheck="false" placeholder="Paste the token you were shown" />
+        <p class="hint">
+          Minted on the console under Settings → Machines and shown once. It is
+          kept in Windows Credential Manager, not in a file.
+        </p>
+      </details>
 
       <div class="row">
-        <button class="primary" id="save">Save and start</button>
+        <button id="save">Save and start</button>
         <button id="console">Open the console</button>
         <div class="spacer"></div>
         <button id="restart">Restart the worker</button>
@@ -238,7 +314,15 @@
       const { listen } = window.__TAURI__.event;
 
       const el = (id) => document.getElementById(id);
-      const said = { state: "", message: "" };
+
+      /*
+        Whether the sign-in fields are on screen for somebody who is already
+        signed in. It is a thing the person asked for by clicking, not a fact
+        about the machine, so it lives here and not in the view Rust sends —
+        otherwise every status tick from the worker would fold the form away
+        again while they were typing in it.
+      */
+      let switching = false;
 
       function render(view) {
         el("dot").className = "dot " + view.state;
@@ -246,9 +330,30 @@
         el("message").textContent = view.message;
         el("log").textContent = view.log.join("\n") || "Nothing yet.";
         addresses(view);
+        account(view);
         if (view.hasToken && !el("token").value) {
           el("token").placeholder = "Saved — leave blank to keep it";
         }
+      }
+
+      /*
+        Who this app is signed in as, if anybody.
+
+        The two faces are not two states of one form: one says "here is who you
+        are, and here is the one button that fixes a machine", the other asks
+        the only question this window has. Both can be on screen at once, and
+        only when somebody has said they are handing the machine over — a
+        person who is signed in should not have to look at a password field
+        they have no reason to fill in.
+      */
+      function account(view) {
+        const signedIn = Boolean(view.signedInAs);
+        el("signed-in").hidden = !signedIn;
+        el("account-email").textContent = view.signedInAs;
+        el("signed-out").hidden = signedIn && !switching;
+        // The repair only means anything with a session behind it, and the
+        // sentence for having none is in Rust, where the reason lives.
+        el("re-enrol").disabled = !signedIn;
       }
 
       /*
@@ -350,6 +455,67 @@
           el(`${spec.key}-url`).focus();
         });
       }
+
+      /*
+        One place where a button that talks to the console is pressed.
+
+        Every one of them can take a few seconds, can fail with a sentence the
+        person is meant to read, and must not be pressable twice while it is
+        running — a second sign-in mid-flight would race the first and could
+        mint two machines for one computer. The button says what it is doing
+        while it does it, because a window that looks frozen is a window
+        somebody clicks again.
+      */
+      async function talk(button, working, call) {
+        const label = button.textContent;
+        button.disabled = true;
+        button.textContent = working;
+        el("account-error").textContent = "";
+        el("account-said").textContent = "";
+        try {
+          const done = await call();
+          el("account-said").textContent = done.said;
+          el("password").value = "";
+          switching = false;
+          render(done.view);
+        } catch (e) {
+          // Every sentence here is written in src/account.rs, where the reason
+          // for it lives: a wrong password, a server that cannot be reached, a
+          // console with no accounts on it yet. The page shows it as it is
+          // rather than replacing it with something vaguer.
+          el("account-error").textContent = String(e);
+        } finally {
+          button.disabled = false;
+          button.textContent = label;
+        }
+      }
+
+      const signIn = () =>
+        talk(el("sign-in"), "Signing in…", () =>
+          invoke("sign_in", {
+            email: el("email").value,
+            password: el("password").value,
+          }),
+        );
+
+      el("sign-in").addEventListener("click", signIn);
+      el("re-enrol").addEventListener("click", () =>
+        talk(el("re-enrol"), "Setting up…", () => invoke("enrol")),
+      );
+
+      // Enter in either field signs in. A form of two fields where the only
+      // button is the obvious one should not need the mouse.
+      for (const id of ["email", "password"]) {
+        el(id).addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && !el("sign-in").disabled) signIn();
+        });
+      }
+
+      el("switch-account").addEventListener("click", () => {
+        switching = true;
+        el("signed-out").hidden = false;
+        el("email").focus();
+      });
 
       el("save").addEventListener("click", async () => {
         el("error").textContent = "";

@@ -16,6 +16,7 @@
 //! what cannot live there — where the console and the API are, this machine's
 //! token, and whether the worker beside it is actually running.
 
+mod account;
 mod settings;
 mod tray;
 mod updates;
@@ -29,6 +30,83 @@ use worker::{View, Worker};
 #[tauri::command]
 fn status(app: AppHandle, worker: State<'_, Worker>) -> View {
     worker.view(&app)
+}
+
+/// Sign in as a person, and set this machine up.
+///
+/// The ordinary way in, and the only one a teammate should ever need: an email
+/// and a password. Everything after that is this app's job — keep the session,
+/// mint this machine's worker token through `POST /api/machines`, store it,
+/// start the worker — and it is `src/account.rs` that does it, including every
+/// sentence for every way it can fail.
+///
+/// The console is opened at the end because that is what the person came for.
+/// A window that stayed on the setup screen after a successful sign-in would
+/// be a window that looks like nothing happened.
+#[tauri::command]
+async fn sign_in(app: AppHandle, email: String, password: String) -> Result<Done, String> {
+    let done = account::sign_in(&app, &email, &password).await?;
+    let view = restart_worker(&app);
+    windows::console(&app);
+    Ok(Done::from(done, view))
+}
+
+/// Set this machine up again, without asking for a password.
+///
+/// The repair, and the reason the session is kept rather than used once: a
+/// machine somebody revoked, or a credential store that was cleared, would
+/// otherwise cost a password for something the person did not break. It is
+/// offered only while this app holds a session, and says so when it does not.
+#[tauri::command]
+async fn enrol(app: AppHandle) -> Result<Done, String> {
+    let done = account::enrol(&app).await?;
+    let view = restart_worker(&app);
+    Ok(Done::from(done, view))
+}
+
+/// What just happened, and what is true now.
+///
+/// The window needs both: a sentence about the sign-in that has just finished,
+/// and the same `View` every other command hands back so the status panel and
+/// the addresses are redrawn from one answer rather than from a second call
+/// that could disagree with this one.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Done {
+    said: String,
+    view: View,
+}
+
+impl Done {
+    fn from(done: account::Enrolled, view: View) -> Self {
+        let machine = if done.machine.is_empty() {
+            "this machine".to_string()
+        } else {
+            done.machine
+        };
+        Done {
+            said: if done.minted {
+                format!(
+                    "Signed in as {}. This computer is now set up as \"{machine}\" and is taking \
+                     jobs. You can rename it on the console, in Settings → Machines.",
+                    done.email
+                )
+            } else {
+                format!(
+                    "Signed in as {}. This computer was already set up as \"{machine}\", so it \
+                     kept it rather than adding a second one.",
+                    done.email
+                )
+            },
+            view,
+        }
+    }
+}
+
+fn restart_worker(app: &AppHandle) -> View {
+    let worker = app.state::<Worker>();
+    worker.start(app);
+    worker.view(app)
 }
 
 /// Take what the person filled in, keep it, and start.
@@ -81,15 +159,18 @@ fn save(
         settings::set_url(&app, which, &url)?;
     }
 
+    /*
+     * The token is the way in for somebody who needs it, and no longer the way
+     * in. Since signing in mints this machine's token by itself, a blank field
+     * here is the ordinary case rather than a mistake, and refusing the Save
+     * over it — which this used to do — would stop a person fixing an address
+     * before they can sign in at all. What is still missing is said by the
+     * worker's own status the moment it tries to start, in the same words and
+     * in the place a person is already looking.
+     */
     let typed = token.trim();
     if !typed.is_empty() {
         settings::set_token(typed)?;
-    } else if settings::token().is_empty() {
-        return Err(
-            "Paste this machine's token. On the console it is Settings → Machines → add this machine, \
-             and it is shown once."
-                .into(),
-        );
     }
 
     worker.start(&app);
@@ -121,6 +202,8 @@ fn main() {
         .manage(Worker::default())
         .invoke_handler(tauri::generate_handler![
             status,
+            sign_in,
+            enrol,
             save,
             restart,
             open_console

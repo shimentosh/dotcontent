@@ -8,8 +8,8 @@
 //! produce either a session that survives Team → Remove or a worker token that
 //! can read the whole content library.
 //!
-//! So this file owns exactly one of the two. The cookie is the webview's
-//! business and is never touched here. What lives here is:
+//! So this file owns exactly one of the two — and, since the app started
+//! signing people in itself, one thing that is neither. What lives here is:
 //!
 //! - **the two addresses** — the console this app opens a window onto, and the
 //!   API the worker calls for jobs. Each comes from the build, from the
@@ -23,6 +23,24 @@
 //!   `%APPDATA%` would undo that at the other end, where it is trivially
 //!   readable by anything running as this user and would end up in the first
 //!   backup somebody takes of their profile.
+//! - **the session** this app signed in with, in the credential store beside
+//!   the token and for the same reason. It is the *person's* credential, not
+//!   the machine's, so it is emphatically not a third principal: it is the
+//!   same session row a browser would have held in a cookie, sent as
+//!   `Authorization: Session <id>` because a webview on a local origin cannot
+//!   keep a cookie for somebody else's server. It exists here at all because
+//!   the deployment this is heading for has no hosted console to visit, so a
+//!   token minted in Settings → Machines and pasted in is an instruction with
+//!   nowhere to follow it: the app asks for an email and a password, and mints
+//!   this machine's token for itself through `POST /api/machines`.
+//!
+//! Two credentials in one store, then, and it is worth being precise about why
+//! that is still the two `docs/WORKER.md` argues for rather than a merge. They
+//! are separate entries with separate names, they authenticate different
+//! things — a person, and a machine — and either can be taken away without the
+//! other: Settings → Team ends the session, Settings → Machines revokes the
+//! token. What this app does is hold both, which is exactly what a teammate
+//! with a browser and a pasted token was already doing.
 //!
 //! **Why the addresses are two and not one.** `docs/DEPLOYING.md` puts the web
 //! app on `APP_HOST` and the NestJS API on `API_HOST` — two hostnames, and the
@@ -57,6 +75,16 @@ const SERVICE: &str = "com.contentos.desktop";
 /// One machine, one token — the console mints it per machine, so there is
 /// nothing here to key by a user name.
 const ACCOUNT: &str = "worker-token";
+
+/// And the person's session, under its own name in the same store.
+///
+/// A separate entry rather than a second field in one blob, because they are
+/// separately revoked and separately replaced: signing in again writes this
+/// and leaves the machine's token alone, and a machine re-enrolled writes the
+/// token and leaves the session alone. It is named for what it is so that
+/// somebody scrolling through Windows Credential Manager can tell the two
+/// apart without opening either.
+const SESSION_ACCOUNT: &str = "console-session";
 
 /// Which of the two addresses is being talked about.
 ///
@@ -99,7 +127,7 @@ impl Which {
     /// console is the thing they already open in a browser, whereas nobody has
     /// a reason to know the worker calls a *second* host until they are told,
     /// and "the API address" on its own would send them off to guess one.
-    fn missing(self) -> &'static str {
+    pub fn missing(self) -> &'static str {
         match self {
             Which::Console => {
                 "The console address is where your team's Content OS is, for example \
@@ -125,6 +153,14 @@ impl Which {
 struct Stored {
     console_url: String,
     api_url: String,
+    /// The machine row this computer already has on the console, if it has
+    /// one. Not a credential — it is the id the picker shows beside a name —
+    /// and it is what stops a second machine being minted on every sign-in.
+    machine_id: String,
+    /// Who signed in here last, for the one line on the setup window that says
+    /// so. The session itself is in the credential store; this is the label,
+    /// and it is only ever shown while there is a session to go with it.
+    account_email: String,
 }
 
 fn file(app: &AppHandle) -> Option<PathBuf> {
@@ -326,25 +362,60 @@ fn pick(which: Which, env: Option<&str>, saved: Option<&str>, built_in: Option<&
     }
 }
 
-/// Save one address on this machine, keeping the other.
+/// Change one field of the file, keeping everything else in it.
 ///
-/// Read, change one field, write the whole file back. The file is one JSON
-/// object, and a write built from a single value would drop the other address
-/// silently — which is not hypothetical, because the setup window saves the
-/// two one after the other and the second write of a single Save would erase
-/// the first.
-pub fn set_url(app: &AppHandle, which: Which, url: &str) -> Result<(), String> {
+/// Read, change, write the whole object back — in one place, because the file
+/// is one JSON object and a write built from a single value would drop the
+/// rest of it silently. That is not hypothetical: the setup window saves the
+/// two addresses one after the other, and the second write of a single Save
+/// would erase the first. It is a sharper edge now that the machine id and the
+/// signed-in email live here too, since those are written from a different
+/// screen entirely.
+fn write(app: &AppHandle, change: impl FnOnce(&mut Stored)) -> Result<(), String> {
     let path = file(app).ok_or("This machine has no application data folder to write to.")?;
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
     }
     let mut stored = stored(app);
-    match which {
-        Which::Console => stored.console_url = url.to_string(),
-        Which::Api => stored.api_url = url.to_string(),
-    }
+    change(&mut stored);
     let body = serde_json::to_string_pretty(&stored).map_err(|e| e.to_string())?;
     fs::write(&path, body).map_err(|e| format!("Could not write {}: {e}", path.display()))
+}
+
+/// Save one address on this machine, keeping the other.
+pub fn set_url(app: &AppHandle, which: Which, url: &str) -> Result<(), String> {
+    write(app, |stored| match which {
+        Which::Console => stored.console_url = url.to_string(),
+        Which::Api => stored.api_url = url.to_string(),
+    })
+}
+
+/// The machine this computer is already enrolled as, or an empty string.
+pub fn machine_id(app: &AppHandle) -> String {
+    stored(app).machine_id
+}
+
+pub fn set_machine_id(app: &AppHandle, id: &str) -> Result<(), String> {
+    write(app, |stored| stored.machine_id = id.to_string())
+}
+
+/// Who is signed in here, as far as this machine knows — and only while there
+/// is a session to go with it.
+///
+/// The two are checked together on the way out rather than being kept in step
+/// on the way in, because they live in two different places and one of them
+/// can vanish on its own: a credential store that has been cleared, a profile
+/// restored without it. A name with no session behind it would be a window
+/// saying "signed in as Rakib" over a worker that cannot enrol anything.
+pub fn account_email(app: &AppHandle) -> String {
+    if session().is_empty() {
+        return String::new();
+    }
+    stored(app).account_email
+}
+
+pub fn set_account_email(app: &AppHandle, email: &str) -> Result<(), String> {
+    write(app, |stored| stored.account_email = email.to_string())
 }
 
 /// The token, or an empty string when this machine has never been given one.
@@ -353,17 +424,46 @@ pub fn set_url(app: &AppHandle, which: Which, url: &str) -> Result<(), String> {
 /// here", and the worker then says it is not set up — which is the honest
 /// thing for the person to see, and better than an app that will not start.
 pub fn token() -> String {
-    keyring::Entry::new(SERVICE, ACCOUNT)
+    secret(ACCOUNT)
+}
+
+pub fn set_token(value: &str) -> Result<(), String> {
+    set_secret(ACCOUNT, value, "this machine's token")
+}
+
+/// The session this app signed in with, or an empty string.
+///
+/// Read exactly like the token, and unreadable for exactly the same reasons —
+/// a locked store, a profile without it — which reads as "nobody is signed in
+/// here", which is a screen with a sign-in form on it rather than an app that
+/// will not start.
+pub fn session() -> String {
+    secret(SESSION_ACCOUNT)
+}
+
+pub fn set_session(value: &str) -> Result<(), String> {
+    set_secret(SESSION_ACCOUNT, value, "your sign-in")
+}
+
+fn secret(account: &str) -> String {
+    keyring::Entry::new(SERVICE, account)
         .and_then(|entry| entry.get_password())
         .unwrap_or_default()
 }
 
-pub fn set_token(value: &str) -> Result<(), String> {
-    let entry = keyring::Entry::new(SERVICE, ACCOUNT)
+/// One place that writes to the credential store, and one sentence shape for
+/// when it refuses.
+///
+/// `what` is the person's word for the thing — "this machine's token", "your
+/// sign-in" — because a store that says no is a rare enough event that the
+/// message has to be readable on its own, without the reader knowing which of
+/// the two calls made it.
+fn set_secret(account: &str, value: &str, what: &str) -> Result<(), String> {
+    let entry = keyring::Entry::new(SERVICE, account)
         .map_err(|e| format!("Could not open this machine's credential store: {e}"))?;
-    entry
-        .set_password(value)
-        .map_err(|e| format!("Could not save the token to this machine's credential store: {e}"))
+    entry.set_password(value).map_err(|e| {
+        format!("Could not save {what} to this machine's credential store: {e}")
+    })
 }
 
 /// Turn what somebody typed into the origin that will actually be used.

@@ -26,8 +26,9 @@ import { CurrentUser } from "../common/user.decorator";
 /**
  * The console's half of the worker split.
  *
- * Everything here is behind the global `SessionGuard` — a person, with a
- * cookie, on the Settings screen. It is emphatically NOT a worker route:
+ * Everything here is behind the global `SessionGuard` — a person, on the
+ * Settings screen or in the desktop app's setup window. It is emphatically NOT
+ * a worker route:
  * `api/src/workers/workers.controller.ts` is the machine's six endpoints and
  * every one of them is `@WorkerRoute()` with a bearer token. The two are
  * different principals on purpose (`docs/WORKER.md`, "The desktop app holds
@@ -71,6 +72,40 @@ export class MachinesController {
    * insert keyed on the same token hash. The machine has not spoken yet, so
    * `platform`, `version` and `tools` stay empty until it does — that emptiness
    * is what the panel reads as "waiting for this machine to check in".
+   *
+   * ## The desktop app calls this too, and that is the ordinary path now
+   *
+   * There is no hosted console to visit in the deployment this is heading for
+   * — only this API — so "mint a token in Settings → Machines and paste it
+   * into the app" stopped being an instruction anybody could follow. The
+   * desktop app signs in with an email and a password, keeps the session, and
+   * posts here with the computer's hostname as the name. Nothing about that is
+   * a wider door: the session arrives as `Authorization: Session <id>` rather
+   * than as a cookie (`common/session.guard.ts` has the whole argument), it is
+   * the same person's same session either way, and the machine is bound to
+   * `user.id` off the guard — never to anything in the body — so this route
+   * cannot mint a machine for somebody else however it is called.
+   *
+   * The name is the hostname because that is the app naming a machine nobody
+   * has named yet, and it is what the person will recognise in the picker
+   * before they think of something better. It is not a rename: `registerWorker`
+   * deliberately does not take `name` on conflict, so a machine somebody called
+   * "Shakhawat's desktop" here keeps that name through every re-registration.
+   *
+   * ## Why there is no find-or-create, and who is responsible instead
+   *
+   * A row's identity IS its token hash, and the token exists in one response
+   * and nowhere afterwards. So a "give me this machine's row again" route could
+   * not hand back the credential that row is keyed on; it could only mint a
+   * second token and orphan the first, which is a duplicate row wearing a
+   * helpful name. The client is therefore the one that must not ask twice: the
+   * desktop app records the machine id it was given — in its settings file,
+   * beside the addresses, while the token itself goes to the OS credential
+   * store — and re-enrols only when one of the two is gone, or when the id is
+   * no longer listed by `GET /machines` against the person who has just signed
+   * in. Anybody tempted to add a server-side
+   * dedupe here should read that paragraph again first — the thing that would
+   * have to be returned is the thing this route exists never to keep.
    */
   @Post()
   async mint(

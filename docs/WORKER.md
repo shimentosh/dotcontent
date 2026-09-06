@@ -463,9 +463,54 @@ marks these and makes `SessionGuard` stand aside.
 - A worker is long-lived and headless. It cannot be sent to `/login?next=…`,
   which is what `lib/api-json.ts` does with every 401.
 
-The token is minted once, in Settings → Machines, shown once, stored as a
-sha256 hash, and pasted into the desktop app on that machine. Revoking it is
-deleting the row.
+The token is minted once, shown once, stored as a sha256 hash, and kept by the
+machine it was minted for. Revoking it is deleting the row. Settings → Machines
+is one way to mint it; the desktop app minting its own through
+`POST /api/machines` after somebody signs in is the other, and is now the
+ordinary one — see **Three credentials, and still two principals** below.
+
+### Three credentials, and still two principals
+
+There is a third thing in the `Authorization` header now, and it is worth
+being exact about what it is, because the whole argument above is that a
+worker's token and a person's session must not be merged.
+
+`SessionGuard` reads `Authorization: Session <session id>` in addition to the
+cookie. **It is the same session row.** Same `sessions` table, same
+`expires_at`, same `sessionUser` lookup, same revocation: Settings → Team
+deleting a person's sessions, "sign out everywhere", a password change
+deleting all of them, the expiry sweep. There is no branch anywhere that asks
+which transport a session arrived on, which is the point — a second code path
+that decided *authorisation* differently would be the one that drifts.
+
+**Why it had to exist.** The desktop app's webview is on a local origin
+(`tauri://localhost`) and the API is on the team's server, so the session
+cookie is a third-party cookie — exactly what webviews and browsers are
+progressively refusing — and CORS is deliberately narrowed to `WEB_ORIGIN`, so
+a `fetch` from that origin is refused before it is sent. The app therefore
+does its two requests from Rust and carries the session itself. It matters
+more than it sounds: the deployment this is heading for is **the API alone,
+with no hosted console**, so "mint a token in Settings → Machines and paste
+it" became an instruction with nowhere to follow it.
+
+**Why the scheme is `Session` and not `Bearer`.** `WorkerGuard` owns `Bearer`.
+Two credentials spelled the same way is how one ends up pasted where the other
+belongs, and the direction that would matter is a machine's token being handed
+a person's whole console. Under the wrong word each simply fails: a worker
+token in a `Session` header matches no `sessions` row, a session id in a
+`Bearer` header hashes to nothing in `workers`. `tests/session-credentials.test.ts`
+pins the refusal, because a loosened regex is invisible to `tsc`.
+
+**What it genuinely widens, said plainly.** A session id now lives somewhere
+other than a cookie jar. A cookie is `httpOnly` and script cannot read it; a
+header value is held by whatever sends it. So the desktop app keeps it in the
+OS credential store — not in `settings.json` beside the addresses, and never
+in the webview's DOM. `POST /auth/login` returns the id **only** when the
+request carries `X-Session-Return`, so the web app's login response never
+starts carrying a credential it does not need and might log.
+
+So: still two principals. A person, who may now arrive by cookie or by header,
+and a machine, which arrives by bearer token and by nothing else.
 
 | | | |
 |---|---|---|
@@ -698,9 +743,8 @@ already atomic and already idempotent.
 
 ### The desktop app holds two credentials, on purpose
 
-The webview signs in as a person, with the session cookie, exactly as a browser
-does. The worker holds its own bearer token. They are not the same principal
-and must not be merged.
+The app signs in as a person and holds that session. The worker holds its own
+bearer token. They are not the same principal and must not be merged.
 
 Everything in **The worker HTTP protocol** above argues this: different
 lifetime, different blast radius, different revocation. A single credential
@@ -708,10 +752,24 @@ that is both would be a session that survives Team → Remove, or a worker token
 that can read the whole content library — one of the two, depending on which
 side won.
 
-The confusion is a real cost and it is paid once. Settings → Machines mints the
-token, shows it once, and the desktop app stores it in the OS keychain
-(`tauri-plugin-stronghold`, or DPAPI on Windows). Nobody types it twice, and
-nobody keeps it in a file next to the app.
+**What changed, and what did not.** The person's half is no longer a cookie in
+the webview: the window is on a local origin, the API is on the team's server,
+and that cookie is third-party. The app signs in itself, over
+`POST /auth/login` with `X-Session-Return`, and sends the session back as
+`Authorization: Session <id>` — same row, same expiry, same revocation, as
+**Three credentials, and still two principals** sets out. Two credentials, two
+entries in the OS credential store under `com.contentos.desktop`:
+`worker-token` and `console-session`. Separately written, separately revoked,
+and only the first is ever handed to the Node worker.
+
+**Nobody types either of them.** The app mints this machine's worker token for
+itself through `POST /api/machines` the moment somebody signs in, names it
+after the computer, keeps the id it was given, and does not mint a second one
+on the next launch. That is not a convenience: the deployment this is heading
+for has no hosted console, so Settings → Machines is not a page anybody can
+open, and "paste the token you were shown" was an instruction with nowhere to
+follow it. The field is still on the setup window, one disclosure down, for
+whoever is handed a token by a colleague.
 
 ### Uploads stay on the server, and whisper stops needing the video
 
@@ -768,7 +826,7 @@ npm run worker
 | Variable | |
 |---|---|
 | `CONTENTOS_API_URL` | **Required.** The **API** this machine works for — NestJS, on its own hostname (`API_HOST` in `docs/DEPLOYING.md`, `:4000` in a checkout). Not the address of the console you open in a browser; there is no `/api` under Next, so that one 404s everything. |
-| `CONTENTOS_WORKER_TOKEN` | **Required.** Minted in Settings → Machines and shown once. |
+| `CONTENTOS_WORKER_TOKEN` | **Required.** Minted in Settings → Machines and shown once, or minted for this machine by the desktop app when somebody signs in there. Either way it is the same 256-bit token and the same row. |
 | `CONTENTOS_WORKER_NAME` | What the machine picker calls it. Defaults to the hostname; "Shakhawat's desktop" reads better than `DESKTOP-7F2K1`. |
 | `CONTENTOS_WORKER_ALLOW_FRAME_READ` | `1` to let Claude's CLI be granted `Read` for frame files **on this machine**. Off by default, and checked in addition to `workers.can_read_frames` — the grant lands on this filesystem, so whoever owns it gets the last word. |
 | `CONTENTOS_WORKER_TOOLS_OFF` | Comma-separated tool ids to switch off here, whatever the probe found. |
@@ -995,9 +1053,11 @@ with music and no speech genuinely has no words in it.
 Built, and small on purpose. It lives in `src-tauri/` — Tauri 2, Windows
 first — and it is two things in one process: **a window onto the console the
 team already runs**, and **the worker running beside it**. A teammate who is
-not a developer installs one app, pastes in the token for their machine, and it
-starts taking jobs. Nobody opens a terminal, and nobody is asked where the
-console is — the installer was built knowing.
+not a developer installs one app, signs in with their email and their password,
+and it starts taking jobs. Nobody opens a terminal, nobody is asked where the
+console is — the installer was built knowing — and nobody is asked for a token:
+the app mints this machine's own through `POST /api/machines` as part of
+signing in.
 
 **What it is not**, and this is the part worth defending:
 
@@ -1005,15 +1065,17 @@ console is — the installer was built knowing.
   `src-tauri`, and there must not be. The console is served by the server, so a
   template change or a fix reaches every teammate the moment it is deployed
   instead of needing fifteen desktops updated. The one screen this app draws
-  itself is `src-tauri/ui/setup.html`, and it exists only because this
-  machine's token has to be given *before* there is a console to ask — as do
-  the console and API addresses, on the builds that were not compiled with them
-  — and
-  because a worker that cannot start needs somewhere to say so that is not a
-  console window.
-- **Not a second identity system.** The webview signs in as a person, with the
-  console's own cookie, exactly as a browser does. The worker holds the machine
-  token. Two credentials, for the reasons in "The desktop app holds two
+  itself is `src-tauri/ui/setup.html`, and it exists only because this machine
+  has to be set up *before* there is a console to set it up from — the sign-in,
+  and the console and API addresses on the builds that were not compiled with
+  them — and because a worker that cannot start needs somewhere to say so that
+  is not a console window.
+- **Not a second identity system.** It signs in with the console's own accounts,
+  over the console's own `POST /auth/login`, and gets back the console's own
+  session — the same row a browser would have held in a cookie, carried in a
+  header because a webview on a local origin cannot keep that cookie. No users
+  here, no passwords here, no second table anywhere. The worker holds the
+  machine token. Two credentials, for the reasons in "The desktop app holds two
   credentials, on purpose" above.
 - **Not a rewrite of the worker.** It spawns `worker/index.ts` with the same
   flag, the same loader hook and the same relative path `npm run worker` uses.
@@ -1026,8 +1088,11 @@ console is — the installer was built knowing.
 |---|---|
 | Console address | Compiled in, or in the environment, or in `%APPDATA%\com.contentos.desktop\settings.json` — three places in a fixed order, below. Not a secret in any of them: it is the URL a browser would show, and a person debugging their own machine has to be able to read it. |
 | API address | The same three places, the same order, its own value. It is what the worker calls; the console address is not. Why they are two, and why neither is guessed from the other, is the next section. |
-| Worker token | The **OS credential store**: Windows Credential Manager, under the target `worker-token.com.contentos.desktop`. The console keeps only its sha256 so that a database dump is not a list of live credentials; writing the plaintext into `%APPDATA%` would undo that at the other end, where anything running as that user can read it and the first backup of the profile carries it off the machine. |
-| Session cookie | The webview's own data directory, which is WebView2's business and not this app's. |
+| Worker token | The **OS credential store**: Windows Credential Manager, under the target `worker-token.com.contentos.desktop`. Minted by the app itself at sign-in, or pasted in by somebody who was handed one. The console keeps only its sha256 so that a database dump is not a list of live credentials; writing the plaintext into `%APPDATA%` would undo that at the other end, where anything running as that user can read it and the first backup of the profile carries it off the machine. |
+| The session | The same store, under `console-session.com.contentos.desktop`. A separate entry rather than a second field in one blob, because the two are separately replaced: signing in again writes this and leaves the token alone, re-enrolling writes the token and leaves this alone. It is in the credential store for the same reason the token is — a header credential in `%APPDATA%` is a credential in the next backup of the profile — and it is never given to the webview or to the worker. |
+| Who is signed in | `accountEmail` in `settings.json`, and it is only a label: the window shows it, `settings::account_email` returns it only while there is a session in the store to go with it, and nothing authenticates with it. |
+| This machine's row | `machineId` in `settings.json`. Not a credential — it is the id the machine picker shows beside a name — and it is what stops a second machine being minted on every sign-in. |
+| Session cookie | The webview's own data directory, which is WebView2's business and not this app's. The API's cookie never reaches it: the window is on a local origin, so that cookie is third-party. |
 
 ### Where the two addresses come from
 
@@ -1077,6 +1142,40 @@ Every candidate goes through the same `normalise` the setup window's fields do,
 and one that is not a usable address is skipped rather than accepted — so an
 `apiUrl: ""` in a `settings.json` written before there was one does not shadow
 the address the installer was built with.
+
+**What the setup window asks for.** An email and a password, and nothing else.
+Sign in, and the app keeps the session, mints this machine's worker token,
+stores it, and starts the worker — one button, and the person never sees a
+token at all. Afterwards the panel stops being a form and becomes a line saying
+who is signed in, with two things beside it: *Set this machine up again*, which
+mints a fresh token from the session already held and is the answer to a
+machine revoked or a credential store cleared, and *Sign in as somebody else*,
+for a computer handed to a colleague.
+
+Every way it can fail gets its own sentence, because they are different things
+to go and do:
+
+| What happened | What the window says |
+|---|---|
+| The password is wrong | *That email and password do not match an account on this console. Accounts here are invite-only, so if you have never signed in before, ask whoever runs the console for an invite link.* |
+| Signup is closed and there is no account for this person — which is every console that has an owner | The same sentence. It is the same 401, and the invite half is the part that is actually actionable. |
+| The console has **no** accounts at all yet | *There are no accounts on this console yet… The very first account — the owner's — is made on the console itself.* Asked for with `GET /auth/signup` before anything is said, because telling somebody their password is wrong when nobody has made them an account sends them to change a password that was fine. |
+| The API cannot be reached | The address, named, and said to be the **API** — *the server the worker asks for jobs, which is not the console*. The person very often has the console open behind the window, so a sentence about "the server" reads as obviously false. |
+| The API answers, but with something else | *…answered with something this app could not read. That address may not be the Content OS API* — which is what a console address or a proxy's error page in that field actually looks like. |
+| This computer is already enrolled | It is kept: *This computer was already set up as "Shifa", so it kept it rather than adding a second one.* |
+| The API is older than this app | *…signed you in but did not give this app a session to keep.* The one case where everything the person can see says it worked, so it has to say plainly that the fix is on the server. |
+
+**How "already enrolled" is decided**, since a wrong answer here fills Settings
+→ Machines with a row per launch, each holding a live credential. The app keeps
+the machine id it was handed when it minted the row, in `settings.json`, and
+reuses that machine only when **all three** hold: the id is recorded, a worker
+token is in the credential store, and the console still lists that id *against
+the person who has just signed in*. Not by hostname — two laptops are both
+called DESKTOP-something, and a machine somebody renamed must not be renamed
+back. Not by the token alone — a token whose row was revoked authenticates as
+nothing, and the machine would sit there doing no work. And the ownership check
+is what stops a computer handed from one teammate to another carrying on as the
+first, spending their subscription under their name in the picker.
 
 **What the setup window shows.** Both addresses, one under the other, each with
 its own provenance line — because "my machine will not connect" is answered by
@@ -1148,7 +1247,7 @@ been compiled into production installers, silently, which is the exact failure
 this is all here to prevent.
 
 First run opens the setup window when it is missing the token or has either
-address from nowhere; on a build that carries both, that is the token and
+address from nowhere; on a build that carries both, that is the sign-in and
 nothing else. After that it opens the console and starts the worker.
 
 **A checkout runs the checkout's worker.** The app looks for `worker/index.ts`
@@ -1163,9 +1262,9 @@ The status is in the tray menu and in the setup window, in these words:
 *Connected*, *Cannot reach the server*, *This app's copy of Node is missing*,
 *Node is too old*, *This machine's token was refused*, *The worker's files are
 missing*, *Not set up yet*, *The worker is not running*. They are separate
-states because they are separate actions — one is wifi, one is a trip to
-Settings → Machines, one is installing the app again — and a single "error"
-would hide all of them behind the same shrug. Anything the worker prints that
+states because they are separate actions — one is wifi, one is *Set this
+machine up again* in the setup window, one is installing the app again — and a
+single "error" would hide all of them behind the same shrug. Anything the worker prints that
 this app does not recognise is still shown verbatim, under "What the worker is
 saying".
 
@@ -1429,7 +1528,10 @@ usually closed — which is what the tray is for.
   a machine that is available when somebody remembers.
 - **`workers.max_concurrency`, the per-machine tool switches and the machine's
   name are not exposed.** They are environment variables the worker already
-  reads, and they belong in the setup window next to the token.
+  reads, and they belong in the setup window under the sign-in. The name
+  matters more than it did: the app now names a new machine after the computer,
+  and renaming it means opening Settings → Machines on a console this app's
+  whole point is that you may not have.
 - **A forced kill still orphans the worker.** Quit and window-close are handled;
   End Task on the app, or a machine shutting down, leaves the Node process to
   its lease. A Windows Job Object would close that hole.

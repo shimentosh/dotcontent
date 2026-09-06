@@ -24,6 +24,31 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-updater = "2.11.0"
 
+# Signing in and enrolling this machine are done from Rust, not from the setup
+# page's JavaScript, and the reason is not taste: the API allows CORS for
+# WEB_ORIGIN — the console's origin — so a `fetch` from a webview on
+# `tauri://localhost` is refused before it is sent. Doing it here also keeps
+# the session out of the page's DOM.
+#
+# The features are copied from tauri-plugin-updater's, deliberately and
+# exactly: the same reqwest is already in this binary, and asking for a
+# different TLS stack or an extra decoder would add crates to an app whose
+# whole job is to be one small install. They are named here rather than left
+# to feature unification because a build that got its TLS from somebody else's
+# dependency is a build where removing that dependency turns every https URL
+# into a runtime "scheme is not allowed" — with nothing at compile time saying
+# so. `rustls-no-provider` is why the `rustls` line below exists.
+reqwest = { version = "0.13", default-features = false, features = [
+  "json",
+  "rustls-no-provider",
+  "system-proxy",
+] }
+
+# Only for the crypto provider that `rustls-no-provider` deliberately does not
+# choose. See `client()` in src/account.rs: it is installed once per process,
+# by whoever gets there first — this app signing in, or the updater checking.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+
 # The worker token is a credential, so it goes in the OS credential store
 # rather than beside the settings file. Windows-first, deliberately: this is
 # what the team runs, and the per-target features mean a macOS or Linux build

@@ -54,6 +54,10 @@ pub fn setup(app: &AppHandle) {
     // is what prevents.
     let _ = WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("setup.html".into()))
         .title("Content OS — this machine")
-        .inner_size(560.0, 600.0)
+        // Tall enough for the three panels — status, sign in, addresses — on a
+        // first run, because the one that matters on a first run is the middle
+        // one, and a window that opens with the sign-in below the fold is a
+        // window somebody reads as "nothing here to do".
+        .inner_size(560.0, 780.0)
         .build();
 }
