@@ -35,9 +35,7 @@ if ! docker compose ps --status running 2>/dev/null | grep -q contentos-postgres
   fi
 fi
 
-# Whisper, if this machine has not got it.
-#
-# No tools are installed here any more.
+# No tools are installed here.
 #
 # This used to pip-install openai-whisper, because whisper was the one thing
 # standing between a source video and a transcript AND it ran in this process.
@@ -46,17 +44,60 @@ fi
 # torch to start a web app would be a gigabyte spent on nothing.
 #
 # The tools a WORKER needs — yt-dlp, ffmpeg, whisper.cpp and a model — come
-# from `npm run worker:setup`, pinned and checksummed, into .data/tools. That
-# is a different machine's concern even when it happens to be this one, and it
-# is the only route somebody who is not a developer has.
-#
-# This script does NOT start a worker either. Nothing writes a section until
-# one is running — see docs/DEVELOPING.md.
+# from `npm run worker:setup`, pinned and checksummed, into .data/tools.
+
+# Anything this machine has been told, the same way every other script here
+# learns it. The worker's token is the only value start.sh needs that it
+# cannot work out for itself.
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . ./.env
+  set +a
+fi
 
 # The API is its own process now, on API_PORT (4000). It is started here so
 # that one command still brings the whole thing up; stopping this script
 # stops both.
 API_PORT="${API_PORT:-4000}"
+
+# The worker, which is the thing that actually writes.
+#
+# Without one, pressing Run queues a job and nothing ever claims it. The page
+# says so — it names the machine it is waiting for — but a dev server that
+# cannot write a section is not a dev server anybody can work against, so it
+# starts here with the rest.
+#
+# It needs a token, and a token cannot be invented: it is minted once in
+# Settings → Machines and only its sha256 is kept, so nothing here can look it
+# up. Put it in .env as CONTENTOS_WORKER_TOKEN. Without one this says how to
+# get one and carries on, because a missing worker must not stop the console
+# coming up — signing in is where you go to fix it.
+#
+# WORKER=0 ./start.sh skips it, for working on a screen that has no runs in it.
+start_worker() {
+  if [ "${WORKER:-1}" = "0" ]; then
+    return
+  fi
+  if [ -z "${CONTENTOS_WORKER_TOKEN:-}" ]; then
+    echo "→ no worker: set CONTENTOS_WORKER_TOKEN in .env (Settings → Machines mints one)"
+    echo "  Runs will queue and wait. Everything else works."
+    return
+  fi
+  echo "→ worker on this machine, claiming from http://localhost:$API_PORT"
+  # No name is passed: the machine is named in Settings -> Machines when its
+  # token is minted, and the worker is not allowed to rename it.
+  CONTENTOS_API_URL="http://localhost:$API_PORT" npm run worker &
+  WORKER_PID=$!
+}
+
+# Everything this script started dies with it. A worker left behind would keep
+# claiming jobs against a console that is no longer there, and the section it
+# was three minutes into would be written by a process nobody can see.
+stop_all() {
+  kill ${API_PID:-} ${WORKER_PID:-} 2>/dev/null || true
+}
+
 if [ ! -d api/node_modules ]; then
   echo "→ installing the API's dependencies"
   (cd api && npm install)
@@ -67,7 +108,8 @@ case "$MODE" in
     echo "→ Content OS API (dev) on http://localhost:$API_PORT/api"
     (cd api && PORT="$API_PORT" WEB_ORIGIN="http://localhost:$PORT" npm run dev) &
     API_PID=$!
-    trap 'kill $API_PID 2>/dev/null' EXIT
+    trap stop_all EXIT
+    start_worker
     echo "→ Content OS (dev) on http://localhost:$PORT"
     NEXT_PUBLIC_API_URL="http://localhost:$API_PORT" npm run dev -- --port "$PORT"
     ;;
@@ -79,7 +121,8 @@ case "$MODE" in
     echo "→ Content OS API on http://localhost:$API_PORT/api"
     (cd api && PORT="$API_PORT" WEB_ORIGIN="http://localhost:$PORT" CONTENTOS_DATA_DIR=../.data npm run start) &
     API_PID=$!
-    trap 'kill $API_PID 2>/dev/null' EXIT
+    trap stop_all EXIT
+    start_worker
     echo "→ Content OS (production) on http://localhost:$PORT"
     npm run start -- --port "$PORT"
     ;;

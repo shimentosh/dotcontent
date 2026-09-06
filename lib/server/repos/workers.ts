@@ -181,7 +181,15 @@ export async function registerWorker(patch: {
         last_seen_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, now())
      ON CONFLICT (token_hash) DO UPDATE SET
-       name         = EXCLUDED.name,
+       -- The NAME is the owner's, and a machine may not rename itself. It is
+       -- what a person reads in the machine picker when they decide where a
+       -- run happens ("Shakhawat's desktop", not a hostname), and it is typed
+       -- in Settings -> Machines at enrolment. Taking it from the report meant
+       -- the worker's next check-in replaced it with whatever hostname says:
+       -- a machine somebody had named carefully came back as "Shifa", and the
+       -- picker stopped matching the words the team had agreed on. Same rule
+       -- and same reason as can_read_frames, max_concurrency and enabled:
+       -- what the console sets, the console keeps.
        platform     = EXCLUDED.platform,
        version      = EXCLUDED.version,
        tools        = EXCLUDED.tools,

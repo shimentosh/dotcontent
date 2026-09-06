@@ -208,6 +208,15 @@ describe.skipIf(!up)("the queue", () => {
     });
     expect((await getWorker(first.id))!.enabled).toEqual(["claude"]);
 
+    // The machine may not rename itself either. The name is what a person
+    // reads in the picker when choosing where a run happens, and it is typed
+    // in Settings -> Machines; a check-in that carried a hostname replaced it.
+    await registerWorker({
+      userId: uid, name: "shifa-hostname", token: tok,
+      tools: [tool("claude"), tool("ffmpeg")] as never,
+    });
+    expect((await getWorker(first.id))!.name).toBe("re-reg");
+
     // Now whisper is installed on that machine. It is new, so it arrives on —
     // and ffmpeg is still off, because that was a decision.
     await registerWorker({

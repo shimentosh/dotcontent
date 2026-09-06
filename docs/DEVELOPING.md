@@ -21,24 +21,37 @@ the API's ts-node on the next request, no restart needed.
 `npm run dev` is plain `next dev` on port 3000 — the app is normally on **3333**
 because `start.sh` puts it there. Assume 3333 unless told otherwise.
 
-## A run needs a worker, and `start.sh` does not start one
+## A run needs a worker, and `start.sh` starts one
 
-This is the thing that will waste your afternoon otherwise. The API no longer
-writes sections: `advance()` queues a job and returns, and a **worker** claims
-it. With no worker running, pressing Run leaves every section sitting there —
-correctly, and the page says which machine it is waiting for — and nothing is
-broken except that nobody is listening.
+The API no longer writes sections: `advance()` queues a job and returns, and a
+**worker** claims it. With no worker running, pressing Run leaves every section
+sitting there — correctly, and the page says which machine it is waiting for —
+and nothing is broken except that nobody is listening.
 
-So, once per machine: **Settings → Machines → Enrol**, take the token, then
+So `start.sh` starts one, and it needs the one thing it cannot work out for
+itself: a token. Tokens are minted in **Settings → Machines**, and only their
+sha256 is kept, so nothing can look one up afterwards. Put it in `.env`:
+
+```bash
+CONTENTOS_WORKER_TOKEN=wrk_…
+```
+
+Without it `start.sh` says so in one line and carries on — the console still
+comes up, because signing in is where you go to fix it. `WORKER=0 ./start.sh`
+skips the worker on purpose, for working on a screen that has no runs in it.
+
+The worker needs no build step — Node runs the TypeScript directly — and it
+picks up an edit under `worker/` on restart, not on the next job. To run it
+by hand instead, in its own terminal:
 
 ```bash
 CONTENTOS_API_URL=http://localhost:4000 CONTENTOS_WORKER_TOKEN=<token> npm run worker
 ```
 
-It registers, reports the tools it found on this computer, and starts asking
-for work. Leave it running in its own terminal beside `start.sh`. It needs no
-build step — Node runs the TypeScript directly — and it picks up an edit under
-`worker/` on restart, not on the next job.
+The **desktop app is not a service and `start.sh` does not start it**. It is
+what a teammate installs, and it carries its own worker inside it — running it
+here would put two workers on one machine, both claiming. `npm run desktop`
+when you want to look at it.
 
 `docs/WORKER.md` is the whole design, including what each job kind carries and
 why the worker may not import anything that touches the database.
