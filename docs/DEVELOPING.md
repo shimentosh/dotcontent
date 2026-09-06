@@ -73,9 +73,31 @@ expects.
 **Nothing runs it but you.** There is no CI: this is a small team that builds
 the desktop app on its own machines and deploys the server from a branch, so a
 second machine repeating the same four commands was paying for a signal nobody
-was waiting on. The cost is that an unrun check is an unknown one — `npm run
-check` before a push, and `npm run build:check` before a deploy, are the whole
-discipline.
+was waiting on. The cost is that an unrun check is an unknown one.
+
+## Before a deploy, build the images
+
+```bash
+docker compose -f docker-compose.dokploy.yml build
+```
+
+`npm run check` and `npm run build:check` run on your machine, with your
+node_modules, on Windows. **Dokploy builds on Linux, from the lockfile, in a
+clean container** — and that is a different question, which those two cannot
+answer. Both times it has been asked so far, it found something:
+
+- `npm ci` refused, because `npm install` on Windows leaves platform-specific
+  optional packages out of `package-lock.json` and a Linux image needs them.
+  The fix is to regenerate the lockfile inside the image:
+  `docker run --rm -v "$PWD:/app" -w /app node:24-bookworm-slim npm install
+  --package-lock-only`.
+- `tsc` failed on code that compiles here, because the image installed
+  `--omit=dev` and the type packages `lib/server` needs are root
+  devDependencies.
+
+Neither is visible from a laptop, and both stop a deploy dead. It takes a few
+minutes and it is the last thing to run before pushing a branch Dokploy will
+build.
 
 The tests are `tests/*.test.ts` and deliberately narrow: no components, no
 database. They cover the pure functions everything stands on — what status a
