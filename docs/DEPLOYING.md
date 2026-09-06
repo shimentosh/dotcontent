@@ -167,29 +167,63 @@ but it is the reason nothing runs.
 
 Dokploy runs its own Traefik on :80 and :443. `docker-compose.prod.yml` ships
 one too, so those two fight for a socket — use **`docker-compose.dokploy.yml`**
-instead. It is the same three containers with the proxy removed and no
-published ports at all: Dokploy's proxy reaches the containers over its own
-network, and the domains are set in its UI rather than in labels here. Two
-places writing Traefik rules for one service is how a deploy serves the wrong
-container.
+instead. It is the API and the console, no proxy, no published ports, and **no
+database**: the database is Dokploy's own Database service, so it gets backups
+and credential handling from the platform rather than from a volume nobody
+remembers to dump.
 
-**Create → Compose**, point it at this repository and that file, then:
+### 1. The database
+
+**Create Service → Database → PostgreSQL 17.** Nothing else to set; it needs no
+domain, because only the API talks to it and they meet on Dokploy's network.
+When it is up, copy the **internal** connection string from its page — the one
+with a container hostname in it, not a public address.
+
+### 2. The compose
+
+**Create Service → Compose**, pointed at this repository.
+
+| Field | Value |
+| --- | --- |
+| Compose Path | `docker-compose.dokploy.yml` |
+| Branch | `main`, or whichever branch you deploy |
+
+Its **Environment** is the compose's `.env`. Five lines:
+
+```bash
+DATABASE_URL=postgres://…            # copied from the database's page, whole
+CONTENTOS_SECRET=                    # any long random string, then never change it
+APP_HOST=content.yourcompany.com     # the console
+API_HOST=api.content.yourcompany.com # the API
+COOKIE_DOMAIN=.content.yourcompany.com
+```
+
+`DATABASE_URL` is taken whole rather than assembled from a host, a user and a
+password, because Dokploy owns those and can rotate them; a second copy is a
+second thing to keep in step.
+
+`CONTENTOS_SECRET` encrypts the API keys in the settings table and the API
+refuses to start without it. Do not change it later: everything already saved
+was encrypted with it, and a new value makes those keys read as though they had
+never been pasted.
+
+`COOKIE_DOMAIN` has to be the parent of both hosts, or the session cookie the
+API sets never reaches the console.
+
+### 3. Domains and the one build argument
 
 | Where | What |
 | --- | --- |
-| Environment | `POSTGRES_PASSWORD`, `CONTENTOS_SECRET`, `APP_HOST`, `API_HOST`, `COOKIE_DOMAIN` |
 | Domains | `APP_HOST` → service **app**, port **3333** |
 | Domains | `API_HOST` → service **api**, port **4000** |
 | Build arguments, on **app** | `NEXT_PUBLIC_API_URL=https://API_HOST` |
 
-That last row is a build argument and not an environment variable. The browser
+That last row is a **build argument, not an environment variable**. The browser
 bundle is compiled with the API's address inside it, so changing `API_HOST`
-means rebuilding the app image, not restarting it — and Dokploy's two fields
-look alike while only one of them reaches a `next build`.
+means rebuilding the app image rather than restarting it — and Dokploy's two
+fields look alike while only one of them reaches a `next build`.
 
-`COOKIE_DOMAIN` still has to be the parent of both hosts (`.content.example.com`
-for `content.example.com` and `api.content.example.com`), or the session cookie
-the API sets never reaches the console.
+Deploy, open `https://APP_HOST`, and make the first account. It is the owner.
 
 ### Then build the desktop app, on your own machine
 

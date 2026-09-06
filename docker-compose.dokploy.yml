@@ -1,43 +1,29 @@
 # Content OS on Dokploy.
 #
-# The same three containers as docker-compose.prod.yml, minus the reverse
-# proxy — because Dokploy already runs one.
+# Two containers — the API and the console — and **no database**, because the
+# database is Dokploy's own Database service. That is the difference from
+# `docker-compose.prod.yml`, along with the proxy: Dokploy runs Traefik on :80
+# and :443 already, and the prod file ships one, so the two would fight for a
+# socket.
 #
-# That is the whole difference, and it is not optional: `docker-compose.prod.yml`
-# ships a Traefik that binds :80 and :443, which are the ports Dokploy's own
-# Traefik is already holding. Deploy that file here and the stack fights the
-# platform for a socket.
+# So nothing here publishes a port and nothing here routes. Dokploy's proxy
+# reaches these containers over `dokploy-network`, and the domains, the
+# certificates and the routing are set in Dokploy's UI rather than in labels.
+# Two places writing Traefik rules for one service is how a deploy ends up
+# serving the wrong container.
 #
-# So this file publishes no ports at all. Nothing here is reachable from the
-# internet by itself; Dokploy's proxy reaches the containers over the shared
-# network below, and the domains, the certificates and the routing are set in
-# Dokploy's UI rather than in labels here. Two places writing Traefik rules for
-# one service is how a deploy ends up serving the wrong container.
+# `DATABASE_URL` is the internal connection string Dokploy shows on the
+# database's own page. It is taken whole rather than assembled from a host, a
+# user and a password here: Dokploy owns those, it can rotate them, and a
+# second copy of a credential is a second thing to keep in step.
 #
-#   Dokploy → Create → Compose, point it at this repository and this file.
+#   Dokploy → Create Service → Compose
+#   Compose Path: docker-compose.dokploy.yml
 #
-# See docs/DEPLOYING.md, "Deploying on Dokploy", for the fields to fill in and
-# the one setting that breaks the desktop app quietly if it is wrong.
+# See docs/DEPLOYING.md, "Deploying on Dokploy", for every field to fill in and
+# for the one setting that breaks the desktop app without saying anything.
 
 services:
-  postgres:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: contentos
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
-      POSTGRES_DB: contentos
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U contentos -d contentos"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    # Deliberately not published. Only the API talks to it, over the compose
-    # network; a database on a public port is a database somebody finds.
-    networks: [internal]
-
   # The backend the browser and every worker call.
   api:
     build:
@@ -45,27 +31,30 @@ services:
       dockerfile: api/Dockerfile
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://contentos:${POSTGRES_PASSWORD}@postgres:5432/contentos
+      # Dokploy's database, copied from its page. Internal hostname — it never
+      # leaves the network, which is why the database has no domain of its own.
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL from the Dokploy database page}
       PORT: "4000"
+      NODE_ENV: production
+      # Encrypts the API keys in the settings table. The API refuses to start
+      # without it in production, on purpose: the fallback it used to have was
+      # derived from DATABASE_URL, and the day somebody rotates the database
+      # password every stored key silently decrypts to nothing.
       CONTENTOS_SECRET: ${CONTENTOS_SECRET:?set CONTENTOS_SECRET}
       COOKIE_DOMAIN: ${COOKIE_DOMAIN}
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
-      NODE_ENV: production
       # The console's origin, and it does two jobs. It is the CORS allow-list,
-      # and it is the only place the desktop app's sign-in hand-off may
-      # redirect to. It has to be the EXACT origin the app was built with as
-      # CONTENTOS_CONSOLE_URL — scheme, host, port. Wrong and nothing errors:
-      # teammates are simply asked to sign in a second time, in the app.
+      # and it is the only origin the desktop app's sign-in hand-off may
+      # redirect to — so it must equal the address the app was built with as
+      # CONTENTOS_CONSOLE_URL, exactly. Wrong, and nothing errors: teammates
+      # are just asked to sign in a second time inside the app.
       WEB_ORIGIN: https://${APP_HOST:?set APP_HOST}
-    depends_on:
-      postgres:
-        condition: service_healthy
     volumes:
       # Frames and the audio a worker sends back. Without this a redeploy loses
       # them and every still the researcher already read 404s.
       - sourcedata:/app/.data
     # Attach the API's domain (API_HOST) to port 4000 in Dokploy.
-    networks: [internal, dokploy-network]
+    networks: [dokploy-network]
 
   # The console: Next.js, frontend only.
   app:
@@ -73,10 +62,10 @@ services:
       context: .
       args:
         # Read by the browser bundle, so it is fixed when the image is built,
-        # not when it starts. Change API_HOST and this has to be rebuilt —
-        # restarting it will not do. Dokploy needs this under the service's
-        # build arguments, not its environment variables; the two look alike in
-        # the UI and only one of them reaches a `next build`.
+        # not when it starts. Change API_HOST and this image has to be rebuilt;
+        # restarting it will not do. In Dokploy this belongs under the
+        # service's **build arguments**, not its environment variables — the
+        # two look alike in the UI and only one of them reaches a `next build`.
         NEXT_PUBLIC_API_URL: https://${API_HOST:?set API_HOST}
     restart: unless-stopped
     environment:
@@ -84,18 +73,17 @@ services:
     depends_on:
       - api
     # Attach the console's domain (APP_HOST) to port 3333 in Dokploy.
-    networks: [internal, dokploy-network]
+    networks: [dokploy-network]
 
 volumes:
-  pgdata:
   # Frames and audio. Big, re-fetchable, and worth keeping across a deploy —
   # which is why it is a volume rather than something inside the container.
+  # The database is Dokploy's and is backed up there.
   sourcedata:
 
 networks:
-  # Between our own containers. Postgres is only on this one.
-  internal:
-  # Dokploy's proxy network, created by Dokploy itself — hence `external`.
+  # Created by Dokploy itself — hence `external`. It is also how these two
+  # reach the database service, so the database has to be on it as well.
   # If your install named it something else, this is the line to change.
   dokploy-network:
     external: true
