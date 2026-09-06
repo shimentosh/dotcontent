@@ -49,6 +49,18 @@ services:
       # CONTENTOS_CONSOLE_URL, exactly. Wrong, and nothing errors: teammates
       # are just asked to sign in a second time inside the app.
       WEB_ORIGIN: https://${APP_HOST:?set APP_HOST}
+      # The first account, made at boot while `users` is empty.
+      #
+      # Named here because a compose `.env` is not an environment. Compose
+      # reads that file to fill in the `${…}` above; a variable reaches a
+      # process only if a block like this one names it. These two were
+      # documented and never named, so the seeder read nothing, and the
+      # console came up with no account and nothing in the log saying why.
+      #
+      # Optional, and safe to delete once the account exists: the seeder is
+      # gated on an empty `users` table, so later deploys do nothing.
+      CONTENTOS_OWNER_EMAIL: ${CONTENTOS_OWNER_EMAIL:-}
+      CONTENTOS_OWNER_PASSWORD: ${CONTENTOS_OWNER_PASSWORD:-}
     volumes:
       # Frames and the audio a worker sends back. Without this a redeploy loses
       # them and every still the researcher already read 404s.

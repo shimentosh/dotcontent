@@ -37,6 +37,12 @@ services:
       # The web app's origin, for CORS. Cookies cross from APP_HOST to
       # API_HOST because both sit under COOKIE_DOMAIN — see .env.production.
       WEB_ORIGIN: https://${APP_HOST:?set APP_HOST}
+      # The first account, made at boot while `users` is empty. Optional, and
+      # read only because it is named here — a compose `.env` fills in the
+      # `${…}` above, it does not reach the process. See
+      # docker-compose.dokploy.yml for the whole of that trap.
+      CONTENTOS_OWNER_EMAIL: ${CONTENTOS_OWNER_EMAIL:-}
+      CONTENTOS_OWNER_PASSWORD: ${CONTENTOS_OWNER_PASSWORD:-}
     depends_on:
       postgres:
         condition: service_healthy
