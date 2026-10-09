@@ -50,7 +50,7 @@ export async function transcribeAudio(
   }
 
   if (cfg.toolsOff.has("whisper")) {
-    throw new Refusal("whisper is switched off on this machine (CONTENTOS_WORKER_TOOLS_OFF).");
+    throw new Refusal("whisper is switched off on this machine (DOTCONTENT_WORKER_TOOLS_OFF).");
   }
 
   /*

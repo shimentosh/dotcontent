@@ -107,6 +107,16 @@ impl Which {
     /// place has learned it everywhere.
     pub fn var(self) -> &'static str {
         match self {
+            Which::Console => "DOTCONTENT_CONSOLE_URL",
+            Which::Api => "DOTCONTENT_API_URL",
+        }
+    }
+
+    /// The name the same variable had before the app was called dotcontent.
+    /// Read only when the current one is unset, so a machine set up before the
+    /// rename keeps the address it was given.
+    fn legacy_var(self) -> &'static str {
+        match self {
             Which::Console => "CONTENTOS_CONSOLE_URL",
             Which::Api => "CONTENTOS_API_URL",
         }
@@ -115,8 +125,8 @@ impl Which {
     /// The shape of the answer, for the messages that have to show one.
     fn example(self) -> &'static str {
         match self {
-            Which::Console => "https://contentos.yourteam.com",
-            Which::Api => "https://api.contentos.yourteam.com",
+            Which::Console => "https://dotcontent.yourteam.com",
+            Which::Api => "https://api.dotcontent.yourteam.com",
         }
     }
 
@@ -130,13 +140,13 @@ impl Which {
     pub fn missing(self) -> &'static str {
         match self {
             Which::Console => {
-                "The console address is where your team's Content OS is, for example \
-                 https://contentos.yourteam.com."
+                "The console address is where your team's dotcontent is, for example \
+                 https://dotcontent.yourteam.com."
             }
             Which::Api => {
                 "The API address is the server this machine's worker asks for jobs. It is a \
-                 different host from the console — https://api.contentos.yourteam.com beside \
-                 https://contentos.yourteam.com on a server, http://localhost:4000 beside \
+                 different host from the console — https://api.dotcontent.yourteam.com beside \
+                 https://dotcontent.yourteam.com on a server, http://localhost:4000 beside \
                  http://localhost:3333 in a checkout. Whoever set up the server knows it."
             }
         }
@@ -208,15 +218,15 @@ impl Source {
     pub fn words(self, which: Which) -> &'static str {
         match (self, which) {
             (Source::Development, Which::Console) => {
-                "From CONTENTOS_CONSOLE_URL in this window's environment — a development setting, \
+                "From DOTCONTENT_CONSOLE_URL in this window's environment — a development setting, \
                  which wins over everything below."
             }
             (Source::Development, Which::Api) => {
-                "From CONTENTOS_API_URL in this window's environment — a development setting, \
+                "From DOTCONTENT_API_URL in this window's environment — a development setting, \
                  which wins over everything below."
             }
             (Source::Machine, _) => "Set on this machine.",
-            (Source::BuiltIn, _) => "Built in when this copy of Content OS was made.",
+            (Source::BuiltIn, _) => "Built in when this copy of dotcontent was made.",
             (Source::Nothing, _) => "",
         }
     }
@@ -266,8 +276,8 @@ impl Address {
 /// in today's installer, and nothing on screen says so.
 pub fn built_in(which: Which) -> Option<&'static str> {
     match which {
-        Which::Console => option_env!("CONTENTOS_CONSOLE_URL"),
-        Which::Api => option_env!("CONTENTOS_API_URL"),
+        Which::Console => option_env!("DOTCONTENT_CONSOLE_URL").or(option_env!("CONTENTOS_CONSOLE_URL")),
+        Which::Api => option_env!("DOTCONTENT_API_URL").or(option_env!("CONTENTOS_API_URL")),
     }
 }
 
@@ -298,7 +308,10 @@ fn saved(app: &AppHandle, which: Which) -> String {
 pub fn address(app: &AppHandle, which: Which) -> Address {
     pick(
         which,
-        std::env::var(which.var()).ok().as_deref(),
+        std::env::var(which.var())
+            .or_else(|_| std::env::var(which.legacy_var()))
+            .ok()
+            .as_deref(),
         Some(saved(app, which).as_str()),
         built_in(which),
     )
@@ -326,7 +339,7 @@ pub fn api_url(app: &AppHandle) -> String {
 /// Highest first, and each place beats the one below it for a reason:
 ///
 /// 1. **The runtime environment.** This is a checkout: somebody exported
-///    `CONTENTOS_CONSOLE_URL` and `CONTENTOS_API_URL` and ran `npm run
+///    `DOTCONTENT_CONSOLE_URL` and `DOTCONTENT_API_URL` and ran `npm run
 ///    desktop`. It has to beat both of the others, because a developer whose
 ///    binary was compiled against the team's servers — or who has a
 ///    `settings.json` left over from testing an installer — would otherwise
@@ -469,7 +482,7 @@ fn set_secret(account: &str, value: &str, what: &str) -> Result<(), String> {
 /// Turn what somebody typed into the origin that will actually be used.
 ///
 /// Deliberately forgiving in one direction only. A person pastes
-/// `contentos.team.com` or a whole page's URL out of their browser bar, and
+/// `dotcontent.team.com` or a whole page's URL out of their browser bar, and
 /// neither should be an error; but a guess about the *scheme* is a guess about
 /// whether the token crosses the network in the clear, so anything without one
 /// becomes `https://` rather than `http://`. Somebody working against a local
@@ -579,14 +592,14 @@ mod tests {
         assert_eq!(got.source, Source::Nothing);
     }
 
-    /// Candidates are normalised on the way in, so a `CONTENTOS_CONSOLE_URL`
+    /// Candidates are normalised on the way in, so a `DOTCONTENT_CONSOLE_URL`
     /// with a trailing slash cannot make every request the worker sends
     /// contain a double one.
     #[test]
     fn candidates_are_tidied_not_taken_literally() {
         assert_eq!(
-            pick(Which::Console, Some("contentos.team.com/"), None, None).url,
-            "https://contentos.team.com"
+            pick(Which::Console, Some("dotcontent.team.com/"), None, None).url,
+            "https://dotcontent.team.com"
         );
     }
 
@@ -616,10 +629,10 @@ mod tests {
             Which::Console,
             None,
             None,
-            Some("https://contentos.team.com"),
+            Some("https://dotcontent.team.com"),
         );
         let api = pick(Which::Api, None, None, None);
-        assert_eq!(console.url, "https://contentos.team.com");
+        assert_eq!(console.url, "https://dotcontent.team.com");
         assert!(api.url.is_empty());
         assert_eq!(api.source, Source::Nothing);
     }
@@ -643,10 +656,10 @@ mod tests {
     fn the_development_line_names_its_own_variable() {
         assert!(Source::Development
             .words(Which::Console)
-            .contains("CONTENTOS_CONSOLE_URL"));
+            .contains("DOTCONTENT_CONSOLE_URL"));
         assert!(Source::Development
             .words(Which::Api)
-            .contains("CONTENTOS_API_URL"));
+            .contains("DOTCONTENT_API_URL"));
     }
 
     /// Not an assertion — a window onto the build.

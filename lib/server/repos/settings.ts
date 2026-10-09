@@ -127,7 +127,7 @@ export async function setRaw(key: string, value: unknown) {
  * thing that could ever spend them — never saw one. Now they are rows, and
  * AES-256-GCM around them so a database dump is not a list of live keys.
  *
- * The encryption key comes from CONTENTOS_SECRET. Without one set, a key
+ * The encryption key comes from DOTCONTENT_SECRET. Without one set, a key
  * derived from the connection string is used, which is honest about what it
  * protects: someone who can already read this database can read these too.
  * It is still worth doing, because a `pg_dump` in a backup folder is a much
@@ -135,7 +135,7 @@ export async function setRaw(key: string, value: unknown) {
  */
 const SECRET = createHash("sha256")
   .update(
-    process.env.CONTENTOS_SECRET ??
+    process.env.DOTCONTENT_SECRET ??
       process.env.DATABASE_URL ??
       "contentos-development-only",
   )
@@ -158,9 +158,9 @@ const SECRET = createHash("sha256")
  */
 export function assertSecret() {
   if (process.env.NODE_ENV !== "production") return;
-  if (process.env.CONTENTOS_SECRET?.trim()) return;
+  if (process.env.DOTCONTENT_SECRET?.trim()) return;
   throw new Error(
-    "CONTENTOS_SECRET is not set. Set it to a long random string and keep it " +
+    "DOTCONTENT_SECRET is not set. Set it to a long random string and keep it " +
       "constant for the life of this deployment — it is the key that encrypts " +
       "stored API keys. Without it the key is derived from DATABASE_URL, so " +
       "rotating the database password would make every saved key unreadable, " +
@@ -197,7 +197,7 @@ function decrypt(packed: string) {
       decipher.final(),
     ]).toString("utf8");
   } catch {
-    // A key written under a different CONTENTOS_SECRET cannot be read back.
+    // A key written under a different DOTCONTENT_SECRET cannot be read back.
     // Returning "" makes it look absent, which is what it effectively is.
     return "";
   }

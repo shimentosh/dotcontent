@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { BuilderView } from "@/components/views/BuilderView";
 
-export const metadata: Metadata = { title: "New Content Template · Content OS" };
+export const metadata: Metadata = { title: "New Content Template · dotcontent" };
 
 /** Writing a template that does not exist yet. Saving moves it to its slug. */
 export default function Page() {

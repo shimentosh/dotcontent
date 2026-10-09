@@ -416,7 +416,7 @@ main().catch((e: unknown) => {
   }
   if (e instanceof HttpError && e.status === 401) {
     console.error(
-      `${say(e)}\nThe console did not recognise CONTENTOS_WORKER_TOKEN. Add this machine again in Settings → Machines and paste the new token.`,
+      `${say(e)}\nThe console did not recognise DOTCONTENT_WORKER_TOKEN. Add this machine again in Settings → Machines and paste the new token.`,
     );
     process.exit(1);
   }

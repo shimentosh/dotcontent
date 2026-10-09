@@ -283,7 +283,7 @@ deleting that folder.
       --whisper cpu    Which whisper.cpp build. "cublas" is the GPU one:
                        671 MB, and useless without an NVIDIA card.
       --dir PATH       Put the tools somewhere else. Also settable as
-                       CONTENTOS_TOOLS_DIR, which the worker reads too.
+                       DOTCONTENT_TOOLS_DIR, which the worker reads too.
       --dry-run        Print the plan and stop.
       --models         Print the model sizes and what they cost in accuracy.
   -h, --help           This.`);
@@ -307,12 +307,12 @@ async function main() {
 
   // Before anything reads the tools directory: --dir wins, then whatever is
   // already in the environment, then the folder beside worker/.
-  if (args.dir) process.env.CONTENTOS_TOOLS_DIR = path.resolve(args.dir);
+  if (args.dir) process.env.DOTCONTENT_TOOLS_DIR = path.resolve(args.dir);
   const root = toolsRoot();
   const bin = toolsBin();
   const models = whisperModels();
 
-  say(`Content OS worker setup`);
+  say(`dotcontent worker setup`);
   say(`Tools folder: ${root}`);
   say(`Platform:     ${process.platform} ${process.arch}\n`);
 
@@ -809,7 +809,7 @@ Now start the worker:  npm run worker`);
  * laptop to save them a click is not a trade this script gets to make.
  */
 async function ollama() {
-  const url = (process.env.CONTENTOS_OLLAMA_URL ?? "").trim().replace(/\/+$/, "") ||
+  const url = (process.env.DOTCONTENT_OLLAMA_URL ?? "").trim().replace(/\/+$/, "") ||
     "http://localhost:11434";
   try {
     const res = await fetch(`${url}/api/tags`, { signal: AbortSignal.timeout(1500) });

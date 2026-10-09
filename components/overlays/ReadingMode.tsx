@@ -85,7 +85,7 @@ export const READING_THEMES: Record<ReadingTheme, Palette> = {
 
 const SIZES = [16.5, 18, 19.5, 21.5] as const;
 
-const STORE_KEY = "contentos.reading";
+const STORE_KEY = "dotcontent.reading";
 
 /** Bengali sits smaller than Latin at the same size, and needs more leading. */
 const isBangla = (s: DocSection) => s.lang === "BN";

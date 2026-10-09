@@ -38,7 +38,7 @@ domains and you need `COOKIE_SAMESITE=none` — and you should not.
 is also what the desktop app's one-time sign-in hand-off is allowed to redirect
 to — an endpoint that sets a session cookie and then redirects is worth more to
 an attacker than either half, so `next` is refused unless it matches. It has to
-be the **exact** origin the app was built with as `CONTENTOS_CONSOLE_URL`:
+be the **exact** origin the app was built with as `DOTCONTENT_CONSOLE_URL`:
 scheme, host and port. Get it wrong and nothing breaks loudly — teammates just
 quietly get asked to sign in a second time, in the webview, having already
 signed in to the app.
@@ -56,7 +56,7 @@ tight. `ffmpeg` is still in the API image because a **browser upload** is cut
 on the server, where its bytes already are; whisper is not, because
 transcription is a job over a 16 kHz WAV that goes to a machine with a GPU.
 
-**Secrets travel with the data.** `CONTENTOS_SECRET` encrypts the API keys in
+**Secrets travel with the data.** `DOTCONTENT_SECRET` encrypts the API keys in
 the settings table. Move the database without moving that value and every saved
 key becomes unreadable, which looks like the keys vanished.
 
@@ -65,7 +65,7 @@ rather than falling back to a key derived from `DATABASE_URL`. That fallback
 was the quieter failure of the two — it works until the day somebody rotates
 the database password, and then every key saved under the old one decrypts to
 nothing and reads on the page as though it had never been pasted. An install
-that has been running on the fallback needs `CONTENTOS_SECRET` set before it
+that has been running on the fallback needs `DOTCONTENT_SECRET` set before it
 will boot again, and the keys saved under the fallback have to be re-entered
 once; there is no way to recover them, because the value that encrypted them
 was never written down.
@@ -75,7 +75,7 @@ was never written down.
 On a machine with Docker, pointed at by a domain's A record:
 
 ```bash
-git clone <your repo> contentos && cd contentos
+git clone <your repo> dotcontent && cd dotcontent
 cp .env.production.example .env.production   # fill in every line
 docker compose -f docker-compose.prod.yml up -d --build
 ```
@@ -100,7 +100,7 @@ ends `unroutable` with a sentence naming the tool nobody has.
 sha256 — losing it means revoking and enrolling again. On that computer:
 
 ```bash
-CONTENTOS_API_URL=https://API_HOST CONTENTOS_WORKER_TOKEN=<the token> npm run worker
+DOTCONTENT_API_URL=https://API_HOST DOTCONTENT_WORKER_TOKEN=<the token> npm run worker
 ```
 
 It registers, reports what it has (`claude`, `yt-dlp`, `ffmpeg`, `whisper`, …),
@@ -120,8 +120,8 @@ and the two addresses on this page are **baked into it at build time** so that
 nobody is asked to type a hostname:
 
 ```bash
-CONTENTOS_CONSOLE_URL=https://APP_HOST \
-CONTENTOS_API_URL=https://API_HOST \
+DOTCONTENT_CONSOLE_URL=https://APP_HOST \
+DOTCONTENT_API_URL=https://API_HOST \
   npm run desktop:installer
 ```
 
@@ -151,7 +151,7 @@ API_URL=https://API_HOST WEB_ORIGIN=https://APP_HOST SESSION=<your cookie value>
 
 It says whether the API is up, refuses a missing and a forged cookie, answers
 for yours, and allows the web origin through CORS. The cookie value is in your
-browser's devtools under Application → Cookies → `contentos_session`.
+browser's devtools under Application → Cookies → `dotcontent_session`.
 
 Four of its lines are about the second credential, and they are the ones worth
 reading twice. A worker holds a bearer token rather than a cookie, and the
@@ -192,14 +192,14 @@ Its **Environment** is the compose's `.env`. Five lines:
 
 ```bash
 DATABASE_URL=postgres://…            # copied from the database's page, whole
-CONTENTOS_SECRET=                    # any long random string, then never change it
+DOTCONTENT_SECRET=                    # any long random string, then never change it
 APP_HOST=portal.yourcompany.com      # the console
 API_HOST=api.yourcompany.com         # the API
 COOKIE_DOMAIN=.yourcompany.com
 
 # Optional: the first account, made at boot instead of by hand.
-CONTENTOS_OWNER_EMAIL=you@yourcompany.com
-CONTENTOS_OWNER_PASSWORD=
+DOTCONTENT_OWNER_EMAIL=you@yourcompany.com
+DOTCONTENT_OWNER_PASSWORD=
 ```
 
 Generate the secret where you are, not anywhere it gets written down twice:
@@ -212,7 +212,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
 session cookie and the console's proxy reads it. `portal.` and `api.` under one
 company domain means `.yourcompany.com` — which is every subdomain you have, so
 if you host other things there, putting both under a shared middle name
-(`portal.contentos.…` and `api.contentos.…`, with `COOKIE_DOMAIN=.contentos.…`)
+(`portal.dotcontent.…` and `api.dotcontent.…`, with `COOKIE_DOMAIN=.dotcontent.…`)
 keeps the cookie to this app.
 
 ### The first account
@@ -222,7 +222,7 @@ Two ways, and the first needs nothing:
 **Sign up.** While `users` is empty the console offers it, and the first account
 made becomes the owner. Open `https://APP_HOST` after the deploy and claim it.
 
-**Or seed it.** Set `CONTENTOS_OWNER_EMAIL` and `CONTENTOS_OWNER_PASSWORD` and
+**Or seed it.** Set `DOTCONTENT_OWNER_EMAIL` and `DOTCONTENT_OWNER_PASSWORD` and
 the API makes that account as it starts, so the console is usable the moment the
 deploy finishes with no human step in the middle.
 
@@ -240,7 +240,7 @@ Dokploy's Environment, and change it once you are in.
 password, because Dokploy owns those and can rotate them; a second copy is a
 second thing to keep in step.
 
-`CONTENTOS_SECRET` encrypts the API keys in the settings table and the API
+`DOTCONTENT_SECRET` encrypts the API keys in the settings table and the API
 refuses to start without it. Do not change it later: everything already saved
 was encrypted with it, and a new value makes those keys read as though they had
 never been pasted.
@@ -274,16 +274,16 @@ Deploy, open `https://APP_HOST`, and make the first account. It is the owner.
 Dokploy builds the server. The app is built where you are and handed to people:
 
 ```bash
-CONTENTOS_CONSOLE_URL=https://APP_HOST \
-CONTENTOS_API_URL=https://API_HOST \
+DOTCONTENT_CONSOLE_URL=https://APP_HOST \
+DOTCONTENT_API_URL=https://API_HOST \
   npm run desktop:installer
 ```
 
-→ `src-tauri/target/release/bundle/nsis/Content OS_<version>_x64-setup.exe`.
+→ `src-tauri/target/release/bundle/nsis/dotcontent_<version>_x64-setup.exe`.
 
 **The one setting that breaks quietly.** `WEB_ORIGIN` on the server is set from
 `APP_HOST`, and it is also the only origin the desktop app's sign-in hand-off
-may redirect to. It must equal `CONTENTOS_CONSOLE_URL` **exactly** — scheme,
+may redirect to. It must equal `DOTCONTENT_CONSOLE_URL` **exactly** — scheme,
 host and port, no trailing slash. Get it wrong and nothing errors anywhere:
 teammates simply get asked to sign in a second time inside the app, having
 already signed in to it, and there is no message saying why.

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { QUALITIES } from "@/lib/data";
-import { PACKS } from "@/lib/packs/enbn-website";
+import { PACKS } from "@/lib/packs/website-shorts";
 import { startTopicRun } from "@/lib/start-run";
 import {
   fetchSourceToEnd,

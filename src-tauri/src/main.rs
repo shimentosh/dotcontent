@@ -2,7 +2,7 @@
 // sitting behind it on every start.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-//! Content OS on somebody's desktop.
+//! dotcontent on somebody's desktop.
 //!
 //! Two things in one process, and the reason they are one process is the
 //! person using it: a teammate who is not a developer, on Windows, whose
@@ -246,7 +246,7 @@ fn main() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("Content OS could not start its window system")
+        .expect("dotcontent could not start its window system")
         .run(|app, event| match event {
             /*
              * Closing the window does not quit.

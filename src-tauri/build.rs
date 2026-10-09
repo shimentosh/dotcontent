@@ -17,6 +17,9 @@ fn main() {
      * single line would leave that build carrying the old API and looking
      * fine.
      */
+    println!("cargo:rerun-if-env-changed=DOTCONTENT_CONSOLE_URL");
+    println!("cargo:rerun-if-env-changed=DOTCONTENT_API_URL");
+    // The names they had before the rename, which settings.rs still reads.
     println!("cargo:rerun-if-env-changed=CONTENTOS_CONSOLE_URL");
     println!("cargo:rerun-if-env-changed=CONTENTOS_API_URL");
 

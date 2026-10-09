@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { ToolsManageView } from "@/components/views/ToolsManageView";
 
-export const metadata: Metadata = { title: "All tools · Content OS" };
+export const metadata: Metadata = { title: "All tools · dotcontent" };
 
 /**
  * Every tool, not just this workspace's.

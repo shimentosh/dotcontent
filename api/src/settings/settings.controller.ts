@@ -23,7 +23,7 @@ import {
  *
  * Keys go in and never come back out: `listSecrets` answers with which ids
  * are stored, not their values. The settings table encrypts them with
- * CONTENTOS_SECRET — see the repo for why a dump is not a list of live keys.
+ * DOTCONTENT_SECRET — see the repo for why a dump is not a list of live keys.
  */
 @Controller("settings")
 export class SettingsController {

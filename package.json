@@ -1,7 +1,15 @@
 {
-  "name": "meshclip",
+  "name": "dotcontent",
   "version": "0.1.0",
   "private": true,
+  "description": "Open-source content production: topics feed templates, and templates write every section.",
+  "license": "MIT",
+  "author": "dotmirror (https://dotmirror.com)",
+  "homepage": "https://dotmirror.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shimentosh/dotcontent.git"
+  },
   "scripts": {
     "dev": "next dev",
     "db:up": "docker compose up -d --wait",
@@ -23,10 +31,10 @@
     "start": "next start",
     "worker": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./worker/register.mjs worker/index.ts",
     "worker:setup": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./worker/register.mjs worker/setup.ts",
-    "desktop": "node src-tauri/scripts/dev.mjs",
+    "desktop": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON src-tauri/scripts/dev.mjs",
     "desktop:build": "cargo build --release --manifest-path src-tauri/Cargo.toml",
     "desktop:node": "node src-tauri/scripts/fetch-node.mjs",
-    "desktop:installer": "node src-tauri/scripts/installer.mjs",
+    "desktop:installer": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON src-tauri/scripts/installer.mjs",
     "lint": "eslint"
   },
   "dependencies": {

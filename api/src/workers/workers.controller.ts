@@ -365,7 +365,7 @@ export class WorkersController {
     // Through the ingest service rather than by rebuilding the path here:
     // there is one place that knows where a source's files live, and a second
     // copy of `.data/sources/<id>` in a controller is a layout that drifts the
-    // first time CONTENTOS_DATA_DIR means something new.
+    // first time DOTCONTENT_DATA_DIR means something new.
     const dir = await ensureSourceDir(sourceId);
 
     return new Promise<{ files: string[] }>((resolve, reject) => {

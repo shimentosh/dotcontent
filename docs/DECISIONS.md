@@ -197,7 +197,7 @@ eight thousand characters — was being passed to the CLI as a **command-line
 argument**, and on Windows a command line that long is cut off without a word.
 The fixed format, deep in the rules, never reached the model. The scripts that
 had come out right did so because the CLI, started in the repo, had opened
-`lib/packs/enbn-website.ts` itself and read the format off line 91 — the first
+`lib/packs/website-shorts.ts` itself and read the format off line 91 — the first
 line of one such script literally said so. Move the CLI to an empty directory
 and that accidental crutch was gone.
 
@@ -250,7 +250,7 @@ Auth is closed by default: `SessionGuard` is a global guard, and a route is
 open only with `@Public()`. That is the shape the audit asked for — the hole
 it found was fifteen handlers that each had to remember one line.
 
-The two processes share one `.data` root (`CONTENTOS_DATA_DIR`), because the
+The two processes share one `.data` root (`DOTCONTENT_DATA_DIR`), because the
 API started from `api/` would otherwise keep its own `./.data` that the web
 app has never heard of.
 
@@ -300,7 +300,7 @@ and the tools manager refuse to write until it is, and say so.
 
 `proxy.ts` checks only that a session cookie is PRESENT — it cannot do more,
 because it runs before the database is reachable. Validity is the route's job,
-and for fifteen routes it was nobody's: `contentos_session=anything` listed
+and for fifteen routes it was nobody's: `dotcontent_session=anything` listed
 every run, every template, every workspace, and could start runs that spend
 model credit. The comment in `proxy.ts` asserting the opposite is how it
 survived a year of reading that file.

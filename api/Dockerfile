@@ -37,7 +37,7 @@ ENV PORT=4000
 # `@/lib/...` inside the compiled output points at dist, not at the sources.
 ENV TS_NODE_BASEURL=./dist
 # Downloads and frames live here; mount a volume on it.
-ENV CONTENTOS_DATA_DIR=/app/.data
+ENV DOTCONTENT_DATA_DIR=/app/.data
 
 # ffmpeg, and only ffmpeg.
 #

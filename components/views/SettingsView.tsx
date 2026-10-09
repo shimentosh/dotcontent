@@ -342,7 +342,7 @@ export function SettingsView() {
 
               <div style={{ fontSize: 11.5, color: t(0.35), textWrap: "pretty" }}>
                 Keys are encrypted with AES-256-GCM before they are stored, and
-                only ever come back masked. Set CONTENTOS_SECRET in{" "}
+                only ever come back masked. Set DOTCONTENT_SECRET in{" "}
                 <code style={{ fontFamily: font.mono }}>.env</code> to control the
                 encryption key yourself.
               </div>

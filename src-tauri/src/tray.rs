@@ -34,7 +34,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     let console = MenuItem::with_id(app, "console", "Open the console", true, None::<&str>)?;
     let setup = MenuItem::with_id(app, "setup", "This machine…", true, None::<&str>)?;
     let restart = MenuItem::with_id(app, "restart", "Restart the worker", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Content OS", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit dotcontent", true, None::<&str>)?;
 
     // Only when this build was given somewhere to look. An item that could
     // only ever say "no update server was configured" teaches people that the
@@ -65,7 +65,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
                 .cloned()
                 .expect("bundle.icon in tauri.conf.json puts the app icon here at compile time"),
         )
-        .tooltip("Content OS")
+        .tooltip("dotcontent")
         .menu(&menu)
         // A left click on a tray icon is somebody asking "what is it doing?",
         // and the answer is the first line of this menu.

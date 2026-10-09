@@ -53,9 +53,11 @@ const sourceSerif = Source_Serif_4({
 });
 
 export const metadata: Metadata = {
-  title: "Content OS",
+  title: "dotcontent",
+  applicationName: "dotcontent",
   description:
-    "Topics, packs and content in one workspace — the Content OS dashboard.",
+    "Open-source content production: topics feed templates, and templates write every section. By dotmirror.",
+  authors: [{ name: "dotmirror", url: "https://dotmirror.com" }],
 };
 
 export default function RootLayout({

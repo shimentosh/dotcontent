@@ -6,7 +6,7 @@ import {
   type Pack as RuntimePack,
   type PackInput,
   type PackSectionDef,
-} from "@/lib/packs/enbn-website";
+} from "@/lib/packs/website-shorts";
 
 /**
  * The pack library — the shipped packs and the ones written in the builder,

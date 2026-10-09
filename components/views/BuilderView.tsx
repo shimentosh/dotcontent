@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 
-import type { Pack } from "@/lib/packs/enbn-website";
+import type { Pack } from "@/lib/packs/website-shorts";
 import { PACK_STATUSES, type PackStatus } from "@/lib/packs";
 import { systemPrompt, userPrompt } from "@/lib/server/prompt";
 

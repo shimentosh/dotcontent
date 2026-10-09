@@ -1,4 +1,4 @@
-# The database Content OS runs on.
+# The database dotcontent runs on.
 #
 #   docker compose up -d
 #
@@ -7,7 +7,7 @@
 services:
   postgres:
     image: postgres:17-alpine
-    container_name: contentos-postgres
+    container_name: dotcontent-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: contentos

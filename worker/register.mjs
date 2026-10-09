@@ -6,4 +6,9 @@
  */
 import { register } from "node:module";
 
+// Before any worker module reads the environment: CONTENTOS_* becomes
+// DOTCONTENT_*. The extension is written out because the resolver below is
+// not registered yet when a static import is evaluated.
+import "../lib/legacy-env.ts";
+
 register("./resolve-ts.mjs", import.meta.url);

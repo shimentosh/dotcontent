@@ -26,15 +26,15 @@ const URL =
  * shows up as an unrelated-looking "too many clients" an hour into a session.
  */
 const store = globalThis as unknown as {
-  __contentosPool?: Pool;
-  __contentosReady?: Promise<void>;
+  __dotcontentPool?: Pool;
+  __dotcontentReady?: Promise<void>;
 };
 
 export function pool(): Pool {
-  if (!store.__contentosPool) {
-    store.__contentosPool = new Pool({ connectionString: URL, max: 8 });
+  if (!store.__dotcontentPool) {
+    store.__dotcontentPool = new Pool({ connectionString: URL, max: 8 });
   }
-  return store.__contentosPool;
+  return store.__dotcontentPool;
 }
 
 /**
@@ -47,13 +47,13 @@ export function pool(): Pool {
  * database was down while it was plainly running.
  */
 export function ready(): Promise<void> {
-  if (!store.__contentosReady) {
-    store.__contentosReady = migrate().catch((e) => {
-      store.__contentosReady = undefined;
+  if (!store.__dotcontentReady) {
+    store.__dotcontentReady = migrate().catch((e) => {
+      store.__dotcontentReady = undefined;
       throw e;
     });
   }
-  return store.__contentosReady;
+  return store.__dotcontentReady;
 }
 
 /*

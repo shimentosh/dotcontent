@@ -16,7 +16,7 @@ import { slug } from "@/lib/slug";
 const pack = (): Pack => ({
   id: "enbn-website-package",
   n: "01",
-  name: "ENBN Website Content",
+  name: "Website Shorts",
   desc: "A researched website becomes a short-form set",
   sections: "2",
   used: "never",
@@ -24,7 +24,7 @@ const pack = (): Pack => ({
   inputs: [{ key: "series", label: "Series", required: true }],
   outputs: [{ key: "en", label: "English script", sections: ["script-en"] }],
   draft: {
-    name: "ENBN Website Content",
+    name: "Website Shorts",
     summary: "A researched website becomes a short-form set",
     status: "ACTIVE",
     purpose: "Earn a save and a comment",
@@ -49,7 +49,7 @@ const pack = (): Pack => ({
 describe("toFile", () => {
   it("carries the whole brief, and leaves the slug behind", () => {
     const file = toFile(pack());
-    expect(file.kind).toBe("contentos.template");
+    expect(file.kind).toBe("dotcontent.template");
     expect(file.template.rules).toBe("Never name the website.");
     expect(file.template.sections).toHaveLength(2);
     expect(file.template.sections[1].instruction).toBe("Write ONE script.");
@@ -67,7 +67,7 @@ describe("toFile", () => {
 describe("fromFile", () => {
   it("round-trips every prompt", () => {
     const body = fromFile(toFile(pack()));
-    expect(body.name).toBe("ENBN Website Content");
+    expect(body.name).toBe("Website Shorts");
     expect(body.sections.map((s) => s.instruction)).toEqual([
       "Read the landing page.",
       "Write ONE script.",
@@ -83,6 +83,11 @@ describe("fromFile", () => {
   it("refuses anything that is not a template file", () => {
     expect(() => fromFile({ name: "looks like a pack" })).toThrow(TransferError);
     expect(() => fromFile(null)).toThrow(TransferError);
+  });
+
+  it("still reads a file exported before the rename", () => {
+    const file = { ...toFile(pack()), kind: "contentos.template" };
+    expect(fromFile(file).name).toBe("Website Shorts");
   });
 
   it("refuses a file from a newer version rather than half-reading it", () => {
@@ -141,8 +146,8 @@ describe("tiers and dependency arrows", () => {
 
 describe("fileNameFor", () => {
   it("is the slug rule plus a suffix", () => {
-    expect(fileNameFor("ENBN Website Content")).toBe(
-      "enbn-website-content.template.json",
+    expect(fileNameFor("Website Shorts")).toBe(
+      "website-shorts.template.json",
     );
   });
 

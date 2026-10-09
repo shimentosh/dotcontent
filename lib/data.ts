@@ -1,6 +1,6 @@
 /**
- * Static content transcribed from the Content OS design canvas
- * (design/meshclip.dc.html). Everything the prototype shows lives here so the
+ * Static content transcribed from the dotcontent design canvas
+ * (design/canvas.dc.html). Everything the prototype shows lives here so the
  * view components stay presentational.
  */
 
@@ -79,8 +79,8 @@ export type Project = {
    * The channel it publishes as — the name a viewer actually sees on the post.
    *
    * Separate from `name`, which is what YOU call the workspace: "Client —
-   * NovaSkin" is a useful label on this screen and the wrong thing to put on a
-   * follow card.
+   * Acme Skincare" is a useful label on this screen and the wrong thing to put
+   * on a follow card.
    */
   channel: string;
   status: ProjectStatus;
@@ -191,9 +191,9 @@ Every claim is something you could check. No superlatives, no urgency, no
   },
   {
     id: "",
-    name: "Client — NovaSkin",
-    handle: "@novaskin",
-    channel: "NovaSkin Official",
+    name: "Client — Acme Skincare",
+    handle: "@acmeskincare",
+    channel: "Acme Skincare Official",
     status: "Active",
     goal: "Hand over 40 approved shorts by launch",
     brandVoice: "",

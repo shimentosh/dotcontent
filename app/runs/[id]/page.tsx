@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { DocumentView } from "@/components/views/DocumentView";
 
-export const metadata: Metadata = { title: "Run · Content OS" };
+export const metadata: Metadata = { title: "Run · dotcontent" };
 
 /**
  * One run, read the same way everything else is read.

@@ -262,7 +262,7 @@ const quote = (value: string) =>
  */
 export function cliHome() {
   const root = path.resolve(
-    process.env.CONTENTOS_DATA_DIR ?? path.join(process.cwd(), ".data"),
+    process.env.DOTCONTENT_DATA_DIR ?? path.join(process.cwd(), ".data"),
   );
   const dir = path.join(root, "cli");
   mkdirSync(dir, { recursive: true });
@@ -293,7 +293,7 @@ export function cliHome() {
  * somebody committing them.
  */
 export function toolsDir() {
-  const set = (process.env.CONTENTOS_TOOLS_DIR ?? "").trim();
+  const set = (process.env.DOTCONTENT_TOOLS_DIR ?? "").trim();
   return path.resolve(set || path.join(process.cwd(), ".data", "tools"));
 }
 
@@ -360,7 +360,7 @@ const rank = (name: string) => {
  * at all, so a machine with the program and no model never gets handed a
  * transcription job it cannot do.
  *
- * `CONTENTOS_WHISPER_MODEL` names one file and means it: somebody who already
+ * `DOTCONTENT_WHISPER_MODEL` names one file and means it: somebody who already
  * has a models folder from another project points at it, and if that path is
  * wrong they are told so rather than being quietly given a different model.
  * Otherwise the exact name wins, then the nearest size that is actually here —
@@ -368,7 +368,7 @@ const rank = (name: string) => {
  * `small`, at the accuracy it has, rather than failing a job over a preference.
  */
 export function whisperModel(want = ""): WhisperModelFile | null {
-  const named = (process.env.CONTENTOS_WHISPER_MODEL ?? "").trim();
+  const named = (process.env.DOTCONTENT_WHISPER_MODEL ?? "").trim();
   if (named) {
     try {
       if (statSync(named).isFile()) return { file: named, name: path.basename(named) };
@@ -409,9 +409,9 @@ export function whisperModel(want = ""): WhisperModelFile | null {
 
 /** The sentence for a machine that has whisper.cpp and nothing to run it on. */
 export function whisperModelGap() {
-  const named = (process.env.CONTENTOS_WHISPER_MODEL ?? "").trim();
+  const named = (process.env.DOTCONTENT_WHISPER_MODEL ?? "").trim();
   return named
-    ? `whisper.cpp is installed here, but CONTENTOS_WHISPER_MODEL points at ${named}, which is not a file.`
+    ? `whisper.cpp is installed here, but DOTCONTENT_WHISPER_MODEL points at ${named}, which is not a file.`
     : `whisper.cpp is installed here, but there is no model file in ${whisperModels()} for it to load.`;
 }
 
@@ -509,7 +509,7 @@ export function run(
  */
 const CACHE_MS = 60_000;
 const store = globalThis as unknown as {
-  __contentosTools?: { at: number; value: ToolStatus[] };
+  __dotcontentTools?: { at: number; value: ToolStatus[] };
 };
 
 /** One line out of a `--version` dump, which is often a whole banner. */
@@ -630,10 +630,10 @@ async function probe(p: Probe): Promise<ToolStatus> {
 }
 
 export async function toolStatuses(force = false): Promise<ToolStatus[]> {
-  const cached = store.__contentosTools;
+  const cached = store.__dotcontentTools;
   if (!force && cached && Date.now() - cached.at < CACHE_MS) return cached.value;
   const value = await Promise.all(PROBES.map(probe));
-  store.__contentosTools = { at: Date.now(), value };
+  store.__dotcontentTools = { at: Date.now(), value };
   return value;
 }
 

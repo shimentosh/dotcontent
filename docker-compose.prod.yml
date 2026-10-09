@@ -41,8 +41,8 @@ services:
       # read only because it is named here — a compose `.env` fills in the
       # `${…}` above, it does not reach the process. See
       # docker-compose.dokploy.yml for the whole of that trap.
-      CONTENTOS_OWNER_EMAIL: ${CONTENTOS_OWNER_EMAIL:-}
-      CONTENTOS_OWNER_PASSWORD: ${CONTENTOS_OWNER_PASSWORD:-}
+      DOTCONTENT_OWNER_EMAIL: ${DOTCONTENT_OWNER_EMAIL:-${CONTENTOS_OWNER_EMAIL:-}}
+      DOTCONTENT_OWNER_PASSWORD: ${DOTCONTENT_OWNER_PASSWORD:-${CONTENTOS_OWNER_PASSWORD:-}}
     depends_on:
       postgres:
         condition: service_healthy
@@ -56,10 +56,10 @@ services:
     # database that has not got it yet.
     labels:
       - traefik.enable=true
-      - traefik.http.routers.contentos-api.rule=Host(`${API_HOST:?set API_HOST}`)
-      - traefik.http.routers.contentos-api.entrypoints=websecure
-      - traefik.http.routers.contentos-api.tls.certresolver=le
-      - traefik.http.services.contentos-api.loadbalancer.server.port=4000
+      - traefik.http.routers.dotcontent-api.rule=Host(`${API_HOST:?set API_HOST}`)
+      - traefik.http.routers.dotcontent-api.entrypoints=websecure
+      - traefik.http.routers.dotcontent-api.tls.certresolver=le
+      - traefik.http.services.dotcontent-api.loadbalancer.server.port=4000
 
   # The web app: Next.js, frontend only. It knows the API's address at build
   # time, which is why the origin is a build arg and not a runtime variable.
@@ -75,10 +75,10 @@ services:
       - api
     labels:
       - traefik.enable=true
-      - traefik.http.routers.contentos.rule=Host(`${APP_HOST:?set APP_HOST}`)
-      - traefik.http.routers.contentos.entrypoints=websecure
-      - traefik.http.routers.contentos.tls.certresolver=le
-      - traefik.http.services.contentos.loadbalancer.server.port=3333
+      - traefik.http.routers.dotcontent.rule=Host(`${APP_HOST:?set APP_HOST}`)
+      - traefik.http.routers.dotcontent.entrypoints=websecure
+      - traefik.http.routers.dotcontent.tls.certresolver=le
+      - traefik.http.services.dotcontent.loadbalancer.server.port=3333
 
   proxy:
     image: traefik:v3.1

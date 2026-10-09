@@ -21,35 +21,42 @@
 #
 # What to set, on the machine that publishes releases:
 #
-#   CONTENTOS_SIGN_THUMBPRINT      the SHA1 thumbprint of a code signing
+#   DOTCONTENT_SIGN_THUMBPRINT      the SHA1 thumbprint of a code signing
 #                                  certificate in this user's certificate
 #                                  store. This is the shape an EV or hardware
 #                                  token certificate takes — the key never
 #                                  leaves the token, so there is no file.
-#   CONTENTOS_SIGN_PFX             …or the path to a .pfx, for a certificate
-#   CONTENTOS_SIGN_PFX_PASSWORD    that is a file. Prefer the thumbprint.
-#   CONTENTOS_SIGN_TIMESTAMP_URL   an RFC3161 timestamp server. Defaults to
+#   DOTCONTENT_SIGN_PFX             …or the path to a .pfx, for a certificate
+#   DOTCONTENT_SIGN_PFX_PASSWORD    that is a file. Prefer the thumbprint.
+#   DOTCONTENT_SIGN_TIMESTAMP_URL   an RFC3161 timestamp server. Defaults to
 #                                  DigiCert's. Timestamping is not optional in
 #                                  practice: without it every signature stops
 #                                  verifying the day the certificate expires,
 #                                  including on installers already downloaded.
-#   CONTENTOS_SIGN_TOOL            signtool.exe, when it is not found below.
+#   DOTCONTENT_SIGN_TOOL            signtool.exe, when it is not found below.
 
 param([Parameter(Mandatory = $true)][string]$File)
 
 $ErrorActionPreference = "Stop"
 
-$thumbprint = $env:CONTENTOS_SIGN_THUMBPRINT
-$pfx = $env:CONTENTOS_SIGN_PFX
+# The names these had before the rename still work: CONTENTOS_SIGN_X fills
+# DOTCONTENT_SIGN_X when that is unset.
+Get-ChildItem Env:CONTENTOS_SIGN_* -ErrorAction SilentlyContinue | ForEach-Object {
+    $next = "DOTCONTENT_" + $_.Name.Substring("CONTENTOS_".Length)
+    if (-not [Environment]::GetEnvironmentVariable($next)) { Set-Item "Env:$next" $_.Value }
+}
+
+$thumbprint = $env:DOTCONTENT_SIGN_THUMBPRINT
+$pfx = $env:DOTCONTENT_SIGN_PFX
 
 if (-not $thumbprint -and -not $pfx) {
-    Write-Host "sign.ps1: no certificate configured, so $(Split-Path -Leaf $File) is unsigned. Windows SmartScreen will warn the people who install it. Set CONTENTOS_SIGN_THUMBPRINT (or CONTENTOS_SIGN_PFX) to sign."
+    Write-Host "sign.ps1: no certificate configured, so $(Split-Path -Leaf $File) is unsigned. Windows SmartScreen will warn the people who install it. Set DOTCONTENT_SIGN_THUMBPRINT (or DOTCONTENT_SIGN_PFX) to sign."
     exit 0
 }
 
 # signtool ships with the Windows SDK and is not on PATH by default. The SDK
 # installs one per version, so the newest is taken rather than the first found.
-$tool = $env:CONTENTOS_SIGN_TOOL
+$tool = $env:DOTCONTENT_SIGN_TOOL
 if (-not $tool) {
     $tool = Get-Command signtool.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
 }
@@ -60,19 +67,19 @@ if (-not $tool) {
         Select-Object -First 1 -ExpandProperty FullName
 }
 if (-not $tool) {
-    throw "A certificate is configured but signtool.exe is not here. Install the Windows SDK's signing tools, or set CONTENTOS_SIGN_TOOL to signtool.exe."
+    throw "A certificate is configured but signtool.exe is not here. Install the Windows SDK's signing tools, or set DOTCONTENT_SIGN_TOOL to signtool.exe."
 }
 
-$timestamp = $env:CONTENTOS_SIGN_TIMESTAMP_URL
+$timestamp = $env:DOTCONTENT_SIGN_TIMESTAMP_URL
 if (-not $timestamp) { $timestamp = "http://timestamp.digicert.com" }
 
 $signArgs = @("sign", "/fd", "sha256", "/td", "sha256", "/tr", $timestamp)
 if ($thumbprint) {
     $signArgs += @("/sha1", $thumbprint)
 } else {
-    if (-not (Test-Path $pfx)) { throw "CONTENTOS_SIGN_PFX points at $pfx, which is not there." }
+    if (-not (Test-Path $pfx)) { throw "DOTCONTENT_SIGN_PFX points at $pfx, which is not there." }
     $signArgs += @("/f", $pfx)
-    if ($env:CONTENTOS_SIGN_PFX_PASSWORD) { $signArgs += @("/p", $env:CONTENTOS_SIGN_PFX_PASSWORD) }
+    if ($env:DOTCONTENT_SIGN_PFX_PASSWORD) { $signArgs += @("/p", $env:DOTCONTENT_SIGN_PFX_PASSWORD) }
 }
 $signArgs += $File
 

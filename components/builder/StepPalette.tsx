@@ -21,7 +21,7 @@ import {
 import { HashGlyph } from "@/components/ui/DocIcons";
 
 /** What you drag out of the palette, as the canvas reads it. */
-export const STEP_DRAG = "application/x-contentos-step";
+export const STEP_DRAG = "application/x-dotcontent-step";
 
 /**
  * A glyph and a colour per kind of step.

@@ -13,12 +13,12 @@ import { seedIfEmpty } from "@/lib/server/services/seed";
  * Those handlers are gone; the API's ErrorsFilter is where a thrown thing
  * becomes a response now.
  */
-const store = globalThis as unknown as { __contentosSeed?: Promise<void> };
+const store = globalThis as unknown as { __dotcontentSeed?: Promise<void> };
 
 export function ready(): Promise<void> {
-  if (!store.__contentosSeed) {
-    store.__contentosSeed = (async () => {
-      // Before anything writes: a production server without CONTENTOS_SECRET
+  if (!store.__dotcontentSeed) {
+    store.__dotcontentSeed = (async () => {
+      // Before anything writes: a production server without DOTCONTENT_SECRET
       // encrypts API keys under a value derived from DATABASE_URL, and loses
       // every one of them the day that password is rotated. Checked here so a
       // misconfigured deploy dies at boot with a sentence saying what to set,
@@ -31,9 +31,9 @@ export function ready(): Promise<void> {
       await seedIfEmpty();
     })().catch((e) => {
       // A failed seed must not be cached as done — the next request retries.
-      store.__contentosSeed = undefined;
+      store.__dotcontentSeed = undefined;
       throw e;
     });
   }
-  return store.__contentosSeed;
+  return store.__dotcontentSeed;
 }

@@ -1,3 +1,6 @@
+// First, before any module reads the environment: CONTENTOS_* becomes
+// DOTCONTENT_*. See the file for why.
+import "@/lib/legacy-env";
 import "reflect-metadata";
 
 import { NestFactory } from "@nestjs/core";
@@ -10,7 +13,7 @@ import { AppModule } from "./app.module";
 import { ErrorsFilter } from "./common/errors.filter";
 
 /**
- * The Content OS API, as its own process.
+ * The dotcontent API, as its own process.
  *
  * Everything the Next.js route handlers used to do, on its own port, reached
  * by the browser directly. It shares `lib/server` with the repo root — the
@@ -76,7 +79,7 @@ async function main() {
 
   const port = Number(process.env.PORT ?? 4000);
   await app.listen(port);
-  console.log(`Content OS API on http://localhost:${port}/api`);
+  console.log(`dotcontent API on http://localhost:${port}/api`);
 }
 
 void main();

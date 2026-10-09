@@ -27,7 +27,7 @@ export type Transport = "cli" | "api";
  * whatever follows the LAST one of these on stdout is the answer, and being
  * wrong about that means posting a progress bar as somebody's section.
  */
-export const RESULT_MARK = "<<CONTENTOS-JOB-RESULT>>";
+export const RESULT_MARK = "<<DOTCONTENT-JOB-RESULT>>";
 
 export type FrameRef = { url: string; at: number };
 

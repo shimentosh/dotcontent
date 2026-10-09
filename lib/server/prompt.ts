@@ -1,4 +1,4 @@
-import type { Pack, PackSectionDef } from "@/lib/packs/enbn-website";
+import type { Pack, PackSectionDef } from "@/lib/packs/website-shorts";
 
 /**
  * How a section's prompt is built.

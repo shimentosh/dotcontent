@@ -277,7 +277,7 @@ impl Worker {
                          Choose Set this machine up again below and it will get one."
                     }
                     (false, false) => {
-                        "Sign in below with the email and password you use for Content OS. This \
+                        "Sign in below with the email and password you use for dotcontent. This \
                          app will set this machine up itself — there is nothing to paste."
                     }
                 },
@@ -306,7 +306,7 @@ impl Worker {
             .arg("--import")
             .arg("./worker/register.mjs")
             .arg("worker/index.ts")
-            .env("CONTENTOS_WORKER_TOKEN", &token)
+            .env("DOTCONTENT_WORKER_TOKEN", &token)
             /*
              * The API's address, and never the console's.
              *
@@ -318,14 +318,14 @@ impl Worker {
              * checkout is the same shape at :3333 and :4000, see
              * `lib/api-base.ts`.
              *
-             * An inherited `CONTENTOS_API_URL` still wins, and no longer needs
+             * An inherited `DOTCONTENT_API_URL` still wins, and no longer needs
              * a check of its own for it to: it is the first place
              * `settings::api_url` looks, so this is the same value the child
              * would have inherited, tidied. That check moved into `pick`
              * rather than being deleted — one rule, in the one place, for both
              * addresses.
              */
-            .env("CONTENTOS_API_URL", &api)
+            .env("DOTCONTENT_API_URL", &api)
             // Nothing is ever asked of this process on stdin, and a child that
             // inherits a console's stdin can block on it forever.
             .stdin(Stdio::null())
@@ -350,7 +350,7 @@ impl Worker {
                 return self.set(
                     app,
                     Health::NodeMissing,
-                    "This is a checkout of Content OS rather than an installed copy, so it has no Node of \
+                    "This is a checkout of dotcontent rather than an installed copy, so it has no Node of \
                      its own and there is none on this computer either. Install Node 22.18 or newer from \
                      nodejs.org, then choose Restart the worker.",
                 );
@@ -573,7 +573,7 @@ fn classify(line: &str) -> Option<(Health, String)> {
                 .into(),
         ));
     }
-    if line.contains("did not recognise CONTENTOS_WORKER_TOKEN") {
+    if line.contains("did not recognise DOTCONTENT_WORKER_TOKEN") {
         return Some((
             Health::BadToken,
             /*
@@ -640,8 +640,8 @@ impl Layout {
             (
                 Health::WorkerMissing,
                 "This app cannot find worker/index.ts. An installed copy carries its own, so if this one \
-                 is damaged, install Content OS again. Running from a checkout it looks for the Content OS \
-                 folder around itself — set CONTENTOS_WORKER_DIR to that folder if it is somewhere else."
+                 is damaged, install dotcontent again. Running from a checkout it looks for the dotcontent \
+                 folder around itself — set DOTCONTENT_WORKER_DIR to that folder if it is somewhere else."
                     .to_string(),
             )
         })?;
@@ -658,8 +658,8 @@ impl Layout {
             None if installed => {
                 return Err((
                     Health::NodeMissing,
-                    "Content OS installs its own copy of Node and that copy is not here, so this \
-                     installation is damaged — nothing is missing from your computer. Install Content OS \
+                    "dotcontent installs its own copy of Node and that copy is not here, so this \
+                     installation is damaged — nothing is missing from your computer. Install dotcontent \
                      again over the top of this one; both addresses and this machine's token are kept."
                         .to_string(),
                 ))
@@ -678,7 +678,7 @@ impl Layout {
     ///
     /// This is not a nicety, it is the difference between an installed app
     /// that works and one that fails its first job. `cliHome()` in
-    /// `lib/server/tools.ts` does a `mkdirSync` under `CONTENTOS_DATA_DIR`, or
+    /// `lib/server/tools.ts` does a `mkdirSync` under `DOTCONTENT_DATA_DIR`, or
     /// under the working directory when that is unset — and an installed app's
     /// working directory is inside Program Files, where a normal user account
     /// cannot create anything. The failure would land on the machine where
@@ -704,8 +704,8 @@ impl Layout {
         // the model CLIs are started in, the second is where the tools
         // installer puts yt-dlp, ffmpeg and whisper.cpp.
         for (name, value) in [
-            ("CONTENTOS_DATA_DIR", dir.join("data")),
-            ("CONTENTOS_TOOLS_DIR", dir.join("tools")),
+            ("DOTCONTENT_DATA_DIR", dir.join("data")),
+            ("DOTCONTENT_TOOLS_DIR", dir.join("tools")),
         ] {
             if std::env::var_os(name).is_none() {
                 cmd.env(name, value);
@@ -714,7 +714,7 @@ impl Layout {
     }
 }
 
-/// The Content OS folder — the one with `worker/` in it — and whether it came
+/// The dotcontent folder — the one with `worker/` in it — and whether it came
 /// out of the installer.
 ///
 /// Searched for rather than configured, because in development this app is
@@ -729,7 +729,9 @@ impl Layout {
 /// be pointed at Program Files to write in.
 fn worker_root(app: &AppHandle) -> Option<(PathBuf, bool)> {
     let mut tried: Vec<(PathBuf, bool)> = Vec::new();
-    if let Ok(set) = std::env::var("CONTENTOS_WORKER_DIR") {
+    if let Ok(set) =
+        std::env::var("DOTCONTENT_WORKER_DIR").or_else(|_| std::env::var("CONTENTOS_WORKER_DIR"))
+    {
         tried.push((PathBuf::from(set), false));
     }
     if let Ok(resources) = app.path().resource_dir() {

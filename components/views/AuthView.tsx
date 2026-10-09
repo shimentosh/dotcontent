@@ -134,8 +134,16 @@ export function AuthView({ mode }: { mode: "login" | "signup" }) {
               letterSpacing: "-0.02em",
             }}
           >
-            Content OS
+            dotcontent
           </span>
+          <a
+            href="https://dotmirror.com"
+            target="_blank"
+            rel="noreferrer"
+            style={{ fontSize: 12, color: t(0.45), textDecoration: "none" }}
+          >
+            by dotmirror
+          </a>
         </div>
 
         <h1

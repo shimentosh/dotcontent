@@ -16,7 +16,7 @@ import path from "node:path";
  * that was killed — a closed lid, a `taskkill`, a crash — leaves its litter
  * somewhere the next start can find and clear in one line.
  */
-export const TEMP_ROOT = path.join(os.tmpdir(), "contentos-worker");
+export const TEMP_ROOT = path.join(os.tmpdir(), "dotcontent-worker");
 
 /** A directory of this job's own, named so a leftover says which job left it. */
 export async function jobDir(jobId: string, what: string) {

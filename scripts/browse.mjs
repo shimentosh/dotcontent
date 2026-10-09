@@ -75,7 +75,7 @@ async function ensureChrome() {
     );
   }
 
-  const profile = path.join(tmpdir(), "contentos-browse-profile");
+  const profile = path.join(tmpdir(), "dotcontent-browse-profile");
   spawn(
     exe,
     [
@@ -258,7 +258,7 @@ async function main() {
     const sid = await sessionCookie();
     if (sid) {
       await send("Network.setCookie", {
-        name: "contentos_session",
+        name: "dotcontent_session",
         value: sid,
         domain: "localhost",
         path: "/",

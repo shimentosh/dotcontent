@@ -548,7 +548,7 @@ fn client_with(timeout: Duration) -> Result<reqwest::Client, String> {
         // The console records this against the session and shows it in
         // Settings → Team, so a person looking at their own sessions can tell
         // the desktop app from a browser and end the right one.
-        .user_agent(concat!("ContentOS-Desktop/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("dotcontent-desktop/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| format!("This app could not open a connection at all: {e}"))
 }
@@ -626,7 +626,7 @@ fn unreachable(api: &str, e: &reqwest::Error) -> String {
 fn unreadable(api: &str) -> String {
     format!(
         "{api} answered with something this app could not read. That address may not be the \
-         Content OS API — a console address, or a proxy's error page, both look like this."
+         dotcontent API — a console address, or a proxy's error page, both look like this."
     )
 }
 
@@ -716,9 +716,9 @@ mod tests {
     /// must never be the reason `cargo test` is red on a laptop with none:
     ///
     /// ```text
-    /// CONTENTOS_TEST_API=http://localhost:4010 \
-    /// CONTENTOS_TEST_EMAIL=owner@example.com \
-    /// CONTENTOS_TEST_PASSWORD=… \
+    /// DOTCONTENT_TEST_API=http://localhost:4010 \
+    /// DOTCONTENT_TEST_EMAIL=owner@example.com \
+    /// DOTCONTENT_TEST_PASSWORD=… \
     ///   cargo test --manifest-path src-tauri/Cargo.toml -- --nocapture enrols_against
     /// ```
     ///
@@ -727,11 +727,11 @@ mod tests {
     #[test]
     fn signs_in_and_enrols_against_a_real_api() {
         let (Ok(api), Ok(email), Ok(password)) = (
-            std::env::var("CONTENTOS_TEST_API"),
-            std::env::var("CONTENTOS_TEST_EMAIL"),
-            std::env::var("CONTENTOS_TEST_PASSWORD"),
+            std::env::var("DOTCONTENT_TEST_API"),
+            std::env::var("DOTCONTENT_TEST_EMAIL"),
+            std::env::var("DOTCONTENT_TEST_PASSWORD"),
         ) else {
-            println!("skipped: CONTENTOS_TEST_API, _EMAIL and _PASSWORD name no console");
+            println!("skipped: DOTCONTENT_TEST_API, _EMAIL and _PASSWORD name no console");
             return;
         };
 
@@ -780,11 +780,11 @@ mod tests {
              * session sitting in a webview's history.
              *
              * `next` has to be an origin the API's own WEB_ORIGIN names, which
-             * is what CONTENTOS_TEST_CONSOLE is for; its default is the API's
+             * is what DOTCONTENT_TEST_CONSOLE is for; its default is the API's
              * own default, so a throwaway console started with neither set
              * still runs this.
              */
-            let console = std::env::var("CONTENTOS_TEST_CONSOLE")
+            let console = std::env::var("DOTCONTENT_TEST_CONSOLE")
                 .unwrap_or_else(|_| "http://localhost:3333".into());
             let code = handoff(&http, &api, &header)
                 .await

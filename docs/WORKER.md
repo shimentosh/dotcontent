@@ -910,21 +910,21 @@ import `lib/server/tools.ts` by its plain path, which Node's ESM resolver
 otherwise refuses and `tsc` otherwise insists on.
 
 ```
-CONTENTOS_API_URL=http://localhost:4000 \
-CONTENTOS_WORKER_TOKEN=<the token from Settings → Machines> \
+DOTCONTENT_API_URL=http://localhost:4000 \
+DOTCONTENT_WORKER_TOKEN=<the token from Settings → Machines> \
 npm run worker
 ```
 
 | Variable | |
 |---|---|
-| `CONTENTOS_API_URL` | **Required.** The **API** this machine works for — NestJS, on its own hostname (`API_HOST` in `docs/DEPLOYING.md`, `:4000` in a checkout). Not the address of the console you open in a browser; there is no `/api` under Next, so that one 404s everything. |
-| `CONTENTOS_WORKER_TOKEN` | **Required.** Minted in Settings → Machines and shown once, or minted for this machine by the desktop app when somebody signs in there. Either way it is the same 256-bit token and the same row. |
-| `CONTENTOS_WORKER_NAME` | What the machine picker calls it. Defaults to the hostname; "Shakhawat's desktop" reads better than `DESKTOP-7F2K1`. |
-| `CONTENTOS_WORKER_ALLOW_FRAME_READ` | `1` to let Claude's CLI be granted `Read` for frame files **on this machine**. Off by default, and checked in addition to `workers.can_read_frames` — the grant lands on this filesystem, so whoever owns it gets the last word. |
-| `CONTENTOS_WORKER_TOOLS_OFF` | Comma-separated tool ids to switch off here, whatever the probe found. |
-| `CONTENTOS_WORKER_MAX_JOBS` | How many jobs to hold at once. 1, and the server's `max_concurrency` caps it again. |
-| `CONTENTOS_OLLAMA_URL` | Where Ollama is, for the one brain that is an HTTP server rather than a CLI. Defaults to `http://localhost:11434`. |
-| `CONTENTOS_DATA_DIR` | Only used for `cliHome()` — the empty directory the model CLIs are started in. Frames and downloads go to the system temp directory, never here. |
+| `DOTCONTENT_API_URL` | **Required.** The **API** this machine works for — NestJS, on its own hostname (`API_HOST` in `docs/DEPLOYING.md`, `:4000` in a checkout). Not the address of the console you open in a browser; there is no `/api` under Next, so that one 404s everything. |
+| `DOTCONTENT_WORKER_TOKEN` | **Required.** Minted in Settings → Machines and shown once, or minted for this machine by the desktop app when somebody signs in there. Either way it is the same 256-bit token and the same row. |
+| `DOTCONTENT_WORKER_NAME` | What the machine picker calls it. Defaults to the hostname; "Shakhawat's desktop" reads better than `DESKTOP-7F2K1`. |
+| `DOTCONTENT_WORKER_ALLOW_FRAME_READ` | `1` to let Claude's CLI be granted `Read` for frame files **on this machine**. Off by default, and checked in addition to `workers.can_read_frames` — the grant lands on this filesystem, so whoever owns it gets the last word. |
+| `DOTCONTENT_WORKER_TOOLS_OFF` | Comma-separated tool ids to switch off here, whatever the probe found. |
+| `DOTCONTENT_WORKER_MAX_JOBS` | How many jobs to hold at once. 1, and the server's `max_concurrency` caps it again. |
+| `DOTCONTENT_OLLAMA_URL` | Where Ollama is, for the one brain that is an HTTP server rather than a CLI. Defaults to `http://localhost:11434`. |
+| `DOTCONTENT_DATA_DIR` | Only used for `cliHome()` — the empty directory the model CLIs are started in. Frames and downloads go to the system temp directory, never here. |
 
 Neither required variable has a default that could be right: an API URL guessed
 as localhost makes a worker that serves nobody, and a blank token authenticates
@@ -1063,13 +1063,13 @@ because `.gitignore` already ignores that directory; anywhere else and the
 first person to run the installer finds two hundred megabytes of executables in
 `git status`.
 
-`CONTENTOS_TOOLS_DIR` (or `--dir`) puts the folder somewhere else — another
+`DOTCONTENT_TOOLS_DIR` (or `--dir`) puts the folder somewhere else — another
 drive, for the three-gigabyte model. It is read by `lib/server/tools.ts` and
 set for it by `toolsRoot()` in `worker/config.ts`, which resolves it from the
 worker's own file rather than from the working directory, so a sidecar started
-from anywhere still finds its tools. It is deliberately not `CONTENTOS_DATA_DIR`,
+from anywhere still finds its tools. It is deliberately not `DOTCONTENT_DATA_DIR`,
 which still belongs to `cliHome()` and to nothing else.
-`CONTENTOS_WHISPER_MODEL` names one `.bin` outright, for a machine that already
+`DOTCONTENT_WHISPER_MODEL` names one `.bin` outright, for a machine that already
 has a models folder from something else.
 
 **Keeping yt-dlp fresh.** It is the one tool here that goes stale on a schedule
@@ -1193,8 +1193,8 @@ signing in.
 
 | | What it is | Production (`docs/DEPLOYING.md`) | A checkout |
 |---|---|---|---|
-| `CONTENTOS_CONSOLE_URL` | The console — the pages the app opens in its webview. Next. | `https://content.yourcompany.com` (`APP_HOST`) | `http://localhost:3333` |
-| `CONTENTOS_API_URL` | The API — what the worker calls for jobs, and the only one of the two it ever touches. NestJS. | `https://api.content.yourcompany.com` (`API_HOST`) | `http://localhost:4000` |
+| `DOTCONTENT_CONSOLE_URL` | The console — the pages the app opens in its webview. Next. | `https://content.yourcompany.com` (`APP_HOST`) | `http://localhost:3333` |
+| `DOTCONTENT_API_URL` | The API — what the worker calls for jobs, and the only one of the two it ever touches. NestJS. | `https://api.content.yourcompany.com` (`API_HOST`) | `http://localhost:4000` |
 
 **Why two.** `docs/DEPLOYING.md` puts the web app on `APP_HOST` and the API on
 `API_HOST`, on two hostnames under one `COOKIE_DOMAIN`, and the browser calls
@@ -1255,7 +1255,7 @@ to go and do:
 | Signup is closed and there is no account for this person — which is every console that has an owner | The same sentence. It is the same 401, and the invite half is the part that is actually actionable. |
 | The console has **no** accounts at all yet | *There are no accounts on this console yet… The very first account — the owner's — is made on the console itself.* Asked for with `GET /auth/signup` before anything is said, because telling somebody their password is wrong when nobody has made them an account sends them to change a password that was fine. |
 | The API cannot be reached | The address, named, and said to be the **API** — *the server the worker asks for jobs, which is not the console*. The person very often has the console open behind the window, so a sentence about "the server" reads as obviously false. |
-| The API answers, but with something else | *…answered with something this app could not read. That address may not be the Content OS API* — which is what a console address or a proxy's error page in that field actually looks like. |
+| The API answers, but with something else | *…answered with something this app could not read. That address may not be the dotcontent API* — which is what a console address or a proxy's error page in that field actually looks like. |
 | This computer is already enrolled | It is kept: *This computer was already set up as "Shifa", so it kept it rather than adding a second one.* |
 | The API is older than this app | *…signed you in but did not give this app a session to keep.* The one case where everything the person can see says it worked, so it has to say plainly that the fix is on the server. |
 
@@ -1279,7 +1279,7 @@ proof that *that* address is fine.
 
 | The address came from | The row |
 |---|---|
-| The build | The address as text, under *Built in when this copy of Content OS was made*. |
+| The build | The address as text, under *Built in when this copy of dotcontent was made*. |
 | This machine | The address as text, under *Set on this machine*. If the copy was also built with this address and it differs, a line naming the built-in one and a *Go back to it* link — otherwise one typo in an override would hide the correct address with no way back but deleting the file. |
 | The environment | The address as text, under *From CONTENTOS\_CONSOLE\_URL* (or *CONTENTOS\_API\_URL*) *in this window's environment — a development setting, which wins over everything below*. It names the variable it means, because that line exists to say which one has to go before anything saved here takes effect. |
 | Nowhere | The row is not drawn at all. A heading over an empty line says "broken" without saying what to do; the field below, already open, says it. |
@@ -1300,8 +1300,8 @@ set only the first — it keeps its summary but opens itself, and the worker say
 *This copy knows the console but not the API*, so nobody goes to check the
 address that was already right.
 
-The worker is handed exactly two things: `CONTENTOS_WORKER_TOKEN` and
-`CONTENTOS_API_URL`, in its environment — the same two variables the
+The worker is handed exactly two things: `DOTCONTENT_WORKER_TOKEN` and
+`DOTCONTENT_API_URL`, in its environment — the same two variables the
 `npm run worker` line in `docs/DEPLOYING.md` sets by hand, which is the point.
 Never the console's address, which it has no use for. And never a file next to
 the binary and never an argument, which is why `worker/config.ts` reads them
@@ -1326,8 +1326,8 @@ exported wins:
 
 | | |
 |---|---|
-| `CONTENTOS_CONSOLE_URL` | `http://localhost:3333` — the console, which is Next, on the port `start.sh` uses. The window opens this. |
-| `CONTENTOS_API_URL` | `http://localhost:4000` — the API, which is NestJS on its own origin (`lib/api-base.ts`). The worker calls this. |
+| `DOTCONTENT_CONSOLE_URL` | `http://localhost:3333` — the console, which is Next, on the port `start.sh` uses. The window opens this. |
+| `DOTCONTENT_API_URL` | `http://localhost:4000` — the API, which is NestJS on its own origin (`lib/api-base.ts`). The worker calls this. |
 
 It prints both on every start with what each is for beside it, because the two
 lines look nearly identical and exporting one and not the other gives you a
@@ -1349,7 +1349,7 @@ in its own resource directory first — where an installed copy keeps it — and
 then upwards from its own executable, which from `src-tauri/target/debug` is
 the repository. So a debug build runs the files being edited, with whichever
 Node is on PATH, and `npm run worker` in a terminal runs the same command
-against the same files. `CONTENTOS_WORKER_DIR` names the folder when it is
+against the same files. `DOTCONTENT_WORKER_DIR` names the folder when it is
 somewhere else.
 
 The status is in the tray menu and in the setup window, in these words:
@@ -1380,14 +1380,14 @@ all — the Node inside the installer is pinned well above the 22.18 floor.
 
 ```powershell
 # PowerShell. Both, every time — the pair from docs/DEPLOYING.md.
-$env:CONTENTOS_CONSOLE_URL = "https://content.yourcompany.com"       # APP_HOST
-$env:CONTENTOS_API_URL     = "https://api.content.yourcompany.com"   # API_HOST
+$env:DOTCONTENT_CONSOLE_URL = "https://content.yourcompany.com"       # APP_HOST
+$env:DOTCONTENT_API_URL     = "https://api.content.yourcompany.com"   # API_HOST
 npm run desktop:installer
 ```
 
 ```bash
-export CONTENTOS_CONSOLE_URL=https://content.yourcompany.com
-export CONTENTOS_API_URL=https://api.content.yourcompany.com
+export DOTCONTENT_CONSOLE_URL=https://content.yourcompany.com
+export DOTCONTENT_API_URL=https://api.content.yourcompany.com
 npm run desktop:installer
 ```
 
@@ -1444,7 +1444,7 @@ is how a fresh clone gets one. Repeating it is cheap: a file that is already
 there and already matches its digest is reported and left alone.
 
 ```
-src-tauri/target/release/bundle/nsis/Content OS_0.1.0_x64-setup.exe    ~25 MB
+src-tauri/target/release/bundle/nsis/dotcontent_0.1.0_x64-setup.exe    ~25 MB
 ```
 
 **What is inside it**, all of it landing in the install directory beside the
@@ -1494,7 +1494,7 @@ entry is worse than an absent one.
 
 **Where an installed app writes.** Its working directory is inside Program
 Files, where a normal user account cannot create anything, so the app hands the
-worker `CONTENTOS_DATA_DIR` and `CONTENTOS_TOOLS_DIR` under
+worker `DOTCONTENT_DATA_DIR` and `DOTCONTENT_TOOLS_DIR` under
 `%APPDATA%\com.contentos.desktop\`. Without that, `cliHome()` in
 `lib/server/tools.ts` — which does a `mkdirSync` — would fail on the first job,
 on the machine where nobody is reading a terminal. A checkout is deliberately
@@ -1508,7 +1508,7 @@ would make a bug seen here impossible to reproduce there.
 once per file:
 
 ```
-sign.ps1: no certificate configured, so Content OS_0.1.0_x64-setup.exe is unsigned.
+sign.ps1: no certificate configured, so dotcontent_0.1.0_x64-setup.exe is unsigned.
 ```
 
 **That is the call, and it has been made.** This console is an internal tool
@@ -1541,10 +1541,10 @@ binary and the installer, and that script reads:
 
 | | |
 |---|---|
-| `CONTENTOS_SIGN_THUMBPRINT` | the SHA1 thumbprint of a certificate in this user's certificate store. This is the shape a token or HSM certificate takes — the key never leaves it, so there is no file to point at. |
-| `CONTENTOS_SIGN_PFX`, `CONTENTOS_SIGN_PFX_PASSWORD` | …or a `.pfx`, for a certificate that is a file. |
-| `CONTENTOS_SIGN_TIMESTAMP_URL` | an RFC3161 timestamp server. Defaults to DigiCert's. Not optional in practice: without a timestamp every signature stops verifying the day the certificate expires, including on installers already downloaded. |
-| `CONTENTOS_SIGN_TOOL` | `signtool.exe`, when the newest Windows SDK copy is not where the script looks. |
+| `DOTCONTENT_SIGN_THUMBPRINT` | the SHA1 thumbprint of a certificate in this user's certificate store. This is the shape a token or HSM certificate takes — the key never leaves it, so there is no file to point at. |
+| `DOTCONTENT_SIGN_PFX`, `DOTCONTENT_SIGN_PFX_PASSWORD` | …or a `.pfx`, for a certificate that is a file. |
+| `DOTCONTENT_SIGN_TIMESTAMP_URL` | an RFC3161 timestamp server. Defaults to DigiCert's. Not optional in practice: without a timestamp every signature stops verifying the day the certificate expires, including on installers already downloaded. |
+| `DOTCONTENT_SIGN_TOOL` | `signtool.exe`, when the newest Windows SDK copy is not where the script looks. |
 
 With none of them set the script leaves the file alone and exits 0, so a build
 on a machine with no certificate still produces an installer. With one of them
@@ -1589,7 +1589,7 @@ decorative.
 
 What a person does once there is somewhere to publish to:
 
-1. `npx tauri signer generate -w ~/.tauri/contentos.key` — and keep the private
+1. `npx tauri signer generate -w ~/.tauri/dotcontent.key` — and keep the private
    half out of this repository.
 2. Put the public half in `plugins.updater.pubkey` and the URL of a
    `latest.json` in `plugins.updater.endpoints`.

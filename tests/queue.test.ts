@@ -28,7 +28,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const BASE =
   process.env.DATABASE_URL ??
   "postgres://contentos:contentos@localhost:5437/contentos";
-const TEST_DB = "contentos_queue_test";
+const TEST_DB = "dotcontent_queue_test";
 const TEST_URL = BASE.replace(/\/[^/?]+(\?|$)/, `/${TEST_DB}$1`);
 const ADMIN_URL = BASE.replace(/\/[^/?]+(\?|$)/, "/postgres$1");
 

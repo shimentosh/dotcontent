@@ -1,13 +1,13 @@
 {
-  "name": "contentos-api",
+  "name": "dotcontent-api",
   "version": "0.1.0",
   "private": true,
-  "description": "The Content OS backend, as a NestJS service. Shares lib/server with the repo root.",
+  "description": "The dotcontent backend, as a NestJS service. Shares lib/server with the repo root.",
   "scripts": {
-    "dev": "cross-env TS_NODE_TRANSPILE_ONLY=1 CONTENTOS_DATA_DIR=../.data ts-node -r tsconfig-paths/register src/main.ts",
+    "dev": "cross-env TS_NODE_TRANSPILE_ONLY=1 DOTCONTENT_DATA_DIR=../.data ts-node -r tsconfig-paths/register src/main.ts",
     "build": "tsc -p tsconfig.json",
     "start": "cross-env TS_NODE_BASEURL=./dist node -r tsconfig-paths/register dist/api/src/main.js",
-    "start:local": "cross-env TS_NODE_BASEURL=./dist CONTENTOS_DATA_DIR=../.data node -r tsconfig-paths/register dist/api/src/main.js",
+    "start:local": "cross-env TS_NODE_BASEURL=./dist DOTCONTENT_DATA_DIR=../.data node -r tsconfig-paths/register dist/api/src/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

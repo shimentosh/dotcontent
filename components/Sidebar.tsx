@@ -239,7 +239,7 @@ export function Sidebar() {
             letterSpacing: "-0.02em",
           }}
         >
-          Content OS
+          dotcontent
         </div>
         <div
           style={{

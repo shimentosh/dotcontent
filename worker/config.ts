@@ -65,14 +65,14 @@ const here = path.dirname(fileURLToPath(import.meta.url));
  * It goes into the environment because `lib/server/tools.ts` cannot work this
  * out for itself: that file is also type-checked by `api/tsconfig.json` as
  * CommonJS, where `import.meta.url` is a compile error (TS1343), so it reads
- * `CONTENTOS_TOOLS_DIR` and this is what sets it. An explicit value always
+ * `DOTCONTENT_TOOLS_DIR` and this is what sets it. An explicit value always
  * wins, which is how somebody puts a three-gigabyte whisper model on the drive
  * that has room for it.
  *
  * `.data/tools`, not `.tools`, and for one flat reason: `.gitignore` already
  * ignores `.data/`. A tools folder anywhere else would put two hundred
  * megabytes of downloaded executables into `git status` for every teammate who
- * ran the installer. It is deliberately NOT under `CONTENTOS_DATA_DIR` — that
+ * ran the installer. It is deliberately NOT under `DOTCONTENT_DATA_DIR` — that
  * variable belongs to `cliHome()` and to nothing else, and quietly widening it
  * would make the sentence in docs/WORKER.md about it false.
  *
@@ -81,9 +81,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
  * `spawn` of a fresh node.
  */
 export function toolsRoot() {
-  const set = (process.env.CONTENTOS_TOOLS_DIR ?? "").trim();
+  const set = (process.env.DOTCONTENT_TOOLS_DIR ?? "").trim();
   const dir = set ? path.resolve(set) : path.resolve(here, "..", ".data", "tools");
-  process.env.CONTENTOS_TOOLS_DIR = dir;
+  process.env.DOTCONTENT_TOOLS_DIR = dir;
   return dir;
 }
 
@@ -110,30 +110,30 @@ const flag = (value: string | undefined, fallback = false) =>
     : /^(1|true|yes|on)$/i.test(value.trim());
 
 export function loadConfig(): Config {
-  const base = (process.env.CONTENTOS_API_URL ?? "").trim().replace(/\/+$/, "");
-  const token = (process.env.CONTENTOS_WORKER_TOKEN ?? "").trim();
+  const base = (process.env.DOTCONTENT_API_URL ?? "").trim().replace(/\/+$/, "");
+  const token = (process.env.DOTCONTENT_WORKER_TOKEN ?? "").trim();
 
   if (!base) {
     throw new ConfigError(
-      "Set CONTENTOS_API_URL to the console this machine works for, for example http://localhost:4000.",
+      "Set DOTCONTENT_API_URL to the console this machine works for, for example http://localhost:4000.",
     );
   }
   if (!/^https?:\/\//i.test(base)) {
     throw new ConfigError(
-      `CONTENTOS_API_URL is "${base}", which is not a URL — it has to start with http:// or https://.`,
+      `DOTCONTENT_API_URL is "${base}", which is not a URL — it has to start with http:// or https://.`,
     );
   }
   if (!token) {
     throw new ConfigError(
-      "Set CONTENTOS_WORKER_TOKEN to the token from Settings → Machines. It is shown once, when the machine is added.",
+      "Set DOTCONTENT_WORKER_TOKEN to the token from Settings → Machines. It is shown once, when the machine is added.",
     );
   }
 
-  const asked = Number(process.env.CONTENTOS_WORKER_MAX_JOBS ?? "1");
+  const asked = Number(process.env.DOTCONTENT_WORKER_MAX_JOBS ?? "1");
   return {
     base,
     token,
-    name: (process.env.CONTENTOS_WORKER_NAME ?? "").trim() || os.hostname(),
+    name: (process.env.DOTCONTENT_WORKER_NAME ?? "").trim() || os.hostname(),
     version: version(),
     /*
      * One at a time unless the owner says otherwise, and capped low.
@@ -145,15 +145,15 @@ export function loadConfig(): Config {
      * two wins.
      */
     maxJobs: Number.isFinite(asked) ? Math.max(1, Math.min(4, Math.trunc(asked))) : 1,
-    allowFrameRead: flag(process.env.CONTENTOS_WORKER_ALLOW_FRAME_READ, false),
+    allowFrameRead: flag(process.env.DOTCONTENT_WORKER_ALLOW_FRAME_READ, false),
     toolsOff: new Set(
-      (process.env.CONTENTOS_WORKER_TOOLS_OFF ?? "")
+      (process.env.DOTCONTENT_WORKER_TOOLS_OFF ?? "")
         .split(",")
         .map((id) => id.trim())
         .filter(Boolean),
     ),
     ollamaUrl:
-      (process.env.CONTENTOS_OLLAMA_URL ?? "").trim().replace(/\/+$/, "") ||
+      (process.env.DOTCONTENT_OLLAMA_URL ?? "").trim().replace(/\/+$/, "") ||
       "http://localhost:11434",
     // Called for its side effect as much as for its value: from here on,
     // every probe in this process — and in the executor processes it spawns —

@@ -55,12 +55,12 @@ import {
 /**
  * Where downloads live.
  *
- * Off CONTENTOS_DATA_DIR rather than the working directory: the API is its
+ * Off DOTCONTENT_DATA_DIR rather than the working directory: the API is its
  * own process now, started from api/, and "./.data" from there is a second
  * folder the web app has never heard of. One root, named once, for both.
  */
 export const DATA_ROOT = path.resolve(
-  process.env.CONTENTOS_DATA_DIR ?? path.join(process.cwd(), ".data"),
+  process.env.DOTCONTENT_DATA_DIR ?? path.join(process.cwd(), ".data"),
 );
 const DATA = path.join(DATA_ROOT, "sources");
 

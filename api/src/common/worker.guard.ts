@@ -13,7 +13,7 @@ import { PUBLIC } from "./session.guard";
 import { touchWorker, workerByToken, type Worker } from "@/lib/server/repos/workers";
 
 /** Marks a handler as belonging to the worker protocol rather than the console. */
-export const WORKER_ROUTE = "contentos:worker";
+export const WORKER_ROUTE = "dotcontent:worker";
 
 /** The request, once the guard has run: the machine rides on it. */
 export type WorkerRequest = Request & {

@@ -67,7 +67,7 @@ fn open(app: &AppHandle, entry: &str) {
     };
 
     if WebviewWindowBuilder::new(app, "console", WebviewUrl::External(url))
-        .title("Content OS")
+        .title("dotcontent")
         .inner_size(1280.0, 860.0)
         .build()
         .is_err()
@@ -87,7 +87,7 @@ pub fn setup(app: &AppHandle) {
     // webview that is not there at all, which the installer's own bootstrapper
     // is what prevents.
     let _ = WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("setup.html".into()))
-        .title("Content OS — this machine")
+        .title("dotcontent — this machine")
         // Sized for the sign-in, which on a first run is the whole screen: a
         // mark, a heading, two fields and a button. It used to be 780 tall for
         // three stacked panels, and everything but the sign-in is behind one

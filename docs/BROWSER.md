@@ -30,7 +30,7 @@ Pages are behind `proxy.ts` — Next 16's name for what used to be
 Data comes from the NestJS API on `http://localhost:4000`, whose guard answers
 `401 {"error":"Sign in first"}` to anything without a live session. `browse.mjs`
 borrows the newest non-expired row from the `sessions` table and sets it as the
-`contentos_session` cookie on `localhost`, which the browser sends to both ports,
+`dotcontent_session` cookie on `localhost`, which the browser sends to both ports,
 so there is no password to type. If it prints "no live session in the database",
 someone has to sign in through the UI once.
 

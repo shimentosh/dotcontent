@@ -20,7 +20,7 @@ type Params = { params: Promise<{ topic: string }> };
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { topic } = await params;
   const name = topic.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-  return { title: `${name} · Content OS` };
+  return { title: `${name} · dotcontent` };
 }
 
 export default async function Page({ params }: Params) {

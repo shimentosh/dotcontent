@@ -21,7 +21,7 @@ import {
   setSection,
   type Run,
 } from "@/lib/server/repos/runs";
-import type { Pack, PackSectionDef } from "@/lib/packs/enbn-website";
+import type { Pack, PackSectionDef } from "@/lib/packs/website-shorts";
 
 /**
  * Starting runs, and getting their sections written.

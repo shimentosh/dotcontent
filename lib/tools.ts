@@ -50,7 +50,7 @@ export const TOOLS: Tool[] = [
       "Give it a reel — a link or a file — and it watches the frames you pick, reads the transcript, works out which website it is about, and hands back topic ideas.",
     takes: "A YouTube or reel URL, or a video file",
     returns: "The site it is about, what it shows, and topic ideas to save",
-    feeds: "Topics · and the ENBN template that runs on them",
+    feeds: "Topics · and the template that runs on them",
     runtime: "a few minutes, most of it the download",
     category: "Video",
   },
@@ -131,7 +131,7 @@ function keywordsFrom(subject: string, name: string, depth: ResearchDepth) {
 /**
  * Builds the brief.
  *
- * Nothing here is fetched — Content OS has no crawler wired up yet — so the tool
+ * Nothing here is fetched — dotcontent has no crawler wired up yet — so the tool
  * deliberately returns the *shape* of the research rather than invented facts:
  * what to confirm, which angles to test, where to look. Every claim starts
  * unconfirmed, which is also how the pack rules want it.

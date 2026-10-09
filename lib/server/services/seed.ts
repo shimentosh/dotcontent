@@ -169,21 +169,21 @@ async function importFileRuns(workspaceId: string) {
  * everyone who can clone the repository — including on the day it is the
  * password to a production console. There is nothing to fall back to.
  *
- *   CONTENTOS_OWNER_EMAIL=you@yourcompany.com
- *   CONTENTOS_OWNER_PASSWORD=…
+ *   DOTCONTENT_OWNER_EMAIL=you@yourcompany.com
+ *   DOTCONTENT_OWNER_PASSWORD=…
  *
  * Both or neither. Setting one is a mistake somebody made halfway, and
  * guessing which half they meant is worse than saying so and carrying on:
  * the console still starts, and signing up still works.
  */
 async function seedOwner() {
-  const email = (process.env.CONTENTOS_OWNER_EMAIL ?? "").trim();
-  const password = process.env.CONTENTOS_OWNER_PASSWORD ?? "";
+  const email = (process.env.DOTCONTENT_OWNER_EMAIL ?? "").trim();
+  const password = process.env.DOTCONTENT_OWNER_PASSWORD ?? "";
 
   if (!email && !password) return;
   if (!email || !password) {
     console.warn(
-      "Skipping the first account: CONTENTOS_OWNER_EMAIL and CONTENTOS_OWNER_PASSWORD go together, and only one is set. Sign up on the console instead.",
+      "Skipping the first account: DOTCONTENT_OWNER_EMAIL and DOTCONTENT_OWNER_PASSWORD go together, and only one is set. Sign up on the console instead.",
     );
     return;
   }

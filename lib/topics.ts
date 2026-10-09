@@ -195,8 +195,8 @@ const SEED_CONTEXT: Record<string, string> = {
  * in the design, so a seeded shelf pointed at a recipe nothing could execute.
  */
 const SEED_PACK: Record<string, string> = {
-  AI: "ENBN Website Content",
-  Business: "ENBN Website Content",
+  AI: "Website Shorts",
+  Business: "Website Shorts",
 };
 
 /** The series a fresh session starts with, lifted from the design data. */

@@ -20,12 +20,14 @@
  * change exists to prevent.
  *
  * Anything already exported wins, so pointing a debug build at a staging
- * deployment is `CONTENTOS_CONSOLE_URL=… CONTENTOS_API_URL=… npm run desktop`
+ * deployment is `DOTCONTENT_CONSOLE_URL=… DOTCONTENT_API_URL=… npm run desktop`
  * and nothing else. Export one and not the other and you get a hybrid — a
  * window on staging beside a worker on localhost — so they are printed on
  * every start, with what each is for beside it, rather than being assumed.
  */
 
+// CONTENTOS_* still works: copied to DOTCONTENT_* before anything reads it.
+import "../../lib/legacy-env.ts";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,13 +51,13 @@ const CONSOLE = "http://localhost:3333";
 const API = "http://localhost:4000";
 
 const env = { ...process.env };
-env.CONTENTOS_CONSOLE_URL = (env.CONTENTOS_CONSOLE_URL ?? "").trim() || CONSOLE;
-env.CONTENTOS_API_URL = (env.CONTENTOS_API_URL ?? "").trim() || API;
+env.DOTCONTENT_CONSOLE_URL = (env.DOTCONTENT_CONSOLE_URL ?? "").trim() || CONSOLE;
+env.DOTCONTENT_API_URL = (env.DOTCONTENT_API_URL ?? "").trim() || API;
 
 // Named, not just listed. The two lines look nearly identical, and the whole
 // class of mistake here is reading one for the other.
-console.log(`CONTENTOS_CONSOLE_URL  ${env.CONTENTOS_CONSOLE_URL}   the window opens this (Next)`);
-console.log(`CONTENTOS_API_URL      ${env.CONTENTOS_API_URL}   the worker calls this (NestJS)`);
+console.log(`DOTCONTENT_CONSOLE_URL  ${env.DOTCONTENT_CONSOLE_URL}   the window opens this (Next)`);
+console.log(`DOTCONTENT_API_URL      ${env.DOTCONTENT_API_URL}   the worker calls this (NestJS)`);
 console.log("");
 
 /*

@@ -124,7 +124,7 @@ export function MachinesPanel() {
             textWrap: "pretty",
           }}
         >
-          A machine is one desktop running the Content OS worker, under one
+          A machine is one desktop running the dotcontent worker, under one
           person&rsquo;s login, with their own model CLI and their own GPU. Name
           it here, paste the token it gives you into the desktop app on that
           computer, and it starts asking for work. Nothing runs on the server

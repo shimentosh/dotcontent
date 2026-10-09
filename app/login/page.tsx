@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 
 import { AuthView } from "@/components/views/AuthView";
 
-export const metadata: Metadata = { title: "Sign in · Content OS" };
+export const metadata: Metadata = { title: "Sign in · dotcontent" };
 
 export default function Page() {
   // useSearchParams needs a boundary, and the fallback is one frame of the

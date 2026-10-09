@@ -45,7 +45,7 @@ describe("interpolate", () => {
 
 describe("slug", () => {
   it("lowercases and hyphenates", () => {
-    expect(slug("ENBN Website Content")).toBe("enbn-website-content");
+    expect(slug("Website Shorts")).toBe("website-shorts");
   });
 
   it("survives a URL as a name — the common case on this console", () => {

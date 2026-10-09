@@ -33,7 +33,7 @@ itself: a token. Tokens are minted in **Settings → Machines**, and only their
 sha256 is kept, so nothing can look one up afterwards. Put it in `.env`:
 
 ```bash
-CONTENTOS_WORKER_TOKEN=wrk_…
+DOTCONTENT_WORKER_TOKEN=wrk_…
 ```
 
 Without it `start.sh` says so in one line and carries on — the console still
@@ -45,7 +45,7 @@ picks up an edit under `worker/` on restart, not on the next job. To run it
 by hand instead, in its own terminal:
 
 ```bash
-CONTENTOS_API_URL=http://localhost:4000 CONTENTOS_WORKER_TOKEN=<token> npm run worker
+DOTCONTENT_API_URL=http://localhost:4000 DOTCONTENT_WORKER_TOKEN=<token> npm run worker
 ```
 
 The **desktop app is not a service and `start.sh` does not start it**. It is

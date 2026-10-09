@@ -2,8 +2,8 @@
  * `npm run desktop:installer` — the two build steps, and the two questions the
  * build must not skip.
  *
- * The app is compiled with **two** addresses, from `CONTENTOS_CONSOLE_URL` and
- * `CONTENTOS_API_URL` (see `built_in` in `src-tauri/src/settings.rs`). They are
+ * The app is compiled with **two** addresses, from `DOTCONTENT_CONSOLE_URL` and
+ * `DOTCONTENT_API_URL` (see `built_in` in `src-tauri/src/settings.rs`). They are
  * two because the deployment is two: `docs/DEPLOYING.md` puts the web app on
  * `APP_HOST` and the NestJS API on `API_HOST`, the browser calls the API
  * cross-origin, and there is no `/api` under Next. The console is what the
@@ -18,7 +18,7 @@
  * downstream complains, and the cost lands on every teammate individually,
  * weeks later, as a support question. An installer with a console and no API
  * is the *quietest* version of it: the window opens, the person sees their
- * team's Content OS, and only the worker is dead.
+ * team's dotcontent, and only the worker is dead.
  *
  * **A warning, not a refusal**, and the reasoning is worth keeping:
  *
@@ -43,6 +43,8 @@
  *   npm run desktop:installer                 # extra arguments are passed to `tauri build`
  */
 
+// CONTENTOS_* still works: copied to DOTCONTENT_* before anything reads it.
+import "../../lib/legacy-env.ts";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -59,14 +61,14 @@ const RULE = "─".repeat(72);
  */
 const ADDRESSES = [
   {
-    name: "CONTENTOS_CONSOLE_URL",
+    name: "DOTCONTENT_CONSOLE_URL",
     what: "the console — the pages the app opens",
-    example: "https://contentos.yourteam.com",
+    example: "https://dotcontent.yourteam.com",
   },
   {
-    name: "CONTENTOS_API_URL",
+    name: "DOTCONTENT_API_URL",
     what: "the API — the server every worker calls for jobs",
-    example: "https://api.contentos.yourteam.com",
+    example: "https://api.dotcontent.yourteam.com",
   },
 ];
 
@@ -81,7 +83,7 @@ const COLUMN = Math.max(...ADDRESSES.map((a) => a.name.length));
  * accept something the app would then reject.
  *
  * One function for both, named by whichever it was given, because a message
- * that said `CONTENTOS_CONSOLE_URL` about the API value would send somebody to
+ * that said `DOTCONTENT_CONSOLE_URL` about the API value would send somebody to
  * correct a variable that was already right.
  */
 function address(spec, raw) {
@@ -144,12 +146,12 @@ ${lines}
   other: docs/DEPLOYING.md puts the web app on APP_HOST and the NestJS
   API on API_HOST, and says they may be anywhere. Set both:
 
-    PowerShell   $env:CONTENTOS_CONSOLE_URL = "https://contentos.yourteam.com"
-                 $env:CONTENTOS_API_URL = "https://api.contentos.yourteam.com"
+    PowerShell   $env:DOTCONTENT_CONSOLE_URL = "https://dotcontent.yourteam.com"
+                 $env:DOTCONTENT_API_URL = "https://api.dotcontent.yourteam.com"
                  npm run desktop:installer
 
-    bash         export CONTENTOS_CONSOLE_URL=https://contentos.yourteam.com
-                 export CONTENTOS_API_URL=https://api.contentos.yourteam.com
+    bash         export DOTCONTENT_CONSOLE_URL=https://dotcontent.yourteam.com
+                 export DOTCONTENT_API_URL=https://api.dotcontent.yourteam.com
                  npm run desktop:installer
 
   Building anyway — an installer that asks still works.

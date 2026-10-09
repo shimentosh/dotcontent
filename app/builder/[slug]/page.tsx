@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { BuilderView } from "@/components/views/BuilderView";
 
-export const metadata: Metadata = { title: "Edit Template · Content OS" };
+export const metadata: Metadata = { title: "Edit Template · dotcontent" };
 
 /**
  * One template's builder per URL.

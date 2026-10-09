@@ -1,7 +1,7 @@
 /**
  * Reading a page or a feed off the open web.
  *
- * Content OS had no crawler — `lib/tools.ts` said so in a comment — so a series
+ * dotcontent had no crawler — `lib/tools.ts` said so in a comment — so a series
  * could only ever be about the four words you typed into its brief. This is
  * the smallest thing that fixes that: fetch a URL, work out whether it is a
  * feed or a page, and turn either into a list of headlines and some readable

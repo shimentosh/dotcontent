@@ -146,7 +146,7 @@ export async function callBrain(
     }
     if (!cfg.allowFrameRead) {
       throw new Refusal(
-        "Claude can read the frames, but this worker is not allowed to open files: set CONTENTOS_WORKER_ALLOW_FRAME_READ=1 on this machine and restart it.",
+        "Claude can read the frames, but this worker is not allowed to open files: set DOTCONTENT_WORKER_ALLOW_FRAME_READ=1 on this machine and restart it.",
       );
     }
   }
@@ -195,7 +195,7 @@ async function toolFor(cfg: Config, def: BrainDef) {
   }
   if (cfg.toolsOff.has(id)) {
     throw new Refusal(
-      `${id} is switched off on this machine (CONTENTOS_WORKER_TOOLS_OFF), so it must not be used to write.`,
+      `${id} is switched off on this machine (DOTCONTENT_WORKER_TOOLS_OFF), so it must not be used to write.`,
     );
   }
   return status;

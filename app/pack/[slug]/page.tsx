@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { PackDetailView } from "@/components/views/PackDetailView";
 
-export const metadata: Metadata = { title: "Template · Content OS" };
+export const metadata: Metadata = { title: "Template · dotcontent" };
 
 /**
  * One pack per URL.

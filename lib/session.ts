@@ -5,4 +5,4 @@
  * Edge runtime: importing it from the auth module drags node:crypto and the
  * Postgres pool in with it, which the Edge runtime cannot load at all.
  */
-export const SESSION_COOKIE = "contentos_session";
+export const SESSION_COOKIE = "dotcontent_session";

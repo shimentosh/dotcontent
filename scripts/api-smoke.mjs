@@ -62,13 +62,13 @@ async function check(label, path, init, expect) {
 }
 
 const sid = await session();
-const cookie = sid ? { cookie: `contentos_session=${sid}` } : null;
+const cookie = sid ? { cookie: `dotcontent_session=${sid}` } : null;
 
 console.log(`API ${API}   web origin ${WEB}${sid ? "" : "   (no session — signed-in checks skipped)"}\n`);
 
 await check("public: auth/me", "/auth/me", {}, 200);
 await check("refused: no cookie", "/packs", {}, 401);
-await check("refused: forged cookie", "/packs", { headers: { cookie: "contentos_session=forged" } }, 401);
+await check("refused: forged cookie", "/packs", { headers: { cookie: "dotcontent_session=forged" } }, 401);
 if (cookie) {
   await check("signed in: packs", "/packs", { headers: cookie }, 200);
   await check("signed in: workspaces", "/workspaces", { headers: cookie }, 200);

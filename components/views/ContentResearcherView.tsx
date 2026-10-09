@@ -87,7 +87,7 @@ function parseAt(text: string) {
  * an empty form. Per browser, deliberately; it is a cursor, not a fact about
  * the workspace.
  */
-const LAST = "contentos.researcher.last";
+const LAST = "dotcontent.researcher.last";
 
 const remember = (id: string) => {
   try {

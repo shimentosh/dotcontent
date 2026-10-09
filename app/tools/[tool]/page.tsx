@@ -21,7 +21,7 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { tool } = await params;
   const found = findTool(tool);
-  return { title: `${found ? found.name : "Tool"} · Content OS` };
+  return { title: `${found ? found.name : "Tool"} · dotcontent` };
 }
 
 export default async function Page({ params }: Params) {

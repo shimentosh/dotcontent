@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 
 import { AuthView } from "@/components/views/AuthView";
 
-export const metadata: Metadata = { title: "Claim this console · Content OS" };
+export const metadata: Metadata = { title: "Claim this console · dotcontent" };
 
 export default function Page() {
   return (

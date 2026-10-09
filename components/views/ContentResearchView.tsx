@@ -503,7 +503,7 @@ export function ContentResearchView() {
             >
               <AlertIcon size={13} stroke="currentColor" style={{ flex: "none", marginTop: 1 }} />
               <span>
-                Nothing below is confirmed. Content OS has no crawler wired up
+                Nothing below is confirmed. dotcontent has no crawler wired up
                 yet, so this is the shape of the research — what to check, where
                 to look — not fetched facts.
               </span>

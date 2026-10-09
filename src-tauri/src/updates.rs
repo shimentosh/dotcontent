@@ -1,7 +1,7 @@
 //! Updating the app itself — wired, and switched off until somebody points it
 //! at a server.
 //!
-//! Everything a teammate sees in Content OS is served by the console, so the
+//! Everything a teammate sees in dotcontent is served by the console, so the
 //! usual reason to update a desktop app does not apply: a template change or a
 //! bug fix in the UI reaches every machine the moment the server is deployed.
 //! What is in the installer is the shell around it — the worker, the runtime
@@ -84,7 +84,7 @@ pub fn check(app: &AppHandle) {
             ),
             Ok(Some(update)) => {
                 let version = update.version.clone();
-                tray::updates_say(&app, &format!("Downloading Content OS {version}…"));
+                tray::updates_say(&app, &format!("Downloading dotcontent {version}…"));
 
                 /*
                  * The worker goes first, and it has to.
@@ -100,7 +100,7 @@ pub fn check(app: &AppHandle) {
                 app.state::<Worker>().stop(&app);
 
                 match update.download_and_install(|_, _| {}, || {}).await {
-                    Ok(()) => tray::updates_say(&app, &format!("Installing Content OS {version}…")),
+                    Ok(()) => tray::updates_say(&app, &format!("Installing dotcontent {version}…")),
                     Err(e) => {
                         tray::updates_say(&app, &format!("Update to {version} failed: {e}"));
                         // The worker was stopped for an install that did not

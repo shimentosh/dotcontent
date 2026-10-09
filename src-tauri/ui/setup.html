@@ -2,11 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Content OS — this machine</title>
+    <title>dotcontent — this machine</title>
     <!--
       The one screen this app draws itself.
 
-      Everything else in Content OS is served by the team's console and shown in
+      Everything else in dotcontent is served by the team's console and shown in
       a webview, deliberately: a second copy of the UI here would be a second
       thing to keep in step, and it would be the copy nobody remembered to
       update. But this machine has to be set up before there IS a console to
@@ -265,7 +265,7 @@
     -->
     <div class="brand">
       <span class="mark" aria-hidden="true"></span>
-      <span class="wordmark">Content OS</span>
+      <span class="wordmark">dotcontent</span>
     </div>
 
     <h1 id="title">Sign in</h1>
@@ -299,7 +299,7 @@
         <label for="email">Email</label>
         <input id="email" type="email" spellcheck="false" autocomplete="off" placeholder="you@yourteam.com" />
         <label for="password">Password</label>
-        <input id="password" type="password" placeholder="Your Content OS password" />
+        <input id="password" type="password" placeholder="Your dotcontent password" />
         <div class="row">
           <button class="primary" id="sign-in">Sign in</button>
         </div>
@@ -361,18 +361,18 @@
         <summary>Use different addresses on this machine</summary>
 
         <label for="console-url">Console address</label>
-        <input id="console-url" type="url" spellcheck="false" placeholder="https://contentos.yourteam.com" />
+        <input id="console-url" type="url" spellcheck="false" placeholder="https://dotcontent.yourteam.com" />
         <p class="hint" id="console-url-hint"></p>
         <p class="hint built-in" id="console-built-in" hidden>
-          This copy of Content OS was built with <code id="console-built-in-url"></code>.
+          This copy of dotcontent was built with <code id="console-built-in-url"></code>.
           <button type="button" class="link" id="console-use-built-in">Go back to it</button>
         </p>
 
         <label for="api-url">API address</label>
-        <input id="api-url" type="url" spellcheck="false" placeholder="https://api.contentos.yourteam.com" />
+        <input id="api-url" type="url" spellcheck="false" placeholder="https://api.dotcontent.yourteam.com" />
         <p class="hint" id="api-url-hint"></p>
         <p class="hint built-in" id="api-built-in" hidden>
-          This copy of Content OS was built with <code id="api-built-in-url"></code>.
+          This copy of dotcontent was built with <code id="api-built-in-url"></code>.
           <button type="button" class="link" id="api-use-built-in">Go back to it</button>
         </p>
       </details>
@@ -513,7 +513,7 @@
           words: "consoleSourceWords",
           builtIn: "builtInConsoleUrl",
           keep: "This machine only. Leave it blank to keep the console address above.",
-          ask: "Where your team's Content OS is. Ask whoever set up the server.",
+          ask: "Where your team's dotcontent is. Ask whoever set up the server.",
         },
         {
           key: "api",

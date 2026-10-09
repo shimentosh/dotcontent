@@ -18,7 +18,9 @@ import { fromDraft } from "@/lib/packs-client";
  * sections in it.
  */
 
-export const TRANSFER_KIND = "contentos.template";
+export const TRANSFER_KIND = "dotcontent.template";
+/** What files exported before the app was called dotcontent say. Still read. */
+const LEGACY_TRANSFER_KIND = "contentos.template";
 export const TRANSFER_VERSION = 1;
 
 export type TemplateFile = {
@@ -78,7 +80,7 @@ export function toFile(pack: Pack): TemplateFile {
   };
 }
 
-/** `ENBN Website Content` → `enbn-website-content.template.json` */
+/** `Website Shorts` → `website-shorts.template.json` */
 export const fileNameFor = (name: string) =>
   `${slug(name) || "template"}.template.json`;
 
@@ -99,14 +101,14 @@ const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
 export function fromFile(raw: unknown) {
   const file = (raw ?? {}) as Partial<TemplateFile>;
 
-  if (file.kind !== TRANSFER_KIND) {
+  if (file.kind !== TRANSFER_KIND && String(file.kind) !== LEGACY_TRANSFER_KIND) {
     throw new TransferError(
-      "That file is not a Content OS template — it should start with a “kind” of contentos.template.",
+      "That file is not a dotcontent template — it should start with a “kind” of dotcontent.template.",
     );
   }
   if (Number(file.version) > TRANSFER_VERSION) {
     throw new TransferError(
-      `That file was written by a newer version of Content OS (v${file.version}). Update this one first.`,
+      `That file was written by a newer version of dotcontent (v${file.version}). Update this one first.`,
     );
   }
 

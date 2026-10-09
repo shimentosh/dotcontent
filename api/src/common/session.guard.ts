@@ -19,7 +19,7 @@ import {
 export { SESSION_SCHEME, sessionFromHeader };
 
 /** Marks a handler reachable without a session — the sign-in routes. */
-export const PUBLIC = "contentos:public";
+export const PUBLIC = "dotcontent:public";
 export const Public = () => SetMetadata(PUBLIC, true);
 
 /** The request, once the guard has run: the user rides on it. */

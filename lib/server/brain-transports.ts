@@ -154,7 +154,7 @@ Read nothing else on this machine — these files and nothing beside them.`
    * the brand voice — and on Windows a command line that long is cut off
    * without a word of warning. So the fixed script format, deep in the rules,
    * never reached the model. The scripts that came out right did so because
-   * the CLI, started in the repo, had read lib/packs/enbn-website.ts itself
+   * the CLI, started in the repo, had read lib/packs/website-shorts.ts itself
    * and found the format there; move it to an empty directory and the format
    * vanished. `--append-system-prompt-file` carries the whole thing, whatever
    * its length, and the file lives in the CLI's own empty directory, which is
@@ -226,7 +226,7 @@ export function scrubPreamble(text: string) {
  */
 export async function viaCodexCli(def: BrainDef, req: WriteRequest, tool?: CliSpawn) {
   const cli = spawnOf(def, tool);
-  const file = path.join(os.tmpdir(), `contentos-codex-${Date.now().toString(36)}.txt`);
+  const file = path.join(os.tmpdir(), `dotcontent-codex-${Date.now().toString(36)}.txt`);
   /*
    * Frames are attachments here, not files to go and open.
    *
@@ -320,7 +320,7 @@ ${frames.map((frame, i) => `${i + 1}. @${frame}`).join("\n")}`
  *
  * The address is the caller's to supply and never this module's to find: the
  * server reads the `ollama-url` secret, and a worker uses its own
- * `CONTENTOS_OLLAMA_URL`, because a console setting about one host means
+ * `DOTCONTENT_OLLAMA_URL`, because a console setting about one host means
  * nothing on somebody else's laptop and the host that matters is whichever one
  * that laptop can reach. Whoever passes it strips the trailing slash — a
  * stored `http://box:11434/` joined with `/api/chat` makes a double slash,

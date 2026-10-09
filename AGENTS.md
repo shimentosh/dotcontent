@@ -13,6 +13,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 Written so a session does not have to rediscover the same things by grepping
 and clicking. Read the one that matches the job.
 
+- **`docs/HOW-IT-WORKS.md`** — the long tour that used to be the README: the
+  data model, sign-in, keys, templates and video ingest.
 - **`docs/ARCHITECTURE.md`** — what lives where, the routes, the two data flows,
   and the vocabulary (the UI says "Template" where the code says `pack`, and
   "Machine" where it says `worker`).
