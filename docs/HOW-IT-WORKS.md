@@ -218,10 +218,10 @@ meant the server — the only thing that could ever spend one — never saw a ke
 
 ### Packs
 
-Every pack is a row. The shipped one — Website Shorts, tuned against real
-output: twelve sections, their dependency arrows and their instructions — is
+Every pack is a row. The shipped ones — seven example templates, from an SEO
+blog post to a launch campaign (see [TEMPLATES.md](TEMPLATES.md)) — are
 **seeded into the table on first run**, so from then
-on it is an ordinary pack: rename it, rewrite a section, delete it. Packs
+on each is an ordinary pack: rename it, rewrite a section, delete it. Packs
 written in the builder are the same kind of thing and run through the same
 engine. Every save bumps the version.
 

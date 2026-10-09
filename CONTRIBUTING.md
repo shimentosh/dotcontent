@@ -1,7 +1,8 @@
 # Contributing to dotcontent
 
-Thanks for helping. dotcontent is an open-source AI content generator for
-short-form video. Bug reports, fixes, new templates and docs are all welcome.
+Thanks for helping. dotcontent is an open-source AI content studio: templates
+that turn a topic into blog posts, social posts, emails, scripts and more. Bug
+reports, fixes, new templates and docs are all welcome.
 
 ## Ways to help
 
