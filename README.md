@@ -1,341 +1,295 @@
-# Content OS
+<div align="center">
 
-A Next.js implementation of the `meshclip.dc.html` design canvas — a content
-production dashboard where **topics** feed **packs**, packs run to produce
-**sections**, and every section leaves an **artifact** behind.
+<a href="https://github.com/shimentosh/dotcontent"><img src="docs/assets/social-preview.png" alt="dotcontent, the open-source AI content generator for short-form video: scripts, captions, hooks, hashtags and YouTube SEO" width="100%"></a>
+
+# dotcontent
+
+### The open-source AI content generator for Reels, YouTube Shorts and TikTok
+
+Turn one topic, website or video into a complete short-form content package:
+**scripts, on-screen captions, hooks, social captions, hashtags and YouTube SEO**,
+written in your brand voice by Claude, ChatGPT, Gemini or a local Ollama model.
+Self-hosted, team-ready, MIT licensed.
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-0057fc.svg)](LICENSE)
+[![Node.js 24](https://img.shields.io/badge/node-24-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16-000000.svg?logo=next.js&logoColor=white)](https://nextjs.org)
+[![NestJS](https://img.shields.io/badge/NestJS-API-e0234e.svg?logo=nestjs&logoColor=white)](https://nestjs.com)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-4bb07a.svg)](CONTRIBUTING.md)
+[![GitHub stars](https://img.shields.io/github/stars/shimentosh/dotcontent?style=social)](https://github.com/shimentosh/dotcontent/stargazers)
+
+[**Quick start**](#quick-start) · [**Features**](#features) · [**Screenshots**](#screenshots) · [**How it works**](#how-it-works) · [**FAQ**](#faq) · [**Docs**](#documentation)
+
+Built by [**dotmirror**](https://dotmirror.com)
+
+</div>
+
+---
+
+## What is dotcontent?
+
+**dotcontent** is a free, open-source, self-hosted app for producing short-form
+video content with AI. You describe your content once, as a **template**: the
+rules it follows and the sections it is made of. Then every **topic** becomes
+a full set of ready-to-post copy in one click. A Reel, a YouTube Short or a
+TikTok gets its script, captions, hook options, hashtags, titles and
+description together, and every piece matches the same brand voice.
+
+It is made for creators, social media managers and small content teams who
+publish every day and are tired of pasting the same prompt into a chat window
+twelve times.
+
+## Features
+
+### ✍️ One click, a whole content package
+A template is a set of sections that run in order, and each one can read the
+sections written before it. The template that ships, **Website Shorts**, writes
+12 sections from a single website:
+
+- an English and a Bangla **video script**
+- **on-screen captions** and 10 spoken **hooks**
+- 6 + 6 **social media captions**, with picks for Instagram, TikTok, Facebook and YouTube Shorts
+- **hashtag sets**
+- **YouTube SEO**: titles, a long description and tags
+- a **CTA keyword** for comment-to-DM funnels
+
+### 🧠 Use the AI you already pay for: Claude, ChatGPT, Gemini or Ollama
+Sections are written by the `claude` (Claude Code), `codex` (ChatGPT) or
+`gemini` CLI that is already signed in on your computer. They are billed to
+your existing subscription, not per token. An Anthropic API key or a fully
+local [Ollama](https://ollama.com) model works too. Each workspace picks its
+own model.
+
+### 🎬 Video to script
+Paste a Reel, Short or TikTok link. The worker downloads it with **yt-dlp**,
+cuts stills with **ffmpeg** and transcribes the audio with **whisper.cpp**, so
+the first sections are written from what the video actually shows and says.
+
+### 🗣️ Brand voice per workspace
+One workspace per brand or client, each with its own voice, languages, goal and
+model. Every section is written under the workspace voice, then the
+template's purpose, then its rules. Multilingual output works out of the box:
+the shipped template writes **English and Bangla (Banglish)**, and a template
+can write in any language the model can.
+
+### 🧩 Visual template builder
+Build your own templates in three steps, without writing code: drag in
+sections (script, hook, caption, title, description, CTA, research, plan),
+write each one's instruction, set the order and dependencies. Export a
+template as a `.template.json` file and import it on another console.
+
+### 👥 Built for teams
+The console runs on one server. The writing happens on teammates' own laptops,
+which **claim jobs from a queue**. Close the tab and the run carries on. If a
+laptop goes to sleep, another machine picks its job up. Invite teammates by link,
+and manage machines and tokens in Settings. An optional **Windows desktop app**
+bundles the console window and a worker.
+
+### 🔒 Self-hosted and private
+Your topics, prompts and content stay in your own Postgres. API keys are
+encrypted with AES-256-GCM. Deploy with Docker Compose (Traefik and Let's
+Encrypt included) or [Dokploy](https://dokploy.com).
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/home.png" alt="dotcontent home dashboard showing the current brand workspace, topics, templates and content that needs review"><br><sub><b>Home:</b> the current workspace and what is waiting on you</sub></td>
+    <td width="50%"><img src="docs/assets/template.png" alt="Website Shorts template with 12 AI sections: website research, hashtags, English script, captions and YouTube SEO"><br><sub><b>Template:</b> 12 sections, each with its own instruction and model tier</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/assets/builder.png" alt="Drag-and-drop AI template builder for scripts, hooks, captions, titles, descriptions and CTAs"><br><sub><b>Builder:</b> drag in sections and write their instructions</sub></td>
+    <td width="50%"><img src="docs/assets/content.png" alt="Content list of topics grouped by series and template, each ready to run"><br><sub><b>Content:</b> topics grouped by series, one click to run</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/assets/integrations.png" alt="Integrations page listing Claude, ChatGPT, Gemini and Ollama and how each model is reached"><br><sub><b>Integrations:</b> Claude, ChatGPT, Gemini and Ollama, each probed live on the machines that run them</sub></td>
+  </tr>
+</table>
+
+## Quick start
+
+You need:
+
+| | |
+|---|---|
+| **Node.js 24** | Check with `node --version`. The worker runs TypeScript directly, which needs Node 22.18 or newer. |
+| **Docker** | For Postgres. Docker Desktop on Windows and macOS. |
+| **A model** | At least one of: [Claude Code](https://claude.com/claude-code) (`claude`), the Codex CLI (`codex`) or the Gemini CLI (`gemini`), signed in. Or an Anthropic API key, or [Ollama](https://ollama.com). |
+| **bash** | `start.sh` is a bash script. On Windows, use Git Bash. |
 
 ```bash
-npm run db:up         # Postgres in Docker, on 5437
-./start.sh            # the NestJS API on :4000 and the Next dev server on :3333
-./start.sh prod       # production builds of both, then serve both
-PORT=3400 ./start.sh  # any other web port (API_PORT for the API's)
+git clone https://github.com/shimentosh/dotcontent.git
+cd dotcontent
+cp .env.example .env
+./start.sh
 ```
 
-`./start.sh` brings the database up itself and says so if it cannot — every
-screen reads through Postgres, and without it the app serves a blank shell.
-`npm run db:up` does the same on its own and waits for the container to report
-healthy.
+`start.sh` installs the dependencies, starts Postgres in Docker (port 5437),
+the API on <http://localhost:4000> and the console on <http://localhost:3333>.
 
-If Docker was not running when the app started, start it and reload: the app
-notices and recovers without a restart, and until it does every screen says
-which of the two is missing rather than failing silently. `npm run db:down` stops it; the data lives in a named volume and
-survives that. `npm run db:shell` opens `psql` inside the container.
+1. **Open <http://localhost:3333> and sign up.** The first account becomes the
+   owner, and after that sign-up closes. Invite the rest of the team from
+   Settings.
+2. **Add this computer as a machine.** Go to **Settings → Machines**, add one and
+   copy the token (it is shown once). Put it in `.env`:
 
-The first visit lands on **/signup**, which claims the console. After that
-signup closes and everything is behind **/login**.
+   ```bash
+   DOTCONTENT_WORKER_TOKEN=wrk_…
+   ```
 
-Or use the npm scripts directly (`npm run dev`, `npm run build`, `npm start`),
-which default to port 3000.
+   Stop `start.sh` (Ctrl+C) and run it again. It starts a worker as well.
+3. **Check your model.** **Integrations** shows each CLI and tool the machine
+   can reach. **Test** sends a real one-line prompt.
+4. **Optional, for video:** `npm run worker:setup` downloads pinned,
+   checksummed yt-dlp, ffmpeg and whisper.cpp into `.data/tools`. It does not
+   touch your PATH or need admin rights.
+5. **Create.** Set your brand voice in **Workspaces**, add a topic in
+   **Content**, and press **Run**.
 
-## Stack
+The empty database is seeded with sample workspaces so every screen has
+something in it. Delete them whenever you like.
 
-**Frontend:** Next.js 16 (App Router, Turbopack) · React 19 · TypeScript.
-**Backend:** NestJS 12 in `api/`, its own process on port 4000, sharing
-`lib/server` (the repos, the run driver, the ingest) with the root. The
-browser calls it directly at `NEXT_PUBLIC_API_URL`; there is no `app/api`. No CSS framework:
-the design is expressed in inline styles, matching the source canvas one
-declaration at a time, with shared fragments in [lib/theme.ts](lib/theme.ts).
-Fonts are self-hosted through `next/font` (Inter, Inter Tight, JetBrains Mono,
-and Noto Sans Bengali for the Bangla script screens).
-
-## Routes
-
-| Path | Screen |
-| --- | --- |
-| `/` | Home — the current workspace, what is half-written, what needs you |
-| `/workspaces` | Every brand, its voice, languages and goal |
-| `/content` | Every topic and everything produced, grouped by pack |
-| `/content/[topic]` | One document |
-| `/packs` | Pack library — the shipped pack and anything written here |
-| `/pack/[slug]` | One pack: its real sections, its rules, what it asks for |
-| `/builder` | Writing a new template — saving moves it to its own URL |
-| `/builder/[slug]` | Editing that template |
-| `/runs/[id]` | A run as it happens, section by section |
-| `/login`, `/signup` | Sign in; claim the console (open only while it has no owner) |
-| `/integrations` | What this machine can actually reach, probed live |
-| `/tools` | This workspace's bench, grouped by category |
-| `/tools/manage` | Every tool: category, on/off, which workspaces it stands in |
-| `/tools/[tool]` | One tool — Content Research, or the video researcher |
-| `/settings` | Preferences, keys, team and the account |
-
-Three overlays render above any route: the **Run Pack** sheet, the **Add
-Section** sheet, and the **command palette** (`⌘K` / `Ctrl+K`, `Esc` to close).
-
-## Layout
+## How it works
 
 ```
-app/                 one page per route; pages are server components
-components/
-  AppShell.tsx       background layers, sidebar, header, overlays
-  Sidebar.tsx        workspace switcher, nav, credits card
-  ProjectSwitcher.tsx  the workspace menu at the top of the sidebar
-  Header.tsx         search + create menu
-  views/             one component per screen
-  overlays/          run-setup, add-section, command palette
-  ui/                Hov (hover/press styles), Popover, Icons
-  tools/             the interactive pieces of a tool's screen (FramePicker)
-lib/
-  data.ts            what is left of the design's strings and numbers
-  store.tsx          client state, hydrated from the API and written back
-  use-*.ts           a screen's data logic as a hook (content list, run document)
-  slug.ts            the one rule for turning a name into part of a URL
-  packs-client.ts    the pack API, and the brief <-> runtime translation
-  packs-transfer.ts  a template as a file: export, import, validation
-  runs-client.ts     the run API
-  tools-client.ts    the tool bench, uploads, and the researcher
-  theme.ts           fonts, colors, repeated style fragments
-  config.ts          advancedNav / runSpeed, the canvas's two props
-  server/            everything that touches the database (see below)
-tests/               vitest, pure functions only — `npm run check`
-design/              the imported source canvas, for reference
+ browser ──► console (Next.js, :3333)
+    │
+    └──────► API (NestJS, :4000) ──► Postgres
+                ▲
+                │  HTTPS: claim a job, post the result
+                │
+           worker(s) on your team's machines
+           └─ runs claude / codex / gemini / ollama, yt-dlp, ffmpeg, whisper
 ```
 
-## The backend
+1. **Press Run.** The API queues one job for each section whose inputs are ready.
+2. **A worker claims it.** The worker runs the model CLI on its own machine,
+   with that machine's login, and posts the finished text back.
+3. **The next sections are queued.** A section that depends on the script waits
+   for the script. A failed section costs only that section, and you can
+   rewrite it on its own.
+4. **Read, edit, copy, download.** The reader groups sections into the
+   deliverables the template declares: the script, the captions, the SEO.
 
-Postgres, in a container `docker-compose.yml` describes. Everything a person
-creates is a row: workspaces, the series under them, the topics on those, the
-packs written in the builder, and every run with its sections. Nothing that
-matters lives in React state any more.
+The screens say *Template* where the code says `pack`, and *Machine* where it
+says `worker`.
 
-```
-docker-compose.yml            Postgres 17 on 5437, one named volume
-proxy.ts                      the front door: pages need a session cookie
-api/src/main.ts               the NestJS service: CORS, cookies, migrate + seed
-api/src/common/               SessionGuard (global, closed by default), errors
-api/src/<feature>/            one controller per feature, over lib/server
-lib/server/db/schema.ts       the schema, as an ordered list of migrations
-lib/server/db/client.ts       the pool, `q` / `one` / `tx`, and `ready()`
-lib/server/auth.ts            scrypt passwords, session rows, `requireUser`
-lib/server/tools.ts           what is installed, by running it
-lib/server/brains.ts          the four models, each over a CLI or an API
-lib/server/repos/             rows in, objects out — workspaces, series, packs,
-                              runs, sources, settings
-lib/server/services/          the rules that are not the database's job:
-                              runs, the yt-dlp / ffmpeg / whisper ingest, the
-                              researcher that reads frames
-lib/packs/enbn-website.ts     the shipped pack: rules, 12 sections, instructions
-lib/server/prompt.ts          system = voice + rules, user = source + inputs + deps
-```
+## Use cases
 
-### Signing in
+- **Faceless and tutorial channels:** one tool or website a day, turned into a
+  Short, a Reel and a TikTok with matching captions.
+- **Agencies and social media managers:** one workspace per client, each with
+  its own brand voice and approval flow.
+- **Bilingual creators:** English and Bangla (or any other pair) written as
+  natural adaptations, not word-for-word translations.
+- **Teams on AI subscriptions:** share the work across everyone's Claude,
+  ChatGPT or Gemini plan instead of paying per token.
 
-One owner, made by the first signup, after which the console closes to new
-accounts. This is one operator's own tool: every workspace, pack and run in the
-database belongs to whoever is at the keyboard, so a second account would
-either see all of it (which is not a second account) or none of it (which is
-not this app).
+## Deploying for a team
 
-Passwords are scrypt, salted per user, compared in constant time. A session is
-a row plus an httpOnly cookie rather than a JWT — the whole point of a session
-you can end is that deleting the row logs someone out, and a token that
-verifies itself cannot be taken away. Changing your password drops every other
-session. Middleware checks only that the cookie is *present*, because it runs
-before the database is reachable; every route calls `requireUser` itself.
+`docker-compose.prod.yml` runs Postgres, the API, the console and Traefik with
+Let's Encrypt. `docker-compose.dokploy.yml` is the same app for Dokploy. Start
+from `.env.production.example`. A server has no signed-in CLI, so either set
+`ANTHROPIC_API_KEY` or leave the writing to your teammates' machines.
+[docs/DEPLOYING.md](docs/DEPLOYING.md) has every step.
 
-### The model
+## FAQ
 
-```
-Workspace ──< Series ──< Topic
-    │                      │
-    └──────< Run >─────────┘   (a run may have no topic; a topic may have many runs)
-              │
-              ├──< RunSection    queued → writing → done | failed
-              │
-              └──> Source        a reel: metadata, stills, transcript
-```
+<details>
+<summary><b>Is dotcontent free?</b></summary>
 
-A series owns its part numbering, and can switch it off. Some shelves are a run
-where "part 7" is half the title; others are a pile of ideas with no order, and
-numbering one of those promises a part 6 nobody wrote. The switch is on the New
-series dialog and on the Brief.
+Yes. dotcontent is open source under the MIT License: free to use, change and
+self-host, including commercially. You pay only for the model you choose, and
+with a CLI you already subscribe to there is no extra cost.
+</details>
 
-`next_part` is a column claimed under a row lock, so two people adding topics at
-once cannot both take part 7 — and **it only ever goes forward**, enforced by a
-trigger rather than trusted to the code that writes it. Delete part 6 and the
-next thing you write is part 7: the gap is honest, it says something was there.
-Switching numbering off leaves the counter where it is, so turning it back on
-carries on rather than reissuing a number that has already been used.
+<details>
+<summary><b>Do I need an OpenAI or Anthropic API key?</b></summary>
 
-Deleting a topic does not delete what it produced — `runs.topic_id` nulls rather
-than cascades, because the content outlives the idea that started it.
+No. By default sections are written by the `claude`, `codex` or `gemini` CLI
+signed in on a teammate's computer. An API key is optional. It is useful on a
+server, or as a fallback when no machine is awake, and that fallback is off
+until you turn it on.
+</details>
 
-### What this machine can do
+<details>
+<summary><b>Can I run it fully offline with a local model?</b></summary>
 
-Nothing on the Integrations page is a setting someone left on — every row is
-the result of running the thing.
+Yes. Point a workspace at [Ollama](https://ollama.com) and the whole pipeline,
+including whisper.cpp transcription, runs on your own hardware.
+</details>
 
-- **Models.** Claude, ChatGPT and Gemini each reach their own headless CLI
-  (`claude -p`, `codex exec`, `gemini -p`), already signed in under this
-  machine's login, or their HTTP API when a key is stored. Ollama is a request
-  to `localhost:11434`. Whichever is chosen writes every section.
+<details>
+<summary><b>Which languages does it support?</b></summary>
 
-  A CLI is told which model to use only when there is a reason to: codex
-  rejects a model string its build does not know, and those names move between
-  releases, so it is left to pick what the signed-in account can reach. The
-  Integrations row shows which model will actually be asked for.
-- **Local tools.** `yt-dlp`, `ffmpeg`, `ffprobe`, `whisper` — probed with
-  `--version`, reported with the version they gave, and shown with the one
-  command that installs them when they are missing.
-- **Test.** A version number proves a command exists and nothing more: a CLI
-  can be installed, on PATH, even logged in, and still fail because it is a
-  release behind or has no auth method configured. Test sends a one-line prompt
-  and reports what came back, including the tool's own error and the command
-  that fixes it.
+Templates are plain instructions, so a template can write in any language the
+model writes well. The template that ships writes English and Bangla.
+Each workspace records which languages it publishes in.
+</details>
 
-Probes are cached for a minute; **Check again** skips the cache.
+<details>
+<summary><b>Can I write my own templates?</b></summary>
 
-### Source video
+Yes. Use the builder to start from scratch, or open the shipped template and
+change it. Templates can be exported and imported as JSON files, so a team can
+share them.
+</details>
 
-A pack's first two sections are written for someone who has watched the reel —
-they ask for on-screen text, a browser address bar, a domain spoken aloud.
-Paste a link into the run sheet and yt-dlp fetches it, ffmpeg cuts eight evenly
-spaced stills, and Whisper transcribes the audio. All three go into the run's
-prompt above the inputs.
+<details>
+<summary><b>Does it post to Instagram, TikTok or YouTube for me?</b></summary>
 
-Each step degrades rather than fails: no Whisper means no transcript, and a
-platform that refuses the media still yields the title, uploader, duration and
-caption. The download is tried three ways — one progressive file, then separate
-streams, then again with the cookies from a signed-in browser — and what is
-stored on failure is yt-dlp's own reason, not "could not download".
+Not yet. dotcontent writes the content (scripts, captions, hashtags and SEO)
+and you publish it with the tools you already use.
+</details>
 
-### Settings and keys
+## Documentation
 
-Preferences are rows, written as you change them, and each one does what it
-says: **quality** sets what a new run starts on, **reduce motion** stamps the
-document so the aurora stops drifting, **approve automatically** decides
-whether a run carries on by itself or waits with a *Write next* button, and the
-**tool switches** are checked before yt-dlp, ffmpeg or Whisper is allowed to
-run. Anything that could not be made to mean something was removed rather than
-left as a control that remembers your answer and ignores it.
+| | |
+|---|---|
+| [How it works](docs/HOW-IT-WORKS.md) | The longer tour: the data model, sign-in, keys, templates and video ingest |
+| [Architecture](docs/ARCHITECTURE.md) | What lives where, the routes, and the data flows |
+| [Worker](docs/WORKER.md) | The job queue, leases, machine tokens and the desktop app |
+| [Developing](docs/DEVELOPING.md) | Running it, checking it, and the traps |
+| [Deploying](docs/DEPLOYING.md) | Putting it on a server for a team (Docker Compose or Dokploy) |
+| [Decisions](docs/DECISIONS.md) | Calls already made, and why |
 
-Languages are per workspace, not global: two brands in this database publish in
-different ones.
-
-Service and model API keys are encrypted with AES-256-GCM before they are
-stored and only ever come back masked; set `CONTENTOS_SECRET` in `.env` to
-control the encryption key. They used to live in a `Map` in the browser, which
-meant the server — the only thing that could ever spend one — never saw a key.
-
-### Packs
-
-Every pack is a row. The shipped one — ENBN Website Content, ported verbatim
-from the working system: twelve sections, their dependency arrows and their
-original instructions — is **seeded into the table on first run**, so from then
-on it is an ordinary pack: rename it, rewrite a section, delete it. Packs
-written in the builder are the same kind of thing and run through the same
-engine. Every save bumps the version.
-
-What a seeded pack has extra is **Restore**, which puts it back exactly as it
-ships — brief included. That is what makes editing a tuned twelve-section
-prompt a reasonable offer rather than a trap.
-
-Every section's system prompt is three layers, in this order:
+## Project layout
 
 ```
-the workspace's brand voice   who is watching, and how they are spoken to
-the pack's purpose            what this pack is trying to achieve
-the pack's rules              how it writes
+app/          one page per route (Next.js App Router)
+components/   the screens; components/ui is the UI kit every screen is built from
+lib/          client state, theme and templates; lib/server touches the database
+api/          the NestJS API, sharing lib/server with the root
+worker/       the sidecar on a teammate's machine. It has no database.
+src-tauri/    the optional Windows desktop app: the console plus a worker
+tests/        vitest, pure functions only
+docs/         the design, written down
 ```
 
-A pack has no audience of its own. Who is watching is the same for every pack a
-workspace runs, and the workspace already carries it — two places to write down
-one fact is one place to write it down wrong, and the pack's copy is the stale
-one the moment a second brand runs the same pack.
+## Contributing
 
-The purpose sits above the rules because it is the reason they exist: a rule
-read without knowing what it is for gets followed literally. Keep it short — it
-rides on every section, so anything repeating the rules is paid for once per
-section and settles nothing.
+Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md),
+then run the checks before you open a pull request:
 
-The builder is **three steps**: the pack, its sections, and that optional brief.
-It was eight, four of which were one textarea each and two of which were a
-preview and a Save button.
+```bash
+npm run check   # typecheck, lint, tests, and the API's typecheck
+```
 
-Which slugs have been introduced is recorded, not inferred from the table being
-empty: a pack you delete stays deleted, and a pack added in a future release
-still arrives. A run resolves the **row**, so editing a pack changes what it
-writes next; the code definition is only the fallback for a slug whose row is
-gone, so an old run can still be rewritten.
+Please follow the [Code of Conduct](CODE_OF_CONDUCT.md). Report security
+problems privately, as described in [SECURITY.md](SECURITY.md).
 
-### Running one
+### Upgrading from Content OS
 
-**No API key needed.** The brain shells out to the `claude` CLI already signed
-in on a machine, billed to that subscription rather than per token. Which model
-writes is a property of the **workspace**, not of the console.
+dotcontent used to be called *Content OS*. Every environment variable is now
+`DOTCONTENT_*`. The old `CONTENTOS_*` names are still read when the new one is
+not set, so existing `.env` files and deployments keep working. The Postgres
+role, database and volume keep the name `contentos`, because renaming stored
+data needs a migration, not a find-and-replace.
 
-Pressing Run does not write anything itself. `advance()` looks at the template's
-dependency waves, and for every section whose inputs are written it queues a
-**job**; a worker — a process on somebody's own computer, with the CLIs and the
-GPU on it — claims the job, writes the section, and posts it back, at which
-point `advance()` runs again. So a run survives the tab closing, the API
-restarting, and the machine that started it going to sleep: another one picks
-it up. `docs/WORKER.md` is the whole design.
+## License
 
-A failure still costs one section rather than the run, and rewriting one is
-still a single request. The server checks the dependencies rather than trusting
-the caller — asking for the Bangla script first would otherwise hand the model
-an empty "already generated" block, and it would invent the English script it
-was meant to be translating.
+[MIT](LICENSE) © [dotmirror](https://dotmirror.com)
 
-`ANTHROPIC_API_KEY` still works and is **off by default**. A workspace can turn
-on API fallback, which lets the server write a section when no machine is
-awake; it is opt-in because a fallback that fired by itself would spend money
-at the moment nobody was watching.
-
-### First run
-
-The first request to an empty database seeds the sample workspaces, and imports
-anything under `.data/runs/*.json` — real generated content from before the
-move to a database. The check is "are there any workspaces", not a flag, so
-deleting your last one does not bring the samples back on the next reload.
-
-### Reading what was written
-
-One page reads content, whichever way you arrive at it.
-`/content/[topic]` names a topic and shows its newest run; `/runs/[id]` names
-one run exactly. Both render the same reader: sections grouped into the
-deliverables the template declares, a rail of topics beside them and a rail of
-sections after, a rewrite and a copy on each one, Download for the lot.
-
-While a run still has sections to write, the header offers **Write next** and
-**Write the rest** (or **Pause** while it is going), and the rows fill in as
-they land — the preference on Settings decides whether it starts by itself.
-Once it is finished the header is **Redo all** again.
-
-These were two screens: this one, and a flat list of twelve rows for the same
-twelve sections. Watching a run happen and reading it afterwards turned out to
-be one page at two moments, and keeping them apart meant the better layout was
-the one you could not watch.
-
-A topic **nobody has written for yet** gets the same shell rather than an
-apology: the rail, the sections its template will write, and the button that
-writes them — which opens the run sheet already pointed at that topic. It used
-to be a centred box saying "nothing written" with a link back to the list,
-which is a dead end at the exact moment you had arrived wanting to do
-something.
-
-### Nothing is invented
-
-There is no sample data left in the app. What was removed:
-
-- **`/artifact`, `/voice`, `/run`, `/section/[n]`** — four screens that only
-  linked to each other, none of which touched the database. `/run` animated a
-  fixed list on a timer and called it a pack run.
-- **The twenty-four sample documents** — fifteen invented sections each, under
-  a template that does not exist. They filled the Content list so completely
-  that you could not see what had actually been written.
-- **`SEED_PACKS`** — a library of nine templates built from constants, most of
-  them with blank prompts.
-- **The activity feed** — four fixed lines about work nobody did, behind a bell
-  with a live blue dot on it. It reports finished sections now.
-- **The command palette's template actions** — run a template that does not
-  exist, regenerate a section on a deleted page, generate a voice from nothing.
-- **`lib/server/db.ts`** — the pre-Postgres JSON store, orphaned since the
-  migration.
-
-What is left in [lib/data.ts](lib/data.ts) is seed data for an empty database
-(the sample workspaces and shelves, written once on first run and yours to
-delete) and genuine constants: status palettes, language names, section-type
-groups. [lib/content-docs.ts](lib/content-docs.ts) is now the document *shape*
-and its helpers, with no documents in it — a run becomes one through
-[lib/run-doc.ts](lib/run-doc.ts).
+<div align="center">
+<sub>If dotcontent saves you time, a ⭐ on GitHub helps other creators find it.</sub>
+</div>

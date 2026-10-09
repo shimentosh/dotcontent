@@ -1,0 +1,50 @@
+name: Bug report
+description: Something does not work the way the docs say it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. A security problem goes in the **Security** tab, not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+      placeholder: |
+        1. Opened Content and pressed Run on a topic
+        2. Expected the first section to start writing
+        3. It stayed "queued", and the page said no machine was awake
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Error message or log
+      description: Paste the exact text, from the page, the terminal or the worker.
+      render: text
+  - type: dropdown
+    id: part
+    attributes:
+      label: Which part
+      options:
+        - Console (the web app)
+        - API
+        - Worker / machine
+        - Desktop app
+        - Deploying (Docker / Dokploy)
+        - Docs
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      description: Which model writes your sections, and how it is reached.
+      placeholder: claude CLI / codex CLI / gemini CLI / Anthropic API key / Ollama
+  - type: input
+    id: env
+    attributes:
+      label: System
+      placeholder: Windows 11, Node 24.4, Docker Desktop 4.40

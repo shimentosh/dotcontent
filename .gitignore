@@ -35,6 +35,7 @@ yarn-error.log*
 # …except the template a fresh clone copies from — DEPLOYING.md tells you to
 # `cp` it, which needs it to be in the repo.
 !.env.production.example
+!.env.example
 
 # vercel
 .vercel
