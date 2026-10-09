@@ -48,6 +48,15 @@ export function runInputsFor(topic: RunTopic, workspaceName: string) {
   const cleaned = topic.name.trim().replace(/^["'<\s]+|["'>,\s]+$/g, "");
   const isUrl = /^https?:\/\//i.test(cleaned);
   return {
+    /*
+     * The topic itself.
+     *
+     * It was never sent. A topic that was a link reached the prompt as
+     * `website_url`, and every other topic reached it as nothing at all: a
+     * template asked to review "Kindle Paperwhite" or to write a blog post on
+     * a keyword was handed the series name and left to guess the subject.
+     */
+    topic: cleaned,
     series: topic.seriesName || workspaceName,
     website_url: isUrl ? cleaned : "",
     /*

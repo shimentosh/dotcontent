@@ -21,6 +21,11 @@ export type RunInput = {
 
 export const RUN_INPUTS: readonly RunInput[] = [
   {
+    key: "topic",
+    label: "Topic",
+    from: "The topic's own name: a product, a keyword, an idea, or a link.",
+  },
+  {
     key: "series",
     label: "Series",
     from: "The name of the shelf the topic stands on.",

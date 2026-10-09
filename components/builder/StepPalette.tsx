@@ -12,13 +12,14 @@ import {
   HookIcon,
   PlanIcon,
   PlusIcon,
+  ReplyIcon,
   ResearchIcon,
   ScriptIcon,
   SearchIcon,
   TitleIcon,
   ToolsIcon,
 } from "@/components/ui/Icons";
-import { HashGlyph } from "@/components/ui/DocIcons";
+import { DocGlyph, HashGlyph, SocialGlyph, SpeechGlyph } from "@/components/ui/DocIcons";
 
 /** What you drag out of the palette, as the canvas reads it. */
 export const STEP_DRAG = "application/x-dotcontent-step";
@@ -41,12 +42,11 @@ const LOOK: Record<string, { icon: ReactNode; bg: string; fg: string }> = {
   CTA: { icon: <CtaIcon size={14} stroke="currentColor" />, bg: "rgba(209,101,107,0.16)", fg: "#d1656b" },
   Research: { icon: <ResearchIcon size={14} stroke="currentColor" />, bg: "rgba(96,182,168,0.18)", fg: "#63bdad" },
   Plan: { icon: <PlanIcon size={14} stroke="currentColor" />, bg: "rgba(126,136,158,0.2)", fg: "#9aa6bd" },
-  // Not one of the palette's steps — the palette only offers what
-  // SECTION_TYPE_GROUPS lists. It is here because the table is a name → look
-  // lookup that anything can ask, and the shipped templates all carry a
-  // hashtag section; without it the one row that is plainly tags wore the
-  // fallback wrench.
-  Tags: { icon: <HashGlyph size={14} stroke="currentColor" />, bg: "rgba(129,140,224,0.18)", fg: "#8f9ae8" },
+  Hashtags: { icon: <HashGlyph size={14} stroke="currentColor" />, bg: "rgba(129,140,224,0.18)", fg: "#8f9ae8" },
+  Article: { icon: <DocGlyph size={14} stroke="currentColor" />, bg: "rgba(0,87,252,0.12)", fg: "#8ab4ff" },
+  "Social post": { icon: <SocialGlyph size={14} stroke="currentColor" />, bg: "rgba(214,120,168,0.16)", fg: "#de8ab6" },
+  Email: { icon: <SpeechGlyph size={14} stroke="currentColor" />, bg: "rgba(110,190,220,0.16)", fg: "#7cc4de" },
+  "First comment": { icon: <ReplyIcon size={14} stroke="currentColor" />, bg: "rgba(160,190,90,0.16)", fg: "#a9c46a" },
 };
 
 const FALLBACK = {

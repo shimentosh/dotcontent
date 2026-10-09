@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { QUALITIES } from "@/lib/data";
-import { PACKS } from "@/lib/packs/website-shorts";
+import { PACKS } from "@/lib/packs/catalog";
 import { startTopicRun } from "@/lib/start-run";
 import {
   fetchSourceToEnd,
@@ -64,7 +64,14 @@ export function RunSetupSheet() {
    * behind them — picking one and pressing Run reached the API with a slug it
    * had never heard of. A picker should only offer what exists.
    */
-  const [pack, setPack] = useState(PACKS[0]?.slug ?? "");
+  /*
+   * What was picked here, and for which topic.
+   *
+   * Held with the topic it was picked for, so a choice made for one topic is
+   * not carried silently onto the next one the sheet opens on. Without a pick,
+   * the template is the one the topic's series runs, worked out below.
+   */
+  const [picked, setPicked] = useState<{ topic: string; slug: string } | null>(null);
 
   useEffect(() => {
     if (!packOpen) return;
@@ -78,8 +85,6 @@ export function RunSetupSheet() {
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
   }, [packOpen]);
-
-  const chosenPack = PACKS.find((x) => x.slug === pack);
 
   const topicRef = useRef<HTMLDivElement>(null);
   const [topicOpen, setTopicOpen] = useState(false);
@@ -107,6 +112,8 @@ export function RunSetupSheet() {
       // headlines a feed was read for. Same shape either way.
       seriesContext: themesOf(c).join("\n"),
       context: x.context,
+      // The template the shelf runs, by name, as the series stores it.
+      pack: c.pack,
     })),
   );
 
@@ -123,6 +130,24 @@ export function RunSetupSheet() {
   const topic = runTopicName ?? allTopics[0]?.name ?? "";
 
   const chosenTopic = allTopics.find((x) => x.name === topic);
+
+  /*
+   * The template this run goes through.
+   *
+   * It always opened on the first one, which was right while there was only
+   * one. With a library, a topic on a reviews shelf would open on the website
+   * template and run it unless somebody noticed the name in the header. The
+   * topic's series already says which template it runs; that is the default,
+   * and a pick in this sheet overrides it for this topic.
+   */
+  const fromSeries = PACKS.find((x) => x.name === chosenTopic?.pack)?.slug;
+  const pack =
+    (picked?.topic === topic ? picked.slug : undefined) ??
+    fromSeries ??
+    PACKS[0]?.slug ??
+    "";
+  const setPack = (slug: string) => setPicked({ topic, slug });
+  const chosenPack = PACKS.find((x) => x.slug === pack);
 
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState("");

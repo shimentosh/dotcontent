@@ -1,11 +1,11 @@
 import { id, iso, one, q } from "@/lib/server/db/client";
 import { slug } from "@/lib/slug";
 import { getRaw, setRaw } from "@/lib/server/repos/settings";
-import {
-  PACKS as BUILTIN,
-  type Pack as RuntimePack,
-  type PackInput,
-  type PackSectionDef,
+import { PACKS as BUILTIN } from "@/lib/packs/catalog";
+import type {
+  Pack as RuntimePack,
+  PackInput,
+  PackSectionDef,
 } from "@/lib/packs/website-shorts";
 
 /**

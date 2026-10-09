@@ -366,9 +366,14 @@ export const QUALITIES = ["Fast", "Balanced", "Deep"];
  * wait for a person. A control that cannot work is worse than a missing one:
  * you build a template around it before finding out.
  *
- * What is left is nine, each producing something you can picture, and the
+ * What was left was nine, each producing something you can picture, and the
  * custom box at the bottom for everything else — which is where the three
  * "FROM LIBRARY" entries always went anyway.
+ *
+ * Those nine were all short-form video. The app writes any content, so five
+ * were added that are just as concrete in other formats: Article, Social post,
+ * Email, First comment and Hashtags. Each is a thing you would paste somewhere,
+ * which is the test a new one still has to pass.
  */
 export type SectionTypeDef = {
   name: string;
@@ -383,11 +388,21 @@ export const SECTION_TYPE_GROUPS: {
   {
     name: "WHAT GETS WRITTEN",
     items: [
+      { name: "Article", makes: "A blog post or long-form piece, with headings" },
+      { name: "Social post", makes: "A status or post for Facebook, LinkedIn or X" },
       { name: "Script", makes: "What gets said, start to finish" },
-      { name: "Hook", makes: "The opening line that stops the scroll" },
       { name: "Caption", makes: "Short text on screen, or under the post" },
+      { name: "Email", makes: "A newsletter or email, subject line to sign-off" },
+      { name: "First comment", makes: "The comment you post under your own post" },
+    ],
+  },
+  {
+    name: "WHAT GETS IT SEEN",
+    items: [
+      { name: "Hook", makes: "The opening line that stops the scroll" },
       { name: "Title", makes: "A headline someone would actually search for" },
       { name: "Description", makes: "The longer blurb underneath it" },
+      { name: "Hashtags", makes: "Tags sized for each platform" },
       { name: "CTA", makes: "The one thing you want them to do next" },
     ],
   },

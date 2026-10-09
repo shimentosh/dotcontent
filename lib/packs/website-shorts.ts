@@ -197,8 +197,3 @@ TikTok.`,
   {"key":"hashtags","label":"Hashtags","sections":["hashtags"]},
   ],
 };
-
-/** Every pack the app can run. One, for now, and it is the real one. */
-export const PACKS: Pack[] = [WEBSITE_SHORTS];
-
-export const findPack = (slug: string) => PACKS.find((p) => p.slug === slug);

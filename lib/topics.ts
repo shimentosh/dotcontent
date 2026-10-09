@@ -199,6 +199,98 @@ const SEED_PACK: Record<string, string> = {
   Business: "Website Shorts",
 };
 
+/**
+ * A shelf for each sample workspace, each running a different example template.
+ *
+ * Every sample workspace used to start empty apart from the first, whose two
+ * shelves both ran the website template. That showed one kind of content
+ * twice. These show what the other templates are for, on the brand they suit:
+ * the reviewer reviews, the client launches, the studio blogs. A newcomer can
+ * open any workspace, see a topic waiting under a template, and press Run.
+ *
+ * Keyed by workspace name, as `PROJECTS` in lib/data.ts spells it. Only a
+ * fresh database gets them, the same as every other sample.
+ */
+export type ExampleShelf = {
+  name: string;
+  context: string;
+  /** The template's name, which is how a series refers to one. */
+  pack: string;
+  topics: { name: string; context?: string }[];
+};
+
+export const EXAMPLE_SHELVES: Record<string, ExampleShelf[]> = {
+  "AI Growth Studio": [
+    {
+      name: "Blog",
+      context: "how-to guides for creators\nAI tools, explained simply",
+      pack: "SEO Blog Post",
+      topics: [
+        { name: "How to write AI prompts that actually work" },
+        { name: "Free AI tools for a one-person business" },
+      ],
+    },
+    {
+      name: "Weekly newsletter",
+      context: "one useful AI tool or idea a week",
+      pack: "Newsletter Email",
+      topics: [{ name: "Three AI tools I kept using this month" }],
+    },
+  ],
+  "Dropship Lab": [
+    {
+      name: "Product teardowns",
+      context: "trending products, tested before we sell them",
+      pack: "Honest Product Review",
+      topics: [{ name: "Portable USB blender" }, { name: "Smart LED strip lights" }],
+    },
+    {
+      name: "Repurposed videos",
+      context: "our best videos, turned into posts and articles",
+      pack: "Repurpose a Video",
+      topics: [
+        {
+          name: "Our best-performing TikTok this month",
+          context: "Open the run sheet and paste the video's link, so it is transcribed first.",
+        },
+      ],
+    },
+  ],
+  "Affiliate Desk": [
+    {
+      name: "Honest reviews",
+      context: "gadgets and books, the catch before the pitch",
+      pack: "Honest Product Review",
+      topics: [
+        { name: "Kindle Paperwhite" },
+        { name: "Anker PowerCore 10000" },
+      ],
+    },
+  ],
+  "Client — Acme Skincare": [
+    {
+      name: "Serum launch",
+      context: "the Glow Vitamin C Serum launch campaign",
+      pack: "Product Launch Campaign",
+      topics: [
+        {
+          name: "Acme Glow Vitamin C Serum",
+          context: "Launch date, price and link are not decided yet.",
+        },
+      ],
+    },
+    {
+      name: "Daily posts",
+      context: "skincare tips, one a day",
+      pack: "Social Media Post Pack",
+      topics: [
+        { name: "Why sunscreen still matters in winter" },
+        { name: "A three-step morning skincare routine" },
+      ],
+    },
+  ],
+};
+
 /** The series a fresh session starts with, lifted from the design data. */
 /**
  * The part number each seeded topic carries.

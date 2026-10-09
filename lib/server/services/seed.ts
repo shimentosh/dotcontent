@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { PROJECTS } from "@/lib/data";
-import { SEED_SERIES } from "@/lib/topics";
+import { EXAMPLE_SHELVES, SEED_SERIES } from "@/lib/topics";
 import {
   countWorkspaces,
   createWorkspace,
@@ -60,8 +60,29 @@ export async function seedIfEmpty() {
       photo: p.photo,
     });
 
-    // Only the first workspace gets the sample shelves. Seeding every brand
-    // with the same series is how a demo ends up with four identical AI
+    // Every workspace gets its own example shelves, each under a different
+    // template, so the samples show different kinds of content rather than
+    // the same one four times. Not numbered: these are piles of ideas.
+    for (const shelf of EXAMPLE_SHELVES[p.name] ?? []) {
+      const series = await createSeries({
+        workspaceId: ws.id,
+        name: shelf.name,
+        context: shelf.context,
+        pack: shelf.pack,
+        numbered: false,
+      });
+      await addTopics(
+        series.id,
+        shelf.topics.map((t) => ({
+          name: t.name,
+          context: t.context ?? "",
+          status: "idea",
+        })),
+      );
+    }
+
+    // Only the first workspace gets the design's sample shelves. Seeding every
+    // brand with the same series is how a demo ends up with four identical AI
     // categories nobody asked for.
     if (p !== PROJECTS[0]) continue;
 

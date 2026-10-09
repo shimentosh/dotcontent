@@ -709,15 +709,21 @@ const KINDS = new Set(
  * how that tile looks.
  */
 const KIND_WORDS: [RegExp, string][] = [
-  [/cta|keyword/i, "CTA"],
-  [/research|identif|verif/i, "Research"],
+  // Before CTA and Caption, which "first comment" and "caption and first
+  // comment" would otherwise fall into.
+  [/first comment/i, "First comment"],
+  [/research|identif|verif|facts|takeaway|search intent/i, "Research"],
+  [/cta|keyword/i, "CTA"],
   [/hook|opening/i, "Hook"],
   [/script/i, "Script"],
   [/caption|title card/i, "Caption"],
-  [/hashtag|tags?/i, "Tags"],
+  [/hashtag|tags?/i, "Hashtags"],
+  [/email|newsletter|subject line/i, "Email"],
+  [/blog|article|written review|faq/i, "Article"],
   [/seo|title|headline/i, "Title"],
   [/description|blurb/i, "Description"],
-  [/plan|structure|outline/i, "Plan"],
+  [/facebook|linkedin|instagram|social|x posts|thread|teaser|launch-day|ad copy/i, "Social post"],
+  [/plan|structure|outline|brief|angle|verdict|clip/i, "Plan"],
 ];
 
 const kindOf = (name: string, type: string) => {
